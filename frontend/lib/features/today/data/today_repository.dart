@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 
-/// POST /today/choose: applies the reviewed context and returns ONE pick.
 abstract interface class TodayRepository {
+  /// GET /today: reads the current state; never chooses a movie.
+  Future<TodayEnvelope> today();
+
+  /// POST /today/choose: applies the reviewed context and returns ONE pick.
   Future<TodayEnvelope> choose(SessionContext context);
 }
 

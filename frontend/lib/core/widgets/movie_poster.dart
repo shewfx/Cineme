@@ -55,23 +55,36 @@ class _Placeholder extends StatelessWidget {
           ],
         ),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-            movie.title.toUpperCase(),
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            textScaler: TextScaler.noScaling,
-            style: const TextStyle(
-              color: AppColors.text,
-              fontSize: 26,
-              fontWeight: FontWeight.w300,
-              letterSpacing: 6,
-              height: 1.3,
-            ),
-          ),
+      child: LayoutBuilder(
+        builder: (context, box) => Center(
+          // Thumbnails show the initial; large artwork shows the title.
+          child: box.maxWidth < 120
+              ? Text(
+                  movie.title.characters.first.toUpperCase(),
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    color: AppColors.text,
+                    fontSize: box.maxWidth * 0.42,
+                    fontWeight: FontWeight.w300,
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    movie.title.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textScaler: TextScaler.noScaling,
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w300,
+                      letterSpacing: 6,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
         ),
       ),
     );

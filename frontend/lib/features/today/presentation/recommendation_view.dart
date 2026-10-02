@@ -18,7 +18,7 @@ class RecommendationView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recommendation = envelope.recommendation;
+    final recommendation = envelope.recommendation!;
     final movie = recommendation.movie;
     final text = Theme.of(context).textTheme;
     final size = MediaQuery.sizeOf(context);
@@ -79,7 +79,7 @@ class RecommendationView extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              contextLine(envelope.context),
+                              contextLine(envelope.context!),
                               style: text.labelMedium?.copyWith(
                                 color: AppColors.textMuted,
                               ),

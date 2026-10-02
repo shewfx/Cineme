@@ -5,10 +5,37 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | Phase | Status |
 |---|---|
 | P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header tracked as outstanding |
-| P1a — Context to one movie card (fake data) | Locally verified on branch `feat/p1a-tonight`; not committed, CI not run |
-| P1b, P1c, P2–P8 | Not started |
+| P1a — Context to one movie card (fake data) | Complete: merged to `main` in PR #2 (CI green) |
+| P1b — Inventory, history, profile, loading/empty/error (fake data) | Locally verified on branch `feat/p1b-inventory`; not committed, CI not run |
+| P1c, P2–P8 | Not started |
 
-## P1a — 2026-10-02, branch `feat/p1a-tonight`
+## P1b — 2026-10-02, branch `feat/p1b-inventory`
+
+Four-tab stateful shell (Tonight, Watchlist, History, Profile) plus a nested full-screen `/search`. Each feature has a repository interface whose provider is null in normal builds; the preview build wires every fake from `lib/preview/` over one in-memory `PreviewStore`, which keeps the cross-screen rules: Tonight picks only from the active watchlist; removing a film or logging it as already watched archives it and, if it was tonight's pick, clears it (recorded as cleared) without choosing another; picks appear in recommendation history. Today now reads `GET /today`-style state (`not_started`, `empty_watchlist`, `offered`) and re-reads after inventory changes, never re-picking.
+
+- **Watchlist:** inventory rows (placeholder thumbnail, title, year · runtime, date added), 20 per page with automatic load more, remove behind a confirmation and only after success, empty state with Add movies.
+- **Search/Add:** 300 ms debounce, 2-character minimum, stale responses discarded, paged results, separate Add to watchlist / Already watched (confirmed; unknown date, no rating). Distinct states: in watchlist, watched, can't be added (labelled fixture), no results, search unavailable.
+- **History:** Watched / Recommendations, "Date unknown · recorded …", rating as a text label; read-only.
+- **Profile:** read-only shell with UTC default, preferences, blocked films, TMDB notice; preview-only "Simulate connection errors" switch.
+- **States:** bounded skeletons, empty states with one action, errors with Retry; failed refresh or load-more keeps loaded rows and says so.
+- Riverpod 3's automatic provider retry is disabled (`noAutomaticRetry`) so failures stay visible and retries explicit.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `dart format --output=none --set-exit-if-changed lib test` | 0 changed |
+| `flutter analyze` | No issues found |
+| `flutter test` | 26 passed (10 P1a + 16 P1b): paging; remove clears tonight's pick without re-picking; Tonight only picks active films; duplicate/watched/ineligible add outcomes; already-watched is unknown-date, archives, idempotent and never completes Tonight; empty watchlist never picks; search runtime hidden until known; debounce/min-length/stale-response guard; tab navigation with Tonight still one film; confirmed, non-optimistic remove with failure kept; load error Retry, failed refresh and load-more keep rows; empty states; search add/watched/ineligible/no-results; removing the current pick returns Tonight to context; all tabs and search at 360×640 / 200% text; normal build shows no fake inventory |
+| Emulator 411dp, preview APK | Tabs, Watchlist remove with dialog, Search add and already-watched (snackbars and row states), can't-be-added fixture, no results, History both segments, Profile, simulated errors: Watchlist refresh failure kept rows with message, search unavailable panel, History load error then Retry |
+| Emulator at font scale 2.0 and at 360×640dp + 2.0 | All tabs and search readable; Tonight context scrolls to an inline Pick button on short screens; History segment pills wrap whole words |
+
+### Not in P1b
+
+- P1c: Already seen/Pick another/replacement sheet, pause, accept vs watched states, Edit tonight, no-match state (the fake still throws if no scripted film is available).
+- Movie detail route `/movies/:id`, rating edits in History, Watchlist in-list filter, sign-out (P2), profile/preference editing (P3), TMDB logo asset in About (text notice only), same-day re-offer exclusion (I09) in the fake.
+
+
 
 Context-first Tonight: required desired experience (8 documented intents), separate optional mood, optional time cap, then "Pick my movie" shows exactly ONE film (designed placeholder poster, title, year, runtime, genres, 1–2 factual reasons, primary Watch Tonight). Data comes from `FakeTodayRepository` (fixed per-intent lists filtered by the hard runtime cap; mood ignored), wired only with `--dart-define=CINEME_PREVIEW=true`. Normal builds still show "not available in this build" with no fake data.
 

@@ -3,16 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 import 'core/config/preview.dart';
-import 'features/today/data/fake_today_repository.dart';
-import 'features/today/data/today_repository.dart';
+import 'preview/preview_store.dart';
 
 void main() {
   runApp(
     ProviderScope(
-      overrides: [
-        if (isUiPreview)
-          todayRepositoryProvider.overrideWithValue(FakeTodayRepository()),
-      ],
+      retry: noAutomaticRetry,
+      overrides: isUiPreview ? previewOverrides(PreviewStore()) : const [],
       child: const CinemeApp(),
     ),
   );

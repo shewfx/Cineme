@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/widgets/state_views.dart';
+import '../../../shared/models/today_state.dart';
 import '../application/today_controller.dart';
 import '../data/today_repository.dart';
 import 'context_view.dart';
@@ -11,43 +14,34 @@ class TodayPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(todayRepositoryProvider) == null) return const _Unavailable();
-    final envelope = ref.watch(todayControllerProvider).pick?.value;
-    return envelope == null
-        ? const ContextView()
-        : RecommendationView(envelope: envelope);
-  }
-}
-
-/// Normal builds have no backend repository yet (P4) and never show fake data.
-class _Unavailable extends StatelessWidget {
-  const _Unavailable();
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Cinemé', style: textTheme.displayMedium),
-                const SizedBox(height: 12),
-                Text('One movie. No scrolling.', style: textTheme.titleMedium),
-                const SizedBox(height: 32),
-                Text(
-                  "Tonight's pick is not available in this build yet.",
-                  style: textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
+    if (ref.watch(todayRepositoryProvider) == null) {
+      return const Scaffold(body: UnavailableView());
+    }
+    return ref
+        .watch(todayEnvelopeProvider)
+        .when(
+          loading: () => const Scaffold(
+            body: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+          ),
+          error: (_, _) => Scaffold(
+            body: ErrorPanel(
+              onRetry: () => ref.invalidate(todayEnvelopeProvider),
             ),
           ),
-        ),
-      ),
-    );
+          data: (envelope) => switch (envelope.state) {
+            TodayStatus.offered => RecommendationView(envelope: envelope),
+            TodayStatus.notStarted => const ContextView(),
+            TodayStatus.emptyWatchlist => Scaffold(
+              body: SafeArea(
+                child: EmptyState(
+                  title: 'Your watchlist is empty',
+                  message: 'Tonight picks one film from your watchlist. Add a few to start.',
+                  actionLabel: 'Add movies',
+                  onAction: () => context.push('/search'),
+                ),
+              ),
+            ),
+          },
+        );
   }
 }
