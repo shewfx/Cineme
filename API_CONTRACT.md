@@ -6,7 +6,7 @@ Version 1.1; application prefix `/api/v1`. All application endpoints except heal
 
 - No request accepts user_id. Identity comes from the verified JWT.
 - Call POST `/me/bootstrap`, then read-only GET `/me`, after authentication before other application endpoints. Missing app profile returns409 `PROFILE_NOT_INITIALIZED`; bootstrap itself returns403 `EMAIL_NOT_VERIFIED` for an unconfirmed identity. Infrastructure failure during bootstrap does not sign the client out.
-- All private POST/PATCH/DELETE mutations require UUID `Idempotency-Key`, except POST me/bootstrap (naturally idempotent transactional identity upsert) and context parse (no mutation). Missing/invalid key ->400. Replay identical committed mutation for 24h; different request/route using same key ->409 `IDEMPOTENCY_CONFLICT`.
+- All private POST/PATCH/DELETE mutations require UUID `Idempotency-Key`, except POST me/bootstrap (naturally idempotent transactional identity upsert) and context parse (no mutation). Missing/invalid key ->400 `IDEMPOTENCY_KEY_REQUIRED`. Replay identical committed mutation for 24h; different request/route using same key ->409 `IDEMPOTENCY_CONFLICT`.
 - Session mutations use `expected_session_version`. Zero means “no session exists yet”; >0 must match today's existing session. Preference/viewing PATCH uses `expected_version`.
 - Unknown request fields rejected with 422; API never silently ignores a misspelled runtime/feedback field.
 - List pagination: `limit` default20, max50, optional opaque `cursor`. Responses `{items:[...],next_cursor:null|"..."}`. Cursors are scoped/validated server-side; no client SQL or IDs used as authorization. Sorts are explicitly documented below.

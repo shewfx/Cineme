@@ -134,10 +134,8 @@ void main() {
         const ProviderScope(retry: noAutomaticRetry, child: CinemeApp()),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.text("Tonight's pick is not available in this build yet."),
-        findsOneWidget,
-      );
+      // Unconfigured normal build: an honest config screen, no fake data.
+      expect(find.text('This build is not configured'), findsOneWidget);
       expect(find.text('Pick my movie'), findsNothing);
       expect(find.byType(MoviePoster), findsNothing);
     });

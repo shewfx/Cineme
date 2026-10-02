@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "Cinemé FastAPI backend"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "alembic>=1.16",
     "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.2",
+    "pyjwt[crypto]>=2.10",
+    "sqlalchemy>=2.0",
+    "tzdata>=2026.4",
     "uvicorn>=0.54.0",
 ]
 
@@ -27,7 +33,7 @@ line-length = 100
 select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S105", "S106"]  # asserts and fake test tokens
 
 [tool.mypy]
 python_version = "3.12"
@@ -37,3 +43,4 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = ["integration: needs PostgreSQL via TEST_DATABASE_URL (docs/TOOLING.md)"]

@@ -230,8 +230,8 @@ Fixture movies and users exist only in explicit test/demo seeding, never automat
 
 ## Additive migration schedule
 
-- P2: users and user_preferences only. Profile bootstrap and read/default preference fields; editable fields arrive at P3; no recommendation/history tables or idempotency framework.
-- P3: movies, watchlist_entries and idempotency_records for actual private mutations.
+- P2: users and user_preferences, plus idempotency_records for PATCH /me (ADR 003). Profile bootstrap, read, and display-name/timezone edits; preference editing arrives at P3/P4; no recommendation/history tables.
+- P3: movies and watchlist_entries; their private mutations reuse the P2 idempotency ledger.
 - P4: recommendation_sessions and recommendations with bounded JSON evidence; no candidate-score table.
 - P5: viewings, movie_blocks, rejection_feedback and rating/feedback constraints.
 - P6: optional movie_traits table only when deliberately enabling reviewed enrichment. Core ranking must also work without it.

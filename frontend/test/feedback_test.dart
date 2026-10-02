@@ -243,9 +243,10 @@ void main() {
           chooseAnother: false,
         );
 
-        expect((await r.profile.profile()).blockedMovies.map((m) => m.tmdbId), [
-          first.movie.tmdbId,
-        ]);
+        expect(
+          (await r.profile.profile()).blockedMovies!.map((m) => m.tmdbId),
+          [first.movie.tmdbId],
+        );
         expect(
           (await r.history.viewings()).items.any(
             (v) => v.movie.tmdbId == first.movie.tmdbId,

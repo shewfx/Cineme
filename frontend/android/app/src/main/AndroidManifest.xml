@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Sign-in (Supabase) and the Cinemé API. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Cinemé"
         android:name="${applicationName}"

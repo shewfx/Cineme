@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('launches on the Today placeholder with Cinemé branding', (
+  testWidgets('unconfigured normal build launches to an honest config screen', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -12,12 +12,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Cinemé'), findsOneWidget);
-    expect(find.text('One movie. No scrolling.'), findsOneWidget);
-    expect(
-      find.text("Tonight's pick is not available in this build yet."),
-      findsOneWidget,
-    );
+    // Without --dart-define configuration the app says so; it never shows
+    // preview data or a fake signed-in state.
+    expect(find.text('This build is not configured'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(app.title, 'Cinemé');
   });

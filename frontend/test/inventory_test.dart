@@ -486,11 +486,9 @@ void main() {
         const ProviderScope(retry: noAutomaticRetry, child: CinemeApp()),
       );
       await tester.pumpAndSettle();
-      await goTab(tester, 'Watchlist');
-      expect(
-        find.text('Your watchlist is not available in this build yet.'),
-        findsOneWidget,
-      );
+      // No tabs at all without configuration, so no fake inventory either.
+      expect(find.text('This build is not configured'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
       expect(find.text('Run Lola Run'), findsNothing);
     });
   });

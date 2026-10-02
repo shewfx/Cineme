@@ -20,5 +20,8 @@ class Profile {
   final List<Genre> blockedGenres;
   final int? defaultMaxRuntimeMinutes;
   final bool aiContextEnabled;
-  final List<Movie> blockedMovies;
+
+  /// Null when the build cannot list blocks yet (GET /me/blocks arrives
+  /// with blocks in P5); never shown as "None" in that case.
+  final List<Movie>? blockedMovies;
 }

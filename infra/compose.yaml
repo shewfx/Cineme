@@ -1,4 +1,4 @@
-# Local PostgreSQL for development and integration tests. No application tables at P0.
+# Local PostgreSQL for development and integration tests. Schema comes from Alembic (backend/migrations).
 # Copy infra/.env.example to infra/.env and set a local-only password first.
 name: cineme
 

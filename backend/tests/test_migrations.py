@@ -1,0 +1,117 @@
+"""Migration smoke test and P2 schema constraints on real PostgreSQL."""
+
+import uuid
+from collections.abc import Callable
+
+import pytest
+from alembic import command
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+
+from tests.conftest import alembic_config
+
+pytestmark = pytest.mark.integration
+
+
+def tables(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        return set(
+            conn.execute(
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema='cineme'")
+            ).scalars()
+        )
+
+
+def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str]) -> None:
+    url = database_factory()
+    config = alembic_config(url)
+    engine = create_engine(url)
+    try:
+        command.upgrade(config, "head")
+        # Only the documented P2 tables (ADR 003 adds the idempotency ledger).
+        assert tables(engine) == {"users", "user_preferences", "idempotency_records"}
+
+        command.downgrade(config, "base")
+        with engine.connect() as conn:
+            schema = conn.execute(
+                text("SELECT 1 FROM information_schema.schemata WHERE schema_name='cineme'")
+            ).scalar()
+        assert schema is None
+
+        command.upgrade(config, "head")
+        assert tables(engine) == {"users", "user_preferences", "idempotency_records"}
+    finally:
+        engine.dispose()
+
+
+def test_public_has_no_access_to_the_app_schema(engine: Engine) -> None:
+    with engine.connect() as conn:
+        usage = conn.execute(
+            text(
+                "SELECT has_schema_privilege('public', 'cineme', 'USAGE') "
+                "FROM pg_namespace WHERE nspname = 'cineme'"
+            )
+        ).scalar()
+    assert usage is False
+
+
+def insert_user(engine: Engine) -> uuid.UUID:
+    uid = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO cineme.users (id) VALUES (:id)"), {"id": uid})
+        conn.execute(
+            text("INSERT INTO cineme.user_preferences (user_id) VALUES (:id)"), {"id": uid}
+        )
+    return uid
+
+
+def test_defaults_match_the_data_model(engine: Engine) -> None:
+    uid = insert_user(engine)
+    with engine.connect() as conn:
+        user = conn.execute(
+            text("SELECT timezone, display_name FROM cineme.users WHERE id=:id"), {"id": uid}
+        ).one()
+        prefs = conn.execute(
+            text(
+                "SELECT genre_preferences, blocked_genre_ids, default_max_runtime_minutes, "
+                "ai_context_enabled, version FROM cineme.user_preferences WHERE user_id=:id"
+            ),
+            {"id": uid},
+        ).one()
+    assert tuple(user) == ("UTC", None)
+    assert tuple(prefs) == ({}, [], None, False, 1)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE cineme.user_preferences SET default_max_runtime_minutes = 0",
+        "UPDATE cineme.user_preferences SET default_max_runtime_minutes = 601",
+        "UPDATE cineme.user_preferences SET version = 0",
+        "UPDATE cineme.user_preferences SET genre_preferences = '[1]'::jsonb",
+        "UPDATE cineme.users SET display_name = '   '",
+        "INSERT INTO cineme.user_preferences (user_id) VALUES (gen_random_uuid())",
+    ],
+)
+def test_constraints_reject_invalid_rows(engine: Engine, statement: str) -> None:
+    insert_user(engine)
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(text(statement))
+
+
+def test_runtime_cap_bounds_are_inclusive(engine: Engine) -> None:
+    insert_user(engine)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE cineme.user_preferences SET default_max_runtime_minutes = 1"))
+        conn.execute(text("UPDATE cineme.user_preferences SET default_max_runtime_minutes = 600"))
+
+
+def test_deleting_a_user_cascades_private_rows(engine: Engine) -> None:
+    uid = insert_user(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM cineme.users WHERE id=:id"), {"id": uid})
+        left = conn.execute(
+            text("SELECT count(*) FROM cineme.user_preferences WHERE user_id=:id"), {"id": uid}
+        ).scalar()
+    assert left == 0
