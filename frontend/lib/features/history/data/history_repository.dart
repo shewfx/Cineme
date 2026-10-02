@@ -13,6 +13,10 @@ abstract interface class HistoryRepository {
   /// POST /viewings: logs a known past viewing with an unknown date and no
   /// rating. Never completes Tonight.
   Future<RecordWatchedResult> recordAlreadyWatched(int tmdbId);
+
+  /// PATCH /viewings/{id}: replaces the rating (null clears it). Long-term
+  /// taste evidence; never changes tonight's pick.
+  Future<Viewing> rateViewing(String viewingId, Rating? rating);
 }
 
 /// Null until the real API repository exists; preview overrides it.

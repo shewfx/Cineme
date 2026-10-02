@@ -21,6 +21,7 @@ enum SearchOutcome {
   alreadySaved,
   alreadyWatched,
   ineligible,
+  blocked,
   recorded,
   alreadyRecorded,
   failed,
@@ -157,6 +158,11 @@ class SearchController extends Notifier<SearchState> {
           result,
           ResultMark.watched,
           SearchOutcome.alreadyWatched,
+        ),
+        'MOVIE_BLOCKED' => _markAnd(
+          result,
+          ResultMark.ineligible,
+          SearchOutcome.blocked,
         ),
         'MOVIE_INELIGIBLE' => _markAnd(
           result,

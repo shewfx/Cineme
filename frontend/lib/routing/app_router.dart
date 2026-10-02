@@ -6,6 +6,7 @@ import '../core/theme/app_theme.dart';
 import '../features/history/presentation/history_page.dart';
 import '../features/preferences/presentation/profile_page.dart';
 import '../features/search/presentation/search_page.dart';
+import '../features/today/presentation/context_view.dart';
 import '../features/today/presentation/today_page.dart';
 import '../features/watchlist/presentation/watchlist_page.dart';
 
@@ -30,6 +31,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
+      GoRoute(
+        path: '/today/context',
+        builder: (context, state) => const EditTonightPage(),
+      ),
     ],
   );
   ref.onDispose(router.dispose);

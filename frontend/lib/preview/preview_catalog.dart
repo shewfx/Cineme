@@ -170,15 +170,28 @@ const previewUnreleased = Movie(
   genres: [],
 );
 
-/// Ordered (tmdbId, matched genre id) per intent. Every list ends with a film
-/// of 90 minutes or less so each offered time option has a pick.
-const previewScript = <DesiredExperience, List<(int, int)>>{
-  DesiredExperience.makeMeLaugh: [(137, 35), (813, 35)],
-  DesiredExperience.keepMeHooked: [(546554, 9648), (104, 53)],
-  DesiredExperience.relax: [(8392, 10751)],
-  DesiredExperience.deep: [(329865, 18), (14337, 878)],
-  DesiredExperience.exciting: [(104, 28)],
-  DesiredExperience.comfort: [(346648, 10751), (8392, 10751)],
-  DesiredExperience.feelIt: [(666277, 18), (12477, 18)],
-  DesiredExperience.surprise: [(371645, 0), (14337, 0)],
+/// Scripted priority per intent (P1a order). After these, the fake offers
+/// the remaining eligible films in watchlist order. Not a ranking engine.
+const previewScript = <DesiredExperience, List<int>>{
+  DesiredExperience.makeMeLaugh: [137, 813],
+  DesiredExperience.keepMeHooked: [546554, 104],
+  DesiredExperience.relax: [8392],
+  DesiredExperience.deep: [329865, 14337],
+  DesiredExperience.exciting: [104],
+  DesiredExperience.comfort: [346648, 8392],
+  DesiredExperience.feelIt: [666277, 12477],
+  DesiredExperience.surprise: [371645, 14337],
+};
+
+/// Approximate intent-compatible genres (RECOMMENDATION_ENGINE table), used
+/// only to word reasons honestly. Surprise has no intent dimension.
+const previewIntentGenres = <DesiredExperience, Set<int>>{
+  DesiredExperience.makeMeLaugh: {35},
+  DesiredExperience.comfort: {10751, 16, 35},
+  DesiredExperience.feelIt: {18, 10749},
+  DesiredExperience.relax: {35, 10751, 12},
+  DesiredExperience.deep: {18, 878, 9648},
+  DesiredExperience.exciting: {28, 12, 53},
+  DesiredExperience.keepMeHooked: {53, 9648, 80},
+  DesiredExperience.surprise: {},
 };

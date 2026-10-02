@@ -1,11 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/state/paged_list.dart';
+import '../../../core/state/revision.dart';
 import '../../../shared/models/inventory.dart';
 import '../../../shared/models/viewing.dart';
 import '../data/history_repository.dart';
 
 class ViewingHistoryController extends PagedListNotifier<Viewing> {
+  @override
+  Future<PagedState<Viewing>> build() {
+    ref.watch(inventoryRevisionProvider);
+    return super.build();
+  }
+
   @override
   Future<Paged<Viewing>> fetch(String? cursor) =>
       ref.read(historyRepositoryProvider)!.viewings(cursor: cursor);

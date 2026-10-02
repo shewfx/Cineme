@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/state/paged_list.dart';
+import '../../../core/state/revision.dart';
 import '../../../shared/models/inventory.dart';
 import '../../history/application/history_controllers.dart';
 import '../../today/application/today_controller.dart';
@@ -8,6 +9,12 @@ import '../data/watchlist_repository.dart';
 
 class WatchlistController extends PagedListNotifier<WatchlistEntry> {
   WatchlistRepository get _repo => ref.read(watchlistRepositoryProvider)!;
+
+  @override
+  Future<PagedState<WatchlistEntry>> build() {
+    ref.watch(inventoryRevisionProvider);
+    return super.build();
+  }
 
   @override
   Future<Paged<WatchlistEntry>> fetch(String? cursor) =>

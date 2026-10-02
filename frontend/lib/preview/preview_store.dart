@@ -22,10 +22,14 @@ class PreviewConnectionError implements Exception {
   String toString() => 'Preview: simulated connection error';
 }
 
-/// In-memory stand-in for the server in the UI-preview build only. It keeps
-/// the documented cross-screen rules: Tonight picks only from the active
-/// watchlist; removing or logging the current pick as watched clears it
-/// without choosing a replacement; picks appear in recommendation history.
+const pauseAfterRejections = 3;
+
+/// In-memory stand-in for the server in the UI-preview build only, holding
+/// one daily session. It follows the documented lifecycle: Tonight picks only
+/// from the active watchlist and never re-offers a film offered this session;
+/// accept is intention, Mark watched completes the day, ratings are separate;
+/// rejections are scoped to tonight and the third one pauses replacement;
+/// removing, blocking or logging the current pick clears it without choosing.
 class PreviewStore {
   PreviewStore({
     List<Movie> watchlist = previewWatchlist,
@@ -89,8 +93,18 @@ class PreviewStore {
   final _active = <WatchlistEntry>[]; // newest first
   final _viewings = <Viewing>[]; // newest first
   final _records = <RecommendationRecord>[]; // newest first
-  TodayEnvelope? _current;
+  final _blocked = <int>{};
   int _seq = 0;
+
+  // Today's session.
+  SessionContext? _context;
+  SessionContext? _lastAttempt;
+  Recommendation? _current; // offered or accepted
+  NoMatchSummary? _noMatch;
+  Recommendation? _completed;
+  String? _completedViewingId;
+  final _offeredToday = <int>{};
+  int _rejections = 0;
 
   String _id(String prefix) => 'preview-$prefix${++_seq}';
 
@@ -111,98 +125,355 @@ class PreviewStore {
 
   bool _watched(int tmdbId) => _viewings.any((v) => v.movie.tmdbId == tmdbId);
 
-  /// Clears tonight's pick when its film leaves the eligible inventory.
-  void _supersedeIfCurrent(int tmdbId) {
-    final current = _current?.recommendation;
-    if (current == null || current.movie.tmdbId != tmdbId) return;
-    final i = _records.indexWhere((r) => r.id == current.id);
+  void _setRecord(
+    String id,
+    RecommendationStatus status, {
+    String? reasonLabel,
+  }) {
+    final i = _records.indexWhere((r) => r.id == id);
     if (i >= 0) {
-      final r = _records[i];
-      _records[i] = RecommendationRecord(
-        id: r.id,
-        movie: r.movie,
-        status: RecommendationStatus.superseded,
-        createdAt: r.createdAt,
-        desiredExperience: r.desiredExperience,
-      );
+      _records[i] = _records[i].withStatus(status, reasonLabel: reasonLabel);
     }
+  }
+
+  /// Clears the current pick without choosing another (removal, block,
+  /// manual watched, changed scoring context).
+  void _supersedeCurrent() {
+    final current = _current;
+    if (current == null) return;
+    _setRecord(current.id, RecommendationStatus.superseded);
     _current = null;
   }
 
-  void _archive(int tmdbId) {
+  /// Leaves the eligible inventory; a cached no-match no longer applies.
+  void _archive(int tmdbId, {bool supersede = true}) {
     _active.removeWhere((e) => e.movie.tmdbId == tmdbId);
-    _supersedeIfCurrent(tmdbId);
+    _noMatch = null;
+    if (supersede && _current?.movie.tmdbId == tmdbId) _supersedeCurrent();
+  }
+
+  /// API_CONTRACT state precedence.
+  TodayEnvelope _envelope() {
+    if (_completed != null) {
+      return TodayEnvelope(
+        state: TodayStatus.completed,
+        context: _context,
+        recommendation: _completed,
+        viewing: _viewings.firstWhere((v) => v.id == _completedViewingId),
+        rejectionCount: _rejections,
+      );
+    }
+    final current = _current;
+    if (current != null) {
+      return TodayEnvelope(
+        state: current.status == RecommendationStatus.accepted
+            ? TodayStatus.accepted
+            : TodayStatus.offered,
+        context: _context,
+        recommendation: current,
+        rejectionCount: _rejections,
+      );
+    }
+    final TodayStatus state;
+    if (_noMatch != null) {
+      state = TodayStatus.noMatch;
+    } else if (_active.isEmpty) {
+      state = TodayStatus.emptyWatchlist;
+    } else if (_context == null) {
+      state = TodayStatus.notStarted;
+    } else if (_rejections >= pauseAfterRejections) {
+      state = TodayStatus.paused;
+    } else {
+      state = TodayStatus.ready;
+    }
+    return TodayEnvelope(
+      state: state,
+      context: _context,
+      noMatch: _noMatch,
+      rejectionCount: _rejections,
+    );
+  }
+
+  /// One selection attempt. Scripted, not ranked: hard exclusions in the
+  /// engine's precedence, then the intent's scripted films, then the rest of
+  /// the eligible watchlist in order. No fallback outside the watchlist and
+  /// no relaxing of limits: if nothing qualifies, the result is no match.
+  void _select(SessionContext ctx) {
+    _lastAttempt = ctx;
+    final cap = ctx.maxRuntimeMinutes;
+    final counts = <ExclusionCode, int>{};
+    final eligible = <Movie>[];
+    for (final e in _active) {
+      final m = e.movie;
+      final code = _blocked.contains(m.tmdbId)
+          ? ExclusionCode.movieBlocked
+          : _offeredToday.contains(m.tmdbId)
+          ? ExclusionCode.offeredThisSession
+          : m.genres.any((g) => ctx.avoidGenreIds.contains(g.id))
+          ? ExclusionCode.genreBlocked
+          : cap != null && m.runtimeMinutes == null
+          ? ExclusionCode.runtimeUnknown
+          : cap != null && m.runtimeMinutes! > cap
+          ? ExclusionCode.runtimeExceeded
+          : null;
+      if (code == null) {
+        eligible.add(m);
+      } else {
+        counts[code] = (counts[code] ?? 0) + 1;
+      }
+    }
+
+    if (eligible.isEmpty) {
+      _noMatch = NoMatchSummary(candidateCount: _active.length, counts: counts);
+      _records.insert(
+        0,
+        RecommendationRecord(
+          id: _id('r'),
+          movie: null,
+          status: RecommendationStatus.noMatch,
+          createdAt: now(),
+          desiredExperience: ctx.desiredExperience,
+        ),
+      );
+      return;
+    }
+
+    final script = previewScript[ctx.desiredExperience]!;
+    eligible.sort((a, b) {
+      int rank(Movie m) {
+        final i = script.indexOf(m.tmdbId);
+        return i < 0 ? script.length : i;
+      }
+
+      return rank(a).compareTo(rank(b)); // stable: watchlist order otherwise
+    });
+    final movie = eligible.first;
+    final intentGenres = previewIntentGenres[ctx.desiredExperience]!;
+    final matched = movie.genres.where((g) => intentGenres.contains(g.id));
+    final recommendation = Recommendation(
+      id: _id('r'),
+      movie: movie,
+      reasons: [
+        if (ctx.desiredExperience == DesiredExperience.surprise)
+          const SurpriseChosen()
+        else if (matched.isNotEmpty)
+          GenreMatchesIntent(
+            genre: matched.first,
+            intent: ctx.desiredExperience,
+          )
+        else
+          WeakIntentMatch(ctx.desiredExperience),
+        if (cap != null)
+          FitsRuntime(runtimeMinutes: movie.runtimeMinutes!, capMinutes: cap),
+      ],
+    );
+    _offeredToday.add(movie.tmdbId);
+    _current = recommendation;
+    _records.insert(
+      0,
+      RecommendationRecord(
+        id: recommendation.id,
+        movie: movie,
+        status: RecommendationStatus.offered,
+        createdAt: now(),
+        desiredExperience: ctx.desiredExperience,
+      ),
+    );
+  }
+
+  Viewing _recordViewing(Movie movie, {DateTime? watchedAt, Rating? rating}) {
+    final viewing = Viewing(
+      id: _id('v'),
+      movie: movie,
+      watchedAt: watchedAt,
+      recordedAt: now(),
+      rating: rating,
+    );
+    _viewings.insert(0, viewing);
+    return viewing;
   }
 }
+
+const _reasonLabels = {
+  RejectReason.notTonight: 'Not tonight',
+  RejectReason.tooLong: 'Too long',
+  RejectReason.wantLighter: 'Something lighter',
+  RejectReason.wrongGenre: 'Different genre',
+  RejectReason.alreadyWatched: 'Already seen',
+  RejectReason.neverRecommend: 'Never recommend',
+};
 
 class FakeTodayRepository implements TodayRepository {
   FakeTodayRepository(this._s);
 
   final PreviewStore _s;
 
-  TodayEnvelope get _state =>
-      _s._current ??
-      (_s._active.isEmpty
-          ? const TodayEnvelope.emptyWatchlist()
-          : const TodayEnvelope.notStarted());
+  void _notCompleted() {
+    if (_s._completed != null) throw const TodayConflict('TODAY_COMPLETED');
+  }
 
   @override
   Future<TodayEnvelope> today() async {
     await _s._io();
-    return _state;
+    return _s._envelope();
   }
 
-  /// Not a ranking engine: each intent has a fixed, ordered list of films and
-  /// the first one in the active watchlist inside the hard runtime cap is
-  /// returned. Current mood is ignored, as it is by the real scorer (P4).
   @override
-  Future<TodayEnvelope> choose(SessionContext context) async {
+  Future<TodayEnvelope> choose(
+    SessionContext context, {
+    bool continueAfterPause = false,
+  }) async {
     await _s._io();
-    if (_s._current != null || _s._active.isEmpty) return _state;
-    final cap = context.maxRuntimeMinutes;
-    final active = {for (final e in _s._active) e.movie.tmdbId: e.movie};
-    for (final (tmdbId, genreId) in previewScript[context.desiredExperience]!) {
-      final movie = active[tmdbId];
-      final runtime = movie?.runtimeMinutes;
-      // Unknown runtime is excluded under a cap, never treated as zero.
-      if (movie == null ||
-          (cap != null && (runtime == null || runtime > cap))) {
-        continue;
+    _notCompleted();
+    final current = _s._current;
+    if (current != null) {
+      // Same scoring context: same film; a mood-only change is metadata.
+      if (_s._context!.sameScoringAs(context)) {
+        _s._context = context;
+        return _s._envelope();
       }
-      final recommendation = Recommendation(
-        id: _s._id('r'),
-        movie: movie,
-        reasons: [
-          if (context.desiredExperience == DesiredExperience.surprise)
-            const SurpriseChosen()
-          else
-            GenreMatchesIntent(
-              genre: movie.genres.firstWhere((g) => g.id == genreId),
-              intent: context.desiredExperience,
-            ),
-          if (cap != null)
-            FitsRuntime(runtimeMinutes: runtime!, capMinutes: cap),
-        ],
-      );
-      _s._records.insert(
-        0,
-        RecommendationRecord(
-          id: recommendation.id,
-          movie: movie,
-          status: RecommendationStatus.offered,
-          createdAt: _s.now(),
-          desiredExperience: context.desiredExperience,
-        ),
-      );
-      return _s._current = TodayEnvelope(
-        state: TodayStatus.offered,
-        context: context,
-        recommendation: recommendation,
-      );
+      _s._supersedeCurrent();
     }
-    // ponytail: no_match state is out of P1 scope so far; scripted lists end
-    // with a film of 90 minutes or less unless it was removed.
-    throw StateError('No scripted preview film fits this context.');
+    if (_s._active.isEmpty) {
+      _s._context = context;
+      return _s._envelope();
+    }
+    final last = _s._lastAttempt;
+    if (_s._rejections >= pauseAfterRejections &&
+        !continueAfterPause &&
+        last != null &&
+        last.sameScoringAs(context)) {
+      throw const TodayConflict('CONTEXT_REVIEW_REQUIRED');
+    }
+    _s
+      .._context = context
+      .._noMatch = null
+      .._select(context);
+    return _s._envelope();
+  }
+
+  @override
+  Future<TodayEnvelope> saveContext(SessionContext context) async {
+    await _s._io();
+    _notCompleted();
+    final saved = _s._context;
+    final changed = saved == null || !saved.sameScoringAs(context);
+    _s._context = context;
+    if (changed) {
+      _s
+        .._supersedeCurrent()
+        .._noMatch = null; // the old no-match row stays in history
+    }
+    return _s._envelope();
+  }
+
+  @override
+  Future<TodayEnvelope> accept(String recommendationId) async {
+    await _s._io();
+    final current = _s._current;
+    if (current == null || current.id != recommendationId) {
+      throw const TodayConflict('INVALID_TRANSITION');
+    }
+    if (current.status == RecommendationStatus.offered) {
+      _s._current = current.withStatus(RecommendationStatus.accepted);
+      _s._setRecord(current.id, RecommendationStatus.accepted);
+    }
+    return _s._envelope();
+  }
+
+  @override
+  Future<RejectResult> reject(
+    String recommendationId,
+    RejectReason reason, {
+    int? maxRuntimeMinutes,
+    Set<int> avoidGenreIds = const {},
+    required bool chooseAnother,
+  }) async {
+    await _s._io();
+    final current = _s._current;
+    if (current == null || current.id != recommendationId) {
+      throw const TodayConflict('INVALID_TRANSITION');
+    }
+    var ctx = _s._context!;
+    // Validate everything first so an invalid request changes nothing.
+    switch (reason) {
+      case RejectReason.tooLong when maxRuntimeMinutes != null:
+        final existing = ctx.maxRuntimeMinutes;
+        if (maxRuntimeMinutes < 1 ||
+            (existing != null && maxRuntimeMinutes >= existing)) {
+          throw const TodayConflict('VALIDATION_ERROR');
+        }
+        ctx = ctx.copyWith(maxRuntimeMinutes: () => maxRuntimeMinutes);
+      case RejectReason.wrongGenre:
+        final filmGenres = current.movie.genres.map((g) => g.id).toSet();
+        if (avoidGenreIds.isEmpty || !filmGenres.containsAll(avoidGenreIds)) {
+          throw const TodayConflict('VALIDATION_ERROR');
+        }
+        ctx = ctx.copyWith(
+          avoidGenreIds: {...ctx.avoidGenreIds, ...avoidGenreIds},
+        );
+      case RejectReason.wantLighter:
+        ctx = ctx.copyWith(
+          desiredExperience: DesiredExperience.relax,
+          heavinessMax: () => 0.35,
+        );
+      default:
+    }
+
+    final movie = current.movie;
+    if (reason == RejectReason.alreadyWatched) {
+      if (!_s._watched(movie.tmdbId)) _s._recordViewing(movie);
+      _s._archive(movie.tmdbId, supersede: false);
+    } else if (reason == RejectReason.neverRecommend) {
+      _s._blocked.add(movie.tmdbId);
+      _s._archive(movie.tmdbId, supersede: false);
+    }
+    _s
+      .._context = ctx
+      .._setRecord(
+        current.id,
+        RecommendationStatus.rejected,
+        reasonLabel: _reasonLabels[reason],
+      )
+      .._current = null
+      .._rejections += 1;
+
+    final ReplacementOutcome outcome;
+    if (!chooseAnother) {
+      outcome = ReplacementOutcome.notRequested;
+    } else if (_s._rejections >= pauseAfterRejections) {
+      outcome = ReplacementOutcome.paused;
+    } else {
+      _s._select(ctx);
+      outcome = _s._current != null
+          ? ReplacementOutcome.selected
+          : ReplacementOutcome.noMatch;
+    }
+    return RejectResult(outcome: outcome, today: _s._envelope());
+  }
+
+  @override
+  Future<TodayEnvelope> markWatched(
+    String recommendationId, {
+    Rating? rating,
+  }) async {
+    await _s._io();
+    final current = _s._current;
+    if (current == null || current.id != recommendationId) {
+      throw const TodayConflict('INVALID_TRANSITION');
+    }
+    final viewing = _s._recordViewing(
+      current.movie,
+      watchedAt: _s.now(),
+      rating: rating,
+    );
+    _s
+      .._archive(current.movie.tmdbId, supersede: false)
+      .._setRecord(current.id, RecommendationStatus.watched)
+      .._completed = current.withStatus(RecommendationStatus.watched)
+      .._completedViewingId = viewing.id
+      .._current = null;
+    return _s._envelope();
   }
 }
 
@@ -228,18 +499,23 @@ class FakeWatchlistRepository implements WatchlistRepository {
     if (_s._watched(tmdbId)) {
       throw const InventoryConflict('MOVIE_ALREADY_WATCHED');
     }
+    if (_s._blocked.contains(tmdbId)) {
+      throw const InventoryConflict('MOVIE_BLOCKED');
+    }
     for (final e in _s._active) {
       if (e.movie.tmdbId == tmdbId) {
         return WatchlistAddResult(entry: e, alreadyPresent: true);
       }
     }
-    // A restored entry gets a fresh added_at, like a new one.
+    // A restored entry gets a fresh added_at, like a new one. Adding never
+    // replaces the current pick, but a cached no-match no longer applies.
     final entry = WatchlistEntry(
       id: _s._id('w'),
       movie: movie,
       addedAt: _s.now(),
     );
     _s._active.insert(0, entry);
+    _s._noMatch = null;
     return WatchlistAddResult(entry: entry, alreadyPresent: false);
   }
 
@@ -326,18 +602,27 @@ class FakeHistoryRepository implements HistoryRepository {
     if (identical(movie, previewUnreleased)) {
       throw const InventoryConflict('MOVIE_INELIGIBLE');
     }
-    final viewing = Viewing(
-      id: _s._id('v'),
-      movie: movie,
-      watchedAt: null,
-      recordedAt: _s.now(),
-      rating: null,
-    );
-    _s._viewings.insert(0, viewing);
-    _s._archive(
-      tmdbId,
-    ); // archives the entry and clears it if it was tonight's pick
+    final viewing = _s._recordViewing(movie);
+    // Archives the entry; if it was tonight's pick, clears it. Never
+    // completes Tonight.
+    _s._archive(tmdbId);
     return RecordWatchedResult(viewing: viewing, alreadyRecorded: false);
+  }
+
+  @override
+  Future<Viewing> rateViewing(String viewingId, Rating? rating) async {
+    await _s._io();
+    final i = _s._viewings.indexWhere((v) => v.id == viewingId);
+    if (i < 0) throw const InventoryConflict('NOT_FOUND');
+    final v = _s._viewings[i];
+    // Replaces the single observation; never adds a second one.
+    return _s._viewings[i] = Viewing(
+      id: v.id,
+      movie: v.movie,
+      watchedAt: v.watchedAt,
+      recordedAt: v.recordedAt,
+      rating: rating,
+    );
   }
 }
 
@@ -349,15 +634,21 @@ class FakeProfileRepository implements ProfileRepository {
   @override
   Future<Profile> profile() async {
     await _s._io();
-    return const Profile(
+    return Profile(
       displayName: null,
       timezone: 'UTC',
-      preferredGenres: [],
-      blockedGenres: [],
+      preferredGenres: const [],
+      blockedGenres: const [],
       defaultMaxRuntimeMinutes: null,
       aiContextEnabled: false,
-      blockedMovies: [],
+      blockedMovies: [for (final id in _s._blocked) _s._catalog[id]!],
     );
+  }
+
+  @override
+  Future<void> unblock(int tmdbId) async {
+    await _s._io();
+    _s._blocked.remove(tmdbId);
   }
 }
 
