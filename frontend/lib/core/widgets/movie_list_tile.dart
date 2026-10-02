@@ -4,6 +4,8 @@ import '../../shared/models/movie.dart';
 import '../theme/app_theme.dart';
 import 'movie_poster.dart';
 
+const _posterHeight = 72.0;
+
 /// Stable inventory/history row: small poster, title, muted detail lines and
 /// an optional trailing action. Not a recommendation card.
 class MovieListTile extends StatelessWidget {
@@ -34,7 +36,7 @@ class MovieListTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: SizedBox(
               width: 48,
-              height: 72,
+              height: _posterHeight,
               child: MoviePoster(movie: movie),
             ),
           ),
@@ -57,7 +59,14 @@ class MovieListTile extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          if (trailing != null) ...[
+            const SizedBox(width: 12),
+            // Centred on the poster, whatever the text column's height.
+            SizedBox(
+              height: _posterHeight,
+              child: Center(child: trailing),
+            ),
+          ],
         ],
       ),
     );

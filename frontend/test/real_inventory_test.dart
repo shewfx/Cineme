@@ -185,6 +185,12 @@ class FakeAuth implements AuthRepository {
 
 class FakeAccount implements AccountRepository {
   @override
+  Future<void> setRegion(String? countryCode) async {}
+
+  @override
+  Future<List<(String, String)>> regions() async => const [('IN', 'India')];
+
+  @override
   Future<void> bootstrap() async {}
 
   @override

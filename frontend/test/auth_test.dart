@@ -69,6 +69,12 @@ class FakeAuth implements AuthRepository {
 
 /// Per-user server state, so account switches can be checked for leaks.
 class FakeAccount implements AccountRepository {
+  @override
+  Future<void> setRegion(String? countryCode) async {}
+
+  @override
+  Future<List<(String, String)>> regions() async => const [('IN', 'India')];
+
   FakeAccount(this.auth);
 
   final FakeAuth auth;

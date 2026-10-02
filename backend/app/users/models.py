@@ -28,11 +28,16 @@ class User(Base):
             "display_name IS NULL OR char_length(btrim(display_name)) > 0",
             name="display_name_not_blank",
         ),
+        CheckConstraint(
+            "country_code IS NULL OR country_code ~ '^[A-Z]{2}$'", name="country_code_format"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     display_name: Mapped[str | None] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64), server_default=text("'UTC'"))
+    # Streaming region (ISO 3166-1 alpha-2); null means "derive from timezone".
+    country_code: Mapped[str | None] = mapped_column(String(2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

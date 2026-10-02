@@ -35,6 +35,17 @@ class WeakIntentMatch extends Reason {
   final DesiredExperience intent;
 }
 
+/// A reason rendered by the server's deterministic template and stored with
+/// the pick, so old cards keep their wording.
+class ServerReason extends Reason {
+  const ServerReason(this.text, {this.uncertain = false});
+
+  final String text;
+
+  /// An unknown requested fact, not a positive reason.
+  final bool uncertain;
+}
+
 class Recommendation {
   const Recommendation({
     required this.id,
@@ -56,15 +67,17 @@ class Recommendation {
 
 /// Primary exclusion codes, in the engine's precedence order.
 enum ExclusionCode {
-  movieUnavailable('not released yet'),
-  movieBlocked('never recommend'),
-  offeredThisSession('already offered tonight'),
-  genreBlocked('in a genre you avoided tonight'),
-  runtimeUnknown('runtime unknown under your time limit'),
-  runtimeExceeded('longer than your time limit');
+  movieUnavailable('movie_unavailable', 'not released yet'),
+  alreadyWatched('already_watched', 'already watched'),
+  movieBlocked('movie_blocked', 'never recommend'),
+  offeredThisSession('offered_this_session', 'already offered tonight'),
+  genreBlocked('genre_blocked', 'in a genre you avoided tonight'),
+  runtimeUnknown('runtime_unknown', 'runtime unknown under your time limit'),
+  runtimeExceeded('runtime_exceeded', 'longer than your time limit');
 
-  const ExclusionCode(this.label);
+  const ExclusionCode(this.wireName, this.label);
 
+  final String wireName;
   final String label;
 }
 
@@ -130,13 +143,28 @@ enum RejectReason {
   final String wireName;
 }
 
-enum ReplacementOutcome { selected, noMatch, paused, notRequested }
+enum ReplacementOutcome { selected, noMatch, paused, dailyLimit, notRequested }
 
 class RejectResult {
   const RejectResult({required this.outcome, required this.today});
 
   final ReplacementOutcome outcome;
   final TodayEnvelope today;
+}
+
+/// The winner's stored score breakdown for the Why drawer.
+class WhyBreakdown {
+  const WhyBreakdown({
+    required this.weights,
+    required this.contributions,
+    required this.engineVersion,
+    required this.configVersion,
+  });
+
+  final Map<String, double> weights;
+  final Map<String, double> contributions;
+  final String engineVersion;
+  final String configVersion;
 }
 
 /// Documented 409/422 codes the UI must handle, e.g. CONTEXT_REVIEW_REQUIRED.

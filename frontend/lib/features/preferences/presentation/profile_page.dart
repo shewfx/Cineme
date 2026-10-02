@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../preview/preview_store.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../auth/data/account_repository.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../availability/data/availability_repository.dart';
 import '../../../shared/models/movie.dart';
 import '../../../shared/models/profile.dart';
 import '../application/profile_controller.dart';
@@ -55,6 +58,7 @@ class _ProfileBody extends ConsumerWidget {
       children: [
         const _Section('Account', note: 'Editing is coming later.'),
         _Row('Display name', profile.displayName ?? 'Not set'),
+        _RegionRow(profile: profile),
         _Row(
           'Time zone',
           profile.timezone,
@@ -260,6 +264,59 @@ class _Row extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Streaming region for "Available on" in Tonight (ADR 007). Editable in
+/// the normal build; the preview has no account service.
+class _RegionRow extends ConsumerWidget {
+  const _RegionRow({required this.profile});
+
+  final Profile profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final account = ref.watch(accountRepositoryProvider);
+    final region = profile.region;
+    final row = _Row(
+      'Streaming region',
+      region ?? 'Not set',
+      note: region == null
+          ? 'Choose one to see where Tonight’s film is streaming.'
+          : profile.regionChosen
+          ? null
+          : 'From your time zone.',
+    );
+    if (account == null) return row;
+    return InkWell(
+      onTap: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        try {
+          final regions = await account.regions();
+          if (!context.mounted) return;
+          final picked = await showOptionSheet<String>(
+            context,
+            title: 'Streaming region',
+            options: [
+              (null, 'Use my time zone'),
+              for (final (code, name) in regions) (code, '$name ($code)'),
+            ],
+            selected: profile.regionChosen ? region : null,
+          );
+          if (picked == null) return;
+          await account.setRegion(picked.$1);
+          ref.invalidate(profileProvider);
+          ref.invalidate(movieAvailabilityProvider);
+        } catch (_) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text("Couldn't change your region. Try again."),
+            ),
+          );
+        }
+      },
+      child: row,
     );
   }
 }

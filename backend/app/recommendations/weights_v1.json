@@ -1,0 +1,22 @@
+{
+  "config_version": "weights_v1",
+  "weights": {"G": 35, "C": 30, "D": 10, "A": 10, "R": 10, "Q": 5},
+  "genre_prior_strength": 2,
+  "age_saturation_days": 90,
+  "recency_saturation_days": 14,
+  "vote_prior_strength": 200,
+  "vote_prior_mean": 0.5,
+  "intent_genre_map": {
+    "make_me_laugh": [35],
+    "comfort": [10751, 16, 35],
+    "feel_it": [18, 10749],
+    "relax": [35, 10751, 12],
+    "deep": [18, 878, 9648],
+    "exciting": [28, 12, 53],
+    "keep_me_hooked": [53, 9648, 80],
+    "surprise": []
+  },
+  "pace_targets": {"low": 0.15, "medium": 0.5, "high": 0.85},
+  "learned_reason_support": 2,
+  "reason_affinity_threshold": 0.2
+}

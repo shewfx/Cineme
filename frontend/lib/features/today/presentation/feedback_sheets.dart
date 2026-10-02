@@ -15,7 +15,7 @@ const sheetReasons = <(String, RejectReason)>[
   ('Too long', RejectReason.tooLong),
   ('Something lighter', RejectReason.wantLighter),
   ('Different genre', RejectReason.wrongGenre),
-  ('Already seen', RejectReason.alreadyWatched),
+  ('Already watched', RejectReason.alreadyWatched),
   ('Just give me another', RejectReason.notTonight),
 ];
 
@@ -47,6 +47,7 @@ Future<RejectRequest?> showRejectSheet(
     movie: movie,
     tonight: tonight,
     rejectionCount: rejectionCount,
+    reasons: sheetReasons,
   ),
 );
 
@@ -55,11 +56,13 @@ class _RejectSheet extends StatefulWidget {
     required this.movie,
     required this.tonight,
     required this.rejectionCount,
+    required this.reasons,
   });
 
   final Movie movie;
   final SessionContext tonight;
   final int rejectionCount;
+  final List<(String, RejectReason)> reasons;
 
   @override
   State<_RejectSheet> createState() => _RejectSheetState();
@@ -71,7 +74,7 @@ class _RejectSheetState extends State<_RejectSheet> {
   final _avoid = <int>{};
 
   RejectReason? get _reason =>
-      _choice == null ? null : sheetReasons[_choice!].$2;
+      _choice == null ? null : widget.reasons[_choice!].$2;
 
   bool get _valid =>
       _reason != null &&
@@ -128,9 +131,9 @@ class _RejectSheetState extends State<_RejectSheet> {
             ),
             const SizedBox(height: 16),
             pills([
-              for (var i = 0; i < sheetReasons.length; i++)
+              for (var i = 0; i < widget.reasons.length; i++)
                 ChoicePill(
-                  label: sheetReasons[i].$1,
+                  label: widget.reasons[i].$1,
                   selected: _choice == i,
                   onTap: () => setState(() => _choice = i),
                 ),
@@ -184,7 +187,9 @@ class _RejectSheetState extends State<_RejectSheet> {
             if (widget.rejectionCount + 1 >= 3) ...[
               const SizedBox(height: 12),
               Text(
-                "That's your third pass tonight, so Cinemé will pause instead of picking again.",
+                widget.rejectionCount + 1 == 3
+                    ? "That's your third pass tonight, so Cinemé will pause instead of picking again."
+                    : "That's pass ${widget.rejectionCount + 1} tonight, so Cinemé will pause instead of picking again.",
                 style: text.labelMedium?.copyWith(color: AppColors.textMuted),
               ),
             ],

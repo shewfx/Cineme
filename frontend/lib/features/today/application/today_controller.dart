@@ -4,6 +4,7 @@ import '../../../core/state/revision.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../../shared/models/viewing.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../history/application/history_controllers.dart';
 import '../../history/data/history_repository.dart';
 import '../data/today_repository.dart';
@@ -89,6 +90,10 @@ class TodayController extends Notifier<TodayViewState> {
   void toggleMood(CurrentMood value) => state = state.copyWith(
     currentMood: () => state.currentMood == value ? null : value,
   );
+
+  /// Sets or clears the optional mood (selector sheets choose explicitly).
+  void setMood(CurrentMood? value) =>
+      state = state.copyWith(currentMood: () => value);
 
   void selectMaxRuntime(int? minutes) =>
       state = state.copyWith(maxRuntimeMinutes: () => minutes);
@@ -200,6 +205,11 @@ class TodayController extends Notifier<TodayViewState> {
         );
       }
     } catch (e, st) {
+      // Someone else changed tonight (another device, a new day): reload
+      // the server's state rather than acting on a stale card.
+      if (e is TodayConflict && staleCodes.contains(e.code) && ref.mounted) {
+        ref.invalidate(todayEnvelopeProvider);
+      }
       if (ref.mounted) {
         state = state.copyWith(
           busy: () => null,
@@ -211,11 +221,35 @@ class TodayController extends Notifier<TodayViewState> {
   }
 }
 
+const staleCodes = {
+  'VERSION_CONFLICT',
+  'INVALID_TRANSITION',
+  'SESSION_EXPIRED',
+  'TODAY_COMPLETED',
+};
+
+/// What to tell the user after a failed Today command; the card stays.
+String todayFailureMessage(Object error) => switch (error) {
+  TodayConflict(code: 'SESSION_EXPIRED') =>
+    'That pick was for another day. Showing tonight.',
+  TodayConflict(code: 'DAILY_ATTEMPT_LIMIT') =>
+    "That's the limit for picks today. Try again tomorrow.",
+  TodayConflict(:final code) when staleCodes.contains(code) =>
+    "Tonight's choice changed. Showing the latest.",
+  _ => "Couldn't reach Cinemé. Tonight's film is unchanged; try again.",
+};
+
 /// Server-authoritative Today (GET /today). Reloading only reads; it never
 /// chooses another movie.
 class TodayEnvelopeController extends AsyncNotifier<TodayEnvelope> {
   @override
-  Future<TodayEnvelope> build() => ref.read(todayRepositoryProvider)!.today();
+  Future<TodayEnvelope> build() {
+    // Per signed-in user, and refreshed when the watchlist changes (an
+    // empty watchlist or a cached no-match depends on it).
+    ref.watch(currentUserIdProvider);
+    ref.watch(inventoryRevisionProvider);
+    return ref.read(todayRepositoryProvider)!.today();
+  }
 
   /// Applies the envelope returned by a Today mutation.
   void apply(TodayEnvelope envelope) => state = AsyncData(envelope);

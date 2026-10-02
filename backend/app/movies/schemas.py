@@ -58,3 +58,33 @@ class SearchResponse(BaseModel):
 class GenresResponse(BaseModel):
     items: list[GenreOut]
     version: str
+
+
+class ProviderOut(BaseModel):
+    id: int
+    name: str
+    logo_url: str | None
+
+
+class AvailabilityResponse(BaseModel):
+    """JustWatch data via TMDB for the caller's region; region null when it
+    can't be determined. Display-only (ADR 007)."""
+
+    tmdb_id: int
+    region: str | None
+    link: str | None
+    streaming: list[ProviderOut]
+    free: list[ProviderOut]
+    rent: list[ProviderOut]
+    buy: list[ProviderOut]
+    fetched_at: datetime | None
+    stale: bool
+
+
+class RegionOut(BaseModel):
+    code: str
+    name: str
+
+
+class RegionsResponse(BaseModel):
+    items: list[RegionOut]

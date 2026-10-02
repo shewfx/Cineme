@@ -21,6 +21,7 @@ from app.core.errors import install_error_handling
 from app.core.settings import Settings, load_settings
 from app.movies.provider import MovieMetadataProvider, TmdbProvider
 from app.movies.router import router as movies_router
+from app.recommendations.router import router as recommendations_router
 from app.users.router import router as users_router
 from app.watchlist.router import router as watchlist_router
 
@@ -85,6 +86,7 @@ def create_app(
     app.include_router(users_router)
     app.include_router(movies_router)
     app.include_router(watchlist_router)
+    app.include_router(recommendations_router)
     return app
 
 

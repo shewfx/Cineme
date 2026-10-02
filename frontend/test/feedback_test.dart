@@ -68,6 +68,12 @@ Future<void> pickHooked(WidgetTester tester) async {
   await tapText(tester, 'Pick my movie');
 }
 
+/// Opens the selector currently showing [current] and picks [option].
+Future<void> select(WidgetTester tester, String current, String option) async {
+  await tapText(tester, current);
+  await tapText(tester, option);
+}
+
 void main() {
   group('Lifecycle (preview store)', () {
     test('Watch Tonight is intention: no viewing, film stays saved', () async {
@@ -430,7 +436,7 @@ void main() {
       await pickHooked(tester);
       final first = shownTitle(tester);
 
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
@@ -446,7 +452,7 @@ void main() {
       await tester.pumpAndSettle();
       await pickHooked(tester);
       for (var i = 0; i < 3; i++) {
-        await tapText(tester, 'Pick another');
+        await tapText(tester, 'Not feeling it');
         await tapText(tester, 'Not feeling this one');
         if (i == 2) expect(find.textContaining('third pass'), findsOneWidget);
         await tapText(tester, 'Show another');
@@ -479,7 +485,7 @@ void main() {
         find.widgetWithText(ChoicePill, 'Loved'),
       );
       expect(loved.selected, isTrue);
-      expect(find.text('Pick another'), findsNothing);
+      expect(find.text('Not feeling it'), findsNothing);
 
       await tapText(tester, 'See history');
       expect(find.text(title), findsOneWidget);
@@ -493,7 +499,7 @@ void main() {
       await tester.pumpWidget(app(store(watchlist: one)));
       await tester.pumpAndSettle();
       await pickHooked(tester);
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
@@ -551,15 +557,81 @@ void main() {
       final title = shownTitle(tester);
 
       await tapText(tester, 'Edit tonight');
-      await tapText(tester, 'Tired');
+      await select(tester, 'Not set', 'Tired');
       await tapText(tester, 'Save');
       expect(shownTitle(tester), title);
       expect(find.textContaining('feeling tired'), findsOneWidget);
 
       await tapText(tester, 'Edit tonight');
-      await tapText(tester, 'Exciting');
+      await select(tester, 'Keep me hooked', 'Exciting');
       await tapText(tester, 'Save');
       expect(find.text('Ready for another pick?'), findsOneWidget);
+    });
+
+    testWidgets('Edit tonight uses three selectors that restore and clear', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await pickHooked(tester);
+      await tapText(tester, 'Edit tonight');
+      // No chip wall: only the current values are shown.
+      expect(find.text('Keep me hooked'), findsOneWidget);
+      expect(find.text('Make me laugh'), findsNothing);
+      expect(find.text('Not set'), findsOneWidget);
+      expect(find.text('Any length'), findsOneWidget);
+
+      // The sheet lists every intent and checks the current one.
+      await tapText(tester, 'Keep me hooked');
+      expect(find.text('Make me laugh'), findsOneWidget);
+      final current = find.ancestor(
+        of: find.text('Keep me hooked').last,
+        matching: find.byType(ListTile),
+      );
+      expect(
+        find.descendant(of: current, matching: find.byIcon(Icons.check)),
+        findsOneWidget,
+      );
+      await tapText(tester, 'Deep');
+      expect(find.text('Make me laugh'), findsNothing, reason: 'sheet closed');
+      expect(find.text('Deep'), findsOneWidget);
+
+      await select(tester, 'Not set', 'Tired');
+      await select(tester, 'Any length', 'Up to 90 min');
+      expect(find.text('Tired'), findsOneWidget);
+      expect(find.text('Up to 90 min'), findsOneWidget);
+      // Optional values clear back to unset.
+      await select(tester, 'Tired', 'Not set');
+      await select(tester, 'Up to 90 min', 'Any length');
+      expect(find.text('Not set'), findsOneWidget);
+      expect(find.text('Any length'), findsOneWidget);
+
+      // Dismissing a sheet changes nothing.
+      await tapText(tester, 'Deep');
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('Deep'), findsOneWidget);
+    });
+
+    testWidgets('Edit tonight selectors fit 360x640 at 200% text', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(720, 1280);
+      tester.view.devicePixelRatio = 2;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await pickHooked(tester);
+      await tapText(tester, 'Edit tonight');
+      expect(tester.takeException(), isNull);
+      await select(tester, 'Any length', 'Under 2 hours');
+      expect(tester.takeException(), isNull);
+      expect(find.text('Under 2 hours'), findsOneWidget);
+      await tapText(tester, 'Keep me hooked');
+      expect(find.text('Make me laugh'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('Edit tonight back button changes nothing', (tester) async {
@@ -568,7 +640,7 @@ void main() {
       await pickHooked(tester);
       final title = shownTitle(tester);
       await tapText(tester, 'Edit tonight');
-      await tapText(tester, 'Exciting');
+      await select(tester, 'Keep me hooked', 'Exciting');
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(shownTitle(tester), title);
@@ -608,7 +680,7 @@ void main() {
       await tester.pumpAndSettle();
       await pickHooked(tester);
       expect(tester.takeException(), isNull, reason: 'offered');
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Different genre');
       expect(tester.takeException(), isNull, reason: 'reject sheet');
       await tapText(tester, 'Comedy');

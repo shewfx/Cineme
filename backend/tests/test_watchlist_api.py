@@ -188,7 +188,9 @@ def test_list_is_newest_first_and_paginates(a: Api) -> None:
 
 def test_remove_archives_and_restore_resets_age(a: Api, engine: Engine) -> None:
     entry = a.add(104).json()["entry"]
-    assert a.remove(entry["id"]).json() == {"removed": True}
+    removed = a.remove(entry["id"]).json()
+    assert removed["removed"] is True
+    assert removed["today"]["state"] == "empty_watchlist"
     assert a.titles() == []
     assert a.remove(entry["id"]).status_code == 200, "already removed succeeds"
     assert scalar(engine, "SELECT status FROM cineme.watchlist_entries") == "removed"
@@ -372,9 +374,9 @@ def test_add_replay_and_conflict(a: Api, movies: FakeMovieProvider) -> None:
 def test_remove_replay_does_not_undo_a_later_restore(a: Api) -> None:
     entry = a.add(104).json()["entry"]
     key = str(uuid.uuid4())
-    a.remove(entry["id"], key)
+    first = a.remove(entry["id"], key).json()
     a.add(104)
-    assert a.remove(entry["id"], key).json() == {"removed": True}
+    assert a.remove(entry["id"], key).json() == first, "replays the stored response"
     assert a.titles() == ["Run Lola Run"], "the replay returned the old result only"
 
 

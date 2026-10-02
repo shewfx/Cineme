@@ -174,6 +174,7 @@ Emit reason codes with source and values, not generated facts. Required hard-con
 - `variety`: overlap data versus recent viewing snapshot.
 - `waiting_in_watchlist`: age days when >=30.
 - `unknown_trait`: missing requested field, not a positive reason.
+- Also emitted (ADR 006): `tonight_genre_match` (tonight's preferred genre), `not_offered_before`/`not_offered_recently` (R), `tmdb_rating` (Q, modest wording), `best_remaining_match` (fallback) and uncertainty `unknown_genres`.
 
 Template policy: first state runtime fit if there is a cap and known runtime. Then use the strongest positive contribution above its neutral baseline (`weight*(component-0.5)`), selecting a reason actually supported by known subfields. Resolve equal reason contributions in component order G,C,D,A,R,Q. Recency/quality alone get modest wording. If no positive supported reason exists: “This is the best remaining match under tonight's constraints.” Add a concise uncertainty statement if requested traits are unknown. Never invent genre/style/actor/provider facts. Do not claim optimality beyond this bounded rule set.
 
@@ -224,6 +225,10 @@ Start with this hand-chosen baseline. Capture accept/reject/complete rates, scop
 ## Required tests
 
 Filters and primary exclusion counts; missing/null boundary cases; cap equality; desired-experience matrix and emotion-independence; pace targets; trait maximum at 0/1; rating shrinkage and edits; no learning from rejection; multigenre allocation; diversity Jaccard; floor-day/saturation boundaries; quality shrinkage; weight sum; shuffled candidate input; exact ties; complete test-fixture replay and bounded stored-comparison checks; worked-example totals; no network access. Include a metamorphic test that an unrelated added candidate never changes existing component scores.
+
+## Inputs added at P4 close-out
+
+From the already_watched rejection (ADR 006 amendment) viewings exist before P5: they feed the `already_watched` filter and the D component's recent genre snapshots exactly as specified above. No ratings exist yet, so G is unchanged. Streaming availability (ADR 007) is display-only and never an input.
 
 ## No-enrichment baseline and product boundary
 

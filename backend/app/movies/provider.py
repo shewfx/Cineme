@@ -75,8 +75,72 @@ class MovieMetadataProvider(Protocol):
     def image_base(self) -> str:
         """Secure base URL for posters, e.g. https://image.tmdb.org/t/p/."""
 
+    def watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        """Normalized availability per region (JustWatch data via TMDB):
+        {region: {"link", "streaming", "free", "rent", "buy"}}."""
+
+    def watch_regions(self) -> tuple[tuple[str, str], ...]:
+        """(ISO 3166-1 code, English name) regions TMDB has providers for."""
+
 
 # --- normalization -----------------------------------------------------------
+
+_REGION = re.compile(r"^[A-Z]{2}$")
+# TMDB monetization types -> Cinemé groups; subscription first in the UI.
+_KINDS = {"flatrate": "streaming", "free": "free", "ads": "free", "rent": "rent", "buy": "buy"}
+
+
+def _offers(raw: object) -> list[dict[str, Any]]:
+    """Valid providers only, by TMDB display priority then name; no dupes."""
+    if not isinstance(raw, list):
+        return []
+    seen: set[int] = set()
+    offers = []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        pid, name = p.get("provider_id"), p.get("provider_name")
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid in seen:
+            continue
+        if not isinstance(name, str) or not name.strip():
+            continue
+        priority = p.get("display_priority")
+        seen.add(pid)
+        offers.append(
+            {
+                "id": pid,
+                "name": name.strip(),
+                "logo_path": _poster(p.get("logo_path")),
+                "priority": priority if isinstance(priority, int) else 9999,
+            }
+        )
+    return sorted(offers, key=lambda o: (o["priority"], o["name"]))
+
+
+def normalize_watch_providers(raw: object) -> dict[str, Any]:
+    if not isinstance(raw, dict) or not isinstance(raw.get("results"), dict):
+        raise _upstream_invalid()
+    regions: dict[str, Any] = {}
+    for code, data in raw["results"].items():
+        if not isinstance(code, str) or not _REGION.fullmatch(code) or not isinstance(data, dict):
+            continue
+        groups: dict[str, list[dict[str, Any]]] = {
+            "streaming": [],
+            "free": [],
+            "rent": [],
+            "buy": [],
+        }
+        for kind, group in _KINDS.items():
+            ids = {o["id"] for o in groups[group]}
+            groups[group] += [o for o in _offers(data.get(kind)) if o["id"] not in ids]
+        link = data.get("link")
+        regions[code] = {
+            "link": link
+            if isinstance(link, str) and link.startswith("https://www.themoviedb.org/")
+            else None,
+            **groups,
+        }
+    return regions
 
 
 def _upstream_invalid() -> AppError:
@@ -198,6 +262,7 @@ class TmdbProvider:
         self._sleep = sleep
         self._genres: tuple[float, tuple[GenreRef, ...]] | None = None
         self._image_base: tuple[float, str] | None = None
+        self._regions: tuple[float, tuple[tuple[str, str], ...]] | None = None
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         deadline = self._clock() + BUDGET_SECONDS
@@ -271,6 +336,34 @@ class TmdbProvider:
         self._genres = (self._clock(), genres)
         return genres
 
+    def watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        """One call for every region; the service caches it per film."""
+        return normalize_watch_providers(self._get(f"/movie/{tmdb_id}/watch/providers", {}))
+
+    def watch_regions(self) -> tuple[tuple[str, str], ...]:
+        """Cached 24 h in process."""
+        cached = self._regions
+        if cached and self._clock() - cached[0] < 86400:
+            return cached[1]
+        data = self._get("/watch/providers/regions", {"language": "en-US"})
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise _upstream_invalid()
+        regions = tuple(
+            sorted(
+                (
+                    (r["iso_3166_1"], r["english_name"])
+                    for r in data["results"]
+                    if isinstance(r, dict)
+                    and isinstance(r.get("iso_3166_1"), str)
+                    and _REGION.fullmatch(r["iso_3166_1"])
+                    and isinstance(r.get("english_name"), str)
+                ),
+                key=lambda r: r[1],
+            )
+        )
+        self._regions = (self._clock(), regions)
+        return regions
+
     def image_base(self) -> str:
         """TMDB configuration cached 24 h; safe fallback if unavailable."""
         cached = self._image_base
@@ -310,6 +403,13 @@ def _rate_limited(retry_after: str | None) -> AppError:
         details={"retry_after_seconds": seconds},
         retryable=True,
     )
+
+
+def logo_url(image_base: str, logo_path: str | None) -> str | None:
+    """Provider logos use the same vetted paths, at a small size."""
+    if not logo_path or not _POSTER_PATH.fullmatch(logo_path):
+        return None
+    return f"{image_base.rstrip('/')}/w92{logo_path}"
 
 
 def poster_url(image_base: str, poster_path: str | None) -> str | None:

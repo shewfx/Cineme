@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/primary_action.dart';
+import '../../../core/widgets/selector_field.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../application/today_controller.dart';
@@ -148,57 +149,109 @@ class _ContextViewState extends ConsumerState<ContextView> {
         style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
       ),
       const SizedBox(height: 24),
-      choices([
-        for (final intent in DesiredExperience.values)
-          ChoicePill(
-            label: intent.label,
-            selected: state.desiredExperience == intent,
-            onTap: () => controller.selectDesiredExperience(intent),
-          ),
-      ]),
-      const SizedBox(height: 32),
-      const SectionLabel(
-        'How are you feeling?',
-        note: 'Optional · never decides the pick',
-      ),
-      const SizedBox(height: 12),
-      choices([
-        for (final mood in CurrentMood.values)
-          ChoicePill(
-            label: mood.label,
-            selected: state.currentMood == mood,
-            onTap: () => controller.toggleMood(mood),
-          ),
-      ]),
-      // Feeling down offers the documented follow-ups; none is preselected.
-      if (state.currentMood == CurrentMood.down &&
-          state.desiredExperience == null) ...[
-        const SizedBox(height: 20),
-        Text(
-          'What would help tonight?',
-          style: text.bodyMedium?.copyWith(color: AppColors.textSoft),
+      if (edit) ...[
+        // Edit tonight: three compact fields instead of every option at once.
+        SelectorField(
+          label: 'What do you want?',
+          value: state.desiredExperience?.label ?? 'Choose',
+          onTap: () async {
+            final picked = await showOptionSheet<DesiredExperience>(
+              context,
+              title: 'What do you want?',
+              options: [for (final i in DesiredExperience.values) (i, i.label)],
+              selected: state.desiredExperience,
+            );
+            final intent = picked?.$1;
+            if (intent != null) controller.selectDesiredExperience(intent);
+          },
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 24),
+        SelectorField(
+          label: 'How are you feeling?',
+          note: 'Optional · never decides the pick',
+          value: state.currentMood?.label ?? 'Not set',
+          onTap: () async {
+            final picked = await showOptionSheet<CurrentMood>(
+              context,
+              title: 'How are you feeling?',
+              options: [
+                (null, 'Not set'),
+                for (final m in CurrentMood.values) (m, m.label),
+              ],
+              selected: state.currentMood,
+            );
+            if (picked != null) controller.setMood(picked.$1);
+          },
+        ),
+        const SizedBox(height: 24),
+        SelectorField(
+          label: 'How much time?',
+          note: 'Optional',
+          value: runtimeCapLabel(state.maxRuntimeMinutes),
+          onTap: () async {
+            final picked = await showOptionSheet<int>(
+              context,
+              title: 'How much time?',
+              options: runtimeOptions,
+              selected: state.maxRuntimeMinutes,
+            );
+            if (picked != null) controller.selectMaxRuntime(picked.$1);
+          },
+        ),
+        const SizedBox(height: 20),
+      ] else ...[
         choices([
-          for (final (label, intent) in downFollowUps)
+          for (final intent in DesiredExperience.values)
             ChoicePill(
-              label: label,
-              selected: false,
+              label: intent.label,
+              selected: state.desiredExperience == intent,
               onTap: () => controller.selectDesiredExperience(intent),
             ),
         ]),
-      ],
-      const SizedBox(height: 28),
-      const SectionLabel('How much time?', note: 'Optional'),
-      const SizedBox(height: 12),
-      choices([
-        for (final (minutes, label) in runtimeOptions)
-          ChoicePill(
-            label: label,
-            selected: state.maxRuntimeMinutes == minutes,
-            onTap: () => controller.selectMaxRuntime(minutes),
+        const SizedBox(height: 32),
+        const SectionLabel(
+          'How are you feeling?',
+          note: 'Optional · never decides the pick',
+        ),
+        const SizedBox(height: 12),
+        choices([
+          for (final mood in CurrentMood.values)
+            ChoicePill(
+              label: mood.label,
+              selected: state.currentMood == mood,
+              onTap: () => controller.toggleMood(mood),
+            ),
+        ]),
+        // Feeling down offers the documented follow-ups; none is preselected.
+        if (state.currentMood == CurrentMood.down &&
+            state.desiredExperience == null) ...[
+          const SizedBox(height: 20),
+          Text(
+            'What would help tonight?',
+            style: text.bodyMedium?.copyWith(color: AppColors.textSoft),
           ),
-      ]),
+          const SizedBox(height: 10),
+          choices([
+            for (final (label, intent) in downFollowUps)
+              ChoicePill(
+                label: label,
+                selected: false,
+                onTap: () => controller.selectDesiredExperience(intent),
+              ),
+          ]),
+        ],
+        const SizedBox(height: 28),
+        const SectionLabel('How much time?', note: 'Optional'),
+        const SizedBox(height: 12),
+        choices([
+          for (final (minutes, label) in runtimeOptions)
+            ChoicePill(
+              label: label,
+              selected: state.maxRuntimeMinutes == minutes,
+              onTap: () => controller.selectMaxRuntime(minutes),
+            ),
+        ]),
+      ],
       if (avoided.isNotEmpty) ...[
         const SizedBox(height: 20),
         Text(
@@ -216,7 +269,9 @@ class _ContextViewState extends ConsumerState<ContextView> {
           if (_notice != null || pick is AsyncError) ...[
             Text(
               _notice ??
-                  "Couldn't reach Cinemé. Your choices are kept; try again.",
+                  (pick?.error is TodayConflict
+                      ? todayFailureMessage(pick!.error!)
+                      : "Couldn't reach Cinemé. Your choices are kept; try again."),
               textAlign: TextAlign.center,
               style: text.bodyMedium?.copyWith(color: AppColors.accent),
             ),

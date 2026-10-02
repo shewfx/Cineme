@@ -140,7 +140,7 @@ Other scalars nullable; runtime integer1..600, pace low/medium/high, soft trait 
 }
 ```
 
-Examples abbreviate nonessential nested values; real genres must match genre IDs. No-match has movie/total_score null, status no_match, explanation of exclusions and `no_match_summary:{candidate_count:3,primary_exclusion_counts:{runtime_exceeded:2,offered_this_session:1},suggested_actions:["edit_runtime","add_movies"]}`. Suggested actions are labels, never implicit mutations or guessed new numeric limits.
+Each reason/uncertainty object also carries `text`, the deterministic template sentence stored with the run (ADR 006). Examples abbreviate nonessential nested values; real genres must match genre IDs. No-match has movie/total_score null, status no_match, explanation of exclusions and `no_match_summary:{candidate_count:3,primary_exclusion_counts:{runtime_exceeded:2,offered_this_session:1},suggested_actions:["edit_runtime","add_movies"]}`. Suggested actions are labels, never implicit mutations or guessed new numeric limits.
 
 ### TodayEnvelope
 
@@ -265,6 +265,10 @@ Read-only profile/default preferences. Response200:
 
 Request `{display_name:"Shew",timezone:"Asia/Kolkata"}`; either/both, unknown fields rejected. Requires idempotency key. Response200 updated profile. Timezone IANA validation; explain possible daily-date change. Editing display name/timezone does not rewrite old session snapshots. No version parameter because fields are simple explicit last-write values, not read-modify-write state.422 invalid zone/name.
 
+### GET `/movies/{tmdb_id}/availability` and GET `/watch/regions`
+
+Display-only availability (ADR 007). 200 `{tmdb_id, region:null|"IN", link:null|"https://www.themoviedb.org/...", streaming:[{id,name,logo_url}], free:[...], rent:[...], buy:[...], fetched_at, stale}` for the caller's effective region (PATCH /me `country_code`, else the timezone's country, else null with empty lists). JustWatch data via TMDB, cached per film 24 h; stale data with `stale:true` during upstream failure; 503 when nothing is cached; 404 unknown film. Never used by ranking. `GET /watch/regions` → `{items:[{code,name}]}`. `PATCH /me` also accepts `country_code` (ISO 3166-1 alpha-2 or null); GET/PATCH /me return `country_code` and effective `region`.
+
 ### GET `/me/preferences`
 
 Response200 preferences shape above.
@@ -324,11 +328,11 @@ Active entries sorted added_at DESC,id DESC.200 `{items:[{id:"uuid",movie:MovieS
 
 ### POST `/watchlist`
 
-Request `{tmdb_id:104}`; metadata fetch outside private transaction.201 `{entry:{...},already_present:false,today:TodayEnvelope}` (until P4 the `today` field is omitted; ADR 004); duplicate active returns200 same entry/already_present=true. Removed eligible entry restores and resets age. Validates adult flag and runtime normalization; upcoming/unknown-date films are saved with `released=false` (ADR 005).409 `MOVIE_ALREADY_WATCHED`, `MOVIE_BLOCKED`, `WATCHLIST_LIMIT`;422 `MOVIE_INELIGIBLE`;404 missing movie;503 upstream. Adding never replaces existing offered/accepted pick. If current pointer is no_match, clear it and increment session version to expose expanded eligibility.
+Request `{tmdb_id:104}`; metadata fetch outside private transaction.201 `{entry:{...},already_present:false,today:TodayEnvelope}` (`today` present from P4; ADR 004); duplicate active returns200 same entry/already_present=true. Removed eligible entry restores and resets age. Validates adult flag and runtime normalization; upcoming/unknown-date films are saved with `released=false` (ADR 005).409 `MOVIE_ALREADY_WATCHED`, `MOVIE_BLOCKED`, `WATCHLIST_LIMIT`;422 `MOVIE_INELIGIBLE`;404 missing movie;503 upstream. Adding never replaces existing offered/accepted pick. If current pointer is no_match, clear it and increment session version to expose expanded eligibility.
 
 ### DELETE `/watchlist/{entry_id}`
 
-Archive owned entry,200 `{removed:true,today:TodayEnvelope}` (`today` omitted until P4; ADR 004). Already removed succeeds.404 wrong owner/nonexistent. Supersede and clear current choice when it matches; do not generate replacement. Cached no-match also clears when candidate inventory changes.
+Archive owned entry,200 `{removed:true,today:TodayEnvelope}` (`today` present from P4; ADR 004). Already removed succeeds.404 wrong owner/nonexistent. Supersede and clear current choice when it matches; do not generate replacement. Cached no-match also clears when candidate inventory changes.
 
 ## Today and context
 
@@ -454,7 +458,7 @@ Request examples:
 }
 ```
 
-Request also accepts choose_another boolean, defaultfalse, alongside expected_session_version/reason/details/note. UI Pick another and direct Already seen send true; Stop sends false. Just give me another and Not feeling this one both map to not_tonight, never implicit dislike. Reason code enum in PROJECT_SPEC. Details defaults `{}`. For wrong_genre require nonempty chosen subset of selected film genres. For too_long optional cap must be shorter than effective existing cap if present; if absent any valid user-entered cap is accepted. All other reason-specific extra detail keys rejected. Already_watched may include `watched_at:null|past timestamp`; never_recommend has no detail. Other may have optional note. Only current offered/accepted resource in today's session.
+P4 accepts not_tonight/too_long/wrong_genre/too_serious/want_lighter/other and already_watched (records a viewing with unknown or past date, no rating, never tonight's completion; ADR 006 amendment); never_recommend returns 422 until P5 adds blocks. Request also accepts choose_another boolean, defaultfalse, alongside expected_session_version/reason/details/note. UI Pick another and direct Already seen send true; Stop sends false. Just give me another and Not feeling this one both map to not_tonight, never implicit dislike. Reason code enum in PROJECT_SPEC. Details defaults `{}`. For wrong_genre require nonempty chosen subset of selected film genres. For too_long optional cap must be shorter than effective existing cap if present; if absent any valid user-entered cap is accepted. All other reason-specific extra detail keys rejected. Already_watched may include `watched_at:null|past timestamp`; never_recommend has no detail. Other may have optional note. Only current offered/accepted resource in today's session.
 
 200 `{feedback:{id:"uuid",reason:"too_long",created_at:"..."},viewing:null|ViewingSummary,today:TodayEnvelope}`. Atomic rejection/context/watch/block changes. Old pointer cleared, session version incremented ONCE for the whole atomic command. With choose_another=true, select exactly ONE replacement atomically under updated context (no_match allowed), and return that as today.recommendation. On third/later rejection or exhausted durable attempt quota, feedback still commits but no auto-replacement; return paused or ready with replacement_outcome=paused|daily_limit and no film. Defaultfalse selects none. Add replacement_outcome=selected|no_match|paused|daily_limit|not_requested to the response. No partial feedback failure is hidden: invalid requests roll back; no-match/pause/quota outcomes are valid committed feedback results. Wrong-genre effects remove avoided IDs from tonight's preferred list. Want-lighter sets desired_experience=relax and optional heaviness target; too-serious sets only heaviness target, as specified, preserving all unrelated context fields.409 invalid transition/version;422 unsupported detail.
 

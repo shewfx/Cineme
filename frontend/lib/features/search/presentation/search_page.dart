@@ -184,48 +184,54 @@ class _ResultRow extends ConsumerWidget {
       }
     }
 
-    final Widget footer;
+    final Widget action;
     if (busy) {
-      footer = const SizedBox.square(
+      action = const SizedBox.square(
         dimension: 20,
         child: CircularProgressIndicator(strokeWidth: 2.5),
       );
     } else if (!result.canAdd || mark == ResultMark.ineligible) {
-      footer = const _Status(Icons.block, "Can't be added");
+      action = const _Status(Icons.block, "Can't add");
     } else if (mark == ResultMark.watched) {
-      footer = const _Status(Icons.check, 'Watched');
+      action = const _Status(Icons.check, 'Watched');
+    } else if (mark == ResultMark.saved) {
+      action = const _Status(Icons.bookmark, 'In watchlist');
     } else {
-      footer = Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: [
-          // Saveable, but never picked for Tonight until it's out.
-          if (!result.movie.released)
-            const _Status(Icons.schedule, 'Not released yet'),
-          if (mark == ResultMark.saved)
-            const _Status(Icons.bookmark, 'In watchlist')
-          else
-            _SmallAction(
-              label: 'Add to watchlist',
-              primary: true,
-              onPressed: () => run(
-                () => ref.read(searchControllerProvider.notifier).add(result),
-              ),
-            ),
-          // Logging a past viewing needs viewing history (P5).
-          if (ref.watch(historyRepositoryProvider) != null)
-            _SmallAction(label: 'Already watched', onPressed: confirmWatched),
-        ],
+      // The screen is already "add to watchlist", so the row says Add;
+      // screen readers still hear the full action.
+      action = _SmallAction(
+        label: 'Add',
+        semanticsLabel: 'Add ${movie.title} to watchlist',
+        primary: true,
+        onPressed: () =>
+            run(() => ref.read(searchControllerProvider.notifier).add(result)),
       );
     }
+
+    // Large text: stack the action under the details instead of squeezing
+    // the title into a sliver beside it.
+    final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
+    // Logging a past viewing needs viewing history (P5).
+    final alreadyWatched =
+        ref.watch(historyRepositoryProvider) != null &&
+            mark != ResultMark.watched &&
+            result.canAdd
+        ? _SmallAction(label: 'Already watched', onPressed: confirmWatched)
+        : null;
+    final footer = [if (stacked) action, ?alreadyWatched];
 
     return MovieListTile(
       movie: movie,
       lines: [
         yearAndRuntime(movie, unknownRuntime: 'Runtime unknown until added'),
         if (movie.genres.isNotEmpty) movie.genres.map((g) => g.name).join(', '),
+        // Saveable, but never picked for Tonight until it's out.
+        if (!movie.released) 'Not released yet',
       ],
-      footer: footer,
+      trailing: stacked ? null : action,
+      footer: footer.isEmpty
+          ? null
+          : Wrap(spacing: 8, runSpacing: 4, children: footer),
     );
   }
 }
@@ -235,11 +241,13 @@ class _SmallAction extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.primary = false,
+    this.semanticsLabel,
   });
 
   final String label;
   final VoidCallback onPressed;
   final bool primary;
+  final String? semanticsLabel;
 
   @override
   Widget build(BuildContext context) => OutlinedButton(
@@ -255,7 +263,7 @@ class _SmallAction extends StatelessWidget {
         fontWeight: FontWeight.w500,
       ),
     ),
-    child: Text(label),
+    child: Text(label, semanticsLabel: semanticsLabel),
   );
 }
 

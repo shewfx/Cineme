@@ -14,7 +14,7 @@ It chooses **one** film from your own list — not a feed, not a carousel, not t
 
 ---
 
-> **Status:** in active development. Search and a persistent per-user watchlist work end to end against real services. **The Tonight pick is not implemented yet** — that is the next phase (P4). See [Roadmap](#roadmap).
+> **Status:** in active development. Search, a persistent per-user watchlist and the deterministic Tonight pick work end to end against real services. History, ratings and blocks come next (P5). See [Roadmap](#roadmap).
 
 ## The problem
 
@@ -27,12 +27,12 @@ Cinemé is built to help you **decide**. The watchlist is the inventory you alre
 ```
  Your watchlist  ──►  Tonight's context  ──►  Deterministic ranking  ──►  One movie
  (films you chose)    (mood, time, genres)    (explainable scoring)       (with reasons)
-     available            designed (P1 UI)        planned (P4)              planned (P4)
+     available              available               available (P4)           available (P4)
 ```
 
 - **Watchlist** — search TMDB and save films you might watch. Implemented.
-- **Tonight's context** — what you want from the evening (e.g. *exciting*, *comforting*), an optional time limit and genres to avoid. The flow exists in the preview build; the real backend arrives with P4.
-- **Ranking** — a pure, deterministic scoring engine specified in [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md). Planned for P4.
+- **Tonight's context** — what you want from the evening (e.g. *exciting*, *comforting*), an optional mood that never decides the pick, and an optional time limit.
+- **Ranking** — a pure, deterministic scoring engine specified in [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md): hard filters first (released, within your time limit, not already offered tonight), then six weighted components and a fixed tie-break.
 - **One movie** — Tonight always exposes exactly one actionable film, even when it ranked hundreds internally.
 
 ## What works today
@@ -47,9 +47,11 @@ Cinemé is built to help you **decide**. The watchlist is the inventory you alre
 | Upcoming films | Upcoming or undated films can be saved and are labelled "Not released yet"; they will not be eligible for Tonight until released |
 | Resilience | The saved watchlist keeps working while TMDB is down; failures are shown, never replaced with fake data |
 | Isolation | Users can never see or change each other's watchlists (covered by PostgreSQL integration tests) |
+| Tonight | One pick from your watchlist with factual reasons and a “Why this film?” breakdown; reloading never picks again; “Not feeling it” gives one replacement (or records “Already watched”), and after three passes it pauses instead of re-rolling; an honest “nothing fits” with counts instead of relaxing your limits |
+| Where to watch | “Available on” for tonight's film in your streaming region (JustWatch data via TMDB), display-only |
 | Preview mode | An opt-in build with scripted, in-memory data that shows the full designed flow — including Tonight, feedback and history — without contacting any service |
 
-Not there yet: the real Tonight pick, viewing history and ratings, feedback and learning, natural-language context. Those screens exist only in the preview build.
+Not there yet: “Mark watched”, ratings, never-recommend blocks, the History tab and natural-language context. Those exist only in the preview build for now.
 
 ## Product principles
 
@@ -135,9 +137,9 @@ Phases and their gates are defined in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 | P0 | Bootable repository, toolchain, CI | Complete |
 | P1 | Full UX prototype on fake data (Tonight, feedback, inventory, history) | Complete |
 | P2 | Supabase auth, profile bootstrap, PostgreSQL foundation | Complete |
-| P3 | TMDB search and persistent per-user watchlist | **Current** — implemented, in final review |
-| P4 | Deterministic daily selection: the real Tonight pick, with evidence | Planned (next) |
-| P5 | Feedback, watched/ratings and conservative learning | Planned |
+| P3 | TMDB search and persistent per-user watchlist | Complete |
+| P4 | Deterministic daily selection: the real Tonight pick, with evidence, passes/pause, Already watched and where-to-watch (ADR 006, 007) | Complete |
+| P5 | Mark watched, ratings, blocks, History and conservative learning | Planned (next) |
 | P6 | Structured tonight context and time interpretation | Planned |
 | P7 | Optional local LLM context adapter | Planned |
 | P8 | Release hardening, deployment and portfolio evidence | Planned |
@@ -254,6 +256,8 @@ If two documents disagree, the conflict is reported and resolved explicitly befo
 ## TMDB attribution
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+Where-to-watch information is provided by [JustWatch](https://www.justwatch.com/) through TMDB and is shown with that attribution.
 
 Movie metadata and images are provided by [The Movie Database (TMDB)](https://www.themoviedb.org/) and used under its developer terms for this noncommercial project.
 
