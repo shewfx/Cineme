@@ -29,6 +29,37 @@ class BootstrapResponse(BaseModel):
     created: bool
 
 
+class PreferencesPatch(BaseModel):
+    """PATCH /me/preferences: supplied fields replace whole values; omitted
+    fields stay; null clears only the runtime cap."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    genre_preferences: dict[str, float] | None = Field(default=None, max_length=50)
+    blocked_genre_ids: list[int] | None = Field(default=None, max_length=20)
+    default_max_runtime_minutes: int | None = Field(default=None, ge=1, le=600)
+    ai_context_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _valid(self) -> Self:
+        for field in ("genre_preferences", "blocked_genre_ids", "ai_context_enabled"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        for key, value in (self.genre_preferences or {}).items():
+            if not key.isdigit() or int(key) <= 0 or not -1 <= value <= 1:
+                raise ValueError("genre_preferences maps genre ids to values in [-1, 1]")
+        ids = self.blocked_genre_ids or []
+        if len(set(ids)) != len(ids) or any(i <= 0 for i in ids):
+            raise ValueError("blocked_genre_ids must be distinct positive ids")
+        return self
+
+
+class PreferencesUpdate(BaseModel):
+    preferences: PreferencesResponse
+    today: dict[str, Any]
+
+
 class MePatch(BaseModel):
     """PATCH /me: either or both fields; unknown fields are rejected."""
 

@@ -216,7 +216,9 @@ class _ContextViewState extends ConsumerState<ContextView> {
           if (_notice != null || pick is AsyncError) ...[
             Text(
               _notice ??
-                  "Couldn't reach Cinemé. Your choices are kept; try again.",
+                  (pick?.error is TodayConflict
+                      ? todayFailureMessage(pick!.error!)
+                      : "Couldn't reach Cinemé. Your choices are kept; try again."),
               textAlign: TextAlign.center,
               style: text.bodyMedium?.copyWith(color: AppColors.accent),
             ),

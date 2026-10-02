@@ -430,7 +430,7 @@ void main() {
       await pickHooked(tester);
       final first = shownTitle(tester);
 
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
@@ -446,7 +446,7 @@ void main() {
       await tester.pumpAndSettle();
       await pickHooked(tester);
       for (var i = 0; i < 3; i++) {
-        await tapText(tester, 'Pick another');
+        await tapText(tester, 'Not feeling it');
         await tapText(tester, 'Not feeling this one');
         if (i == 2) expect(find.textContaining('third pass'), findsOneWidget);
         await tapText(tester, 'Show another');
@@ -479,7 +479,7 @@ void main() {
         find.widgetWithText(ChoicePill, 'Loved'),
       );
       expect(loved.selected, isTrue);
-      expect(find.text('Pick another'), findsNothing);
+      expect(find.text('Not feeling it'), findsNothing);
 
       await tapText(tester, 'See history');
       expect(find.text(title), findsOneWidget);
@@ -493,7 +493,7 @@ void main() {
       await tester.pumpWidget(app(store(watchlist: one)));
       await tester.pumpAndSettle();
       await pickHooked(tester);
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
@@ -608,7 +608,7 @@ void main() {
       await tester.pumpAndSettle();
       await pickHooked(tester);
       expect(tester.takeException(), isNull, reason: 'offered');
-      await tapText(tester, 'Pick another');
+      await tapText(tester, 'Not feeling it');
       await tapText(tester, 'Different genre');
       expect(tester.takeException(), isNull, reason: 'reject sheet');
       await tapText(tester, 'Comedy');

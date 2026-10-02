@@ -9,9 +9,11 @@ import '../../../core/widgets/movie_poster.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
+import '../../history/data/history_repository.dart';
 import '../application/today_controller.dart';
 import 'feedback_sheets.dart';
 import 'today_widgets.dart';
+import 'why_sheet.dart';
 
 /// Exactly ONE film, offered, accepted (Watch Tonight) or completed (Mark
 /// watched): artwork fading into charcoal, then a compact text block. No
@@ -33,22 +35,19 @@ class RecommendationView extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final width = MediaQuery.sizeOf(context).width;
     final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+    // Already seen, Never recommend and Mark watched record viewing history
+    // or blocks, which arrive in P5; the normal build hides them until then.
+    final historyAvailable = ref.watch(historyRepositoryProvider) != null;
 
     /// Failures keep the current card and say so; nothing is optimistic.
     Future<void> guard(Future<void> Function() action) async {
       try {
         await action();
-      } catch (_) {
+      } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
-            ..showSnackBar(
-              const SnackBar(
-                content: Text(
-                  "Couldn't reach Cinemé. Tonight's film is unchanged; try again.",
-                ),
-              ),
-            );
+            ..showSnackBar(SnackBar(content: Text(todayFailureMessage(e))));
         }
       }
     }
@@ -59,6 +58,7 @@ class RecommendationView extends ConsumerWidget {
         movie: movie,
         tonight: tonight,
         rejectionCount: envelope.rejectionCount,
+        includeAlreadySeen: historyAvailable,
       );
       if (request == null) return;
       await guard(
@@ -154,12 +154,22 @@ class RecommendationView extends ConsumerWidget {
       TodayStatus.offered => <Widget>[
         Row(
           children: [
+            if (historyAvailable) ...[
+              Expanded(
+                child: secondary(
+                  'Already seen',
+                  alreadySeen,
+                  TodayAction.reject,
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
             Expanded(
-              child: secondary('Already seen', alreadySeen, TodayAction.reject),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: secondary('Pick another', pickAnother, TodayAction.reject),
+              child: secondary(
+                'Not feeling it',
+                pickAnother,
+                TodayAction.reject,
+              ),
             ),
           ],
         ),
@@ -177,12 +187,14 @@ class RecommendationView extends ConsumerWidget {
           width: double.infinity,
           child: secondary('Change my mind', pickAnother, TodayAction.reject),
         ),
-        const SizedBox(height: 10),
-        PrimaryAction(
-          label: 'Mark watched',
-          loading: busy == TodayAction.watched,
-          onPressed: busy == null ? markWatched : null,
-        ),
+        if (historyAvailable) ...[
+          const SizedBox(height: 10),
+          PrimaryAction(
+            label: 'Mark watched',
+            loading: busy == TodayAction.watched,
+            onPressed: busy == null ? markWatched : null,
+          ),
+        ],
       ],
       _ => <Widget>[
         SizedBox(
@@ -243,7 +255,8 @@ class RecommendationView extends ConsumerWidget {
                                     ),
                                   ),
                                 ),
-                                if (state == TodayStatus.offered)
+                                if (state == TodayStatus.offered &&
+                                    historyAvailable)
                                   SafeArea(
                                     child: Align(
                                       alignment: Alignment.topRight,
@@ -286,6 +299,15 @@ class RecommendationView extends ConsumerWidget {
                                                   context.push('/today/context')
                                             : null,
                                         child: const Text('Edit tonight'),
+                                      ),
+                                    // Winner-only explanation; no other films.
+                                    if (state != TodayStatus.completed)
+                                      TextButton(
+                                        onPressed: () => showWhySheet(
+                                          context,
+                                          recommendation,
+                                        ),
+                                        child: const Text('Why this film?'),
                                       ),
                                   ],
                                 ),
@@ -344,18 +366,29 @@ class RecommendationView extends ConsumerWidget {
                                       color: AppColors.textMuted,
                                     ),
                                   ),
-                                ] else
-                                  for (final reason
-                                      in recommendation.reasons.take(2))
+                                ] else ...[
+                                  // Up to two reasons plus one uncertainty;
+                                  // the rest lives behind "Why this film?".
+                                  for (final reason in [
+                                    ...recommendation.reasons
+                                        .where((r) => !isUncertain(r))
+                                        .take(2),
+                                    ...recommendation.reasons
+                                        .where(isUncertain)
+                                        .take(1),
+                                  ])
                                     Padding(
                                       padding: const EdgeInsets.only(bottom: 6),
                                       child: Text(
                                         reasonText(reason),
                                         style: text.bodyLarge?.copyWith(
-                                          color: AppColors.textSoft,
+                                          color: isUncertain(reason)
+                                              ? AppColors.textMuted
+                                              : AppColors.textSoft,
                                         ),
                                       ),
                                     ),
+                                ],
                               ],
                             ),
                           ),
@@ -442,7 +475,10 @@ String contextLine(SessionContext ctx) => [
 ].join('  ·  ');
 
 /// Deterministic explanation templates. Facts only: genre and runtime.
+bool isUncertain(Reason r) => r is ServerReason && r.uncertain;
+
 String reasonText(Reason reason) => switch (reason) {
+  ServerReason(:final text) => text,
   FitsRuntime(:final runtimeMinutes, :final capMinutes) =>
     'At $runtimeMinutes minutes, it fits your $capMinutes-minute limit.',
   GenreMatchesIntent(:final genre, :final intent) =>

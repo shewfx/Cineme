@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,12 +28,13 @@ class AddRequest(BaseModel):
 
 
 class AddResponse(BaseModel):
-    """API_CONTRACT shape minus `today`, which arrives with Today in P4
-    (ADR 004)."""
+    """`today` arrived with Today in P4 (ADR 004)."""
 
     entry: WatchlistItem
     already_present: bool
+    today: dict[str, Any]
 
 
 class RemoveResponse(BaseModel):
     removed: bool
+    today: dict[str, Any]

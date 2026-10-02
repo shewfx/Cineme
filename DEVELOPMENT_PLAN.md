@@ -94,11 +94,13 @@ Each phase delivers: small runnable behavior, meaningful tests, manual verificat
 
 **Deferred:** Full rejection/watched/rating flows, applying context and LLM. Do not deploy as finished product yet.
 
+**Scope change (ADR 006):** P4 also implements temporary rejection (not_tonight, too_long, wrong_genre, too_serious, want_lighter, other) with one atomic replacement, the third-rejection pause, Continue once and the 20-attempt cap, plus PATCH /today/context, PATCH /me/preferences and `today` in watchlist responses. Already seen, Never recommend, Mark watched, ratings and blocks remain P5.
+
 ## P5 — Feedback, completion and conservative learning
 
 **Objective:** A genuinely usable selection/rejection/completion loop, with correct long-term evidence.
 
-**Work:** Reject all reason codes with structured effects; movie blocks/unblock; recommendation watched/manual viewings/rating edits; history endpoints/UI; Atomic reject+one replacement/Stop/third-rejection-pause behavior; direct Already seen uses known-history rejection, never tonight completion. Invalidation on relevant preference/watchlist edits. Update Today counts and states. Complete owned duplicate-safe transition services and all-action idempotency. Rating helper recomputes affinity from unique viewing evidence.
+**Work:** (Temporary reasons, replacement, Stop and the pause shipped in P4 per ADR 006.) Remaining reason codes already_watched/never_recommend with structured effects; movie blocks/unblock; recommendation watched/manual viewings/rating edits; history endpoints/UI; Atomic reject+one replacement/Stop/third-rejection-pause behavior; direct Already seen uses known-history rejection, never tonight completion. Invalidation on relevant preference/watchlist edits. Update Today counts and states. Complete owned duplicate-safe transition services and all-action idempotency. Rating helper recomputes affinity from unique viewing evidence.
 
 **Likely files:** backend/recommendations/feedback/transitions, viewing, users/blocks; frontend/rejection/rating/history controllers/repos; schema refinements only if baseline correction is explicitly documented.
 

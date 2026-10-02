@@ -454,6 +454,10 @@ class FakeTodayRepository implements TodayRepository {
     return RejectResult(outcome: outcome, today: _s._envelope());
   }
 
+  /// Scripted picks have no scores, so Why shows only their reasons.
+  @override
+  Future<WhyBreakdown?> why(String recommendationId) async => null;
+
   @override
   Future<TodayEnvelope> markWatched(
     String recommendationId, {

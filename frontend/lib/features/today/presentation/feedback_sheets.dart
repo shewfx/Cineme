@@ -38,6 +38,7 @@ Future<RejectRequest?> showRejectSheet(
   required Movie movie,
   required SessionContext tonight,
   required int rejectionCount,
+  bool includeAlreadySeen = true,
 }) => showModalBottomSheet<RejectRequest>(
   context: context,
   isScrollControlled: true,
@@ -47,6 +48,11 @@ Future<RejectRequest?> showRejectSheet(
     movie: movie,
     tonight: tonight,
     rejectionCount: rejectionCount,
+    // Already seen records viewing history, which arrives in P5.
+    reasons: [
+      for (final r in sheetReasons)
+        if (includeAlreadySeen || r.$2 != RejectReason.alreadyWatched) r,
+    ],
   ),
 );
 
@@ -55,11 +61,13 @@ class _RejectSheet extends StatefulWidget {
     required this.movie,
     required this.tonight,
     required this.rejectionCount,
+    required this.reasons,
   });
 
   final Movie movie;
   final SessionContext tonight;
   final int rejectionCount;
+  final List<(String, RejectReason)> reasons;
 
   @override
   State<_RejectSheet> createState() => _RejectSheetState();
@@ -71,7 +79,7 @@ class _RejectSheetState extends State<_RejectSheet> {
   final _avoid = <int>{};
 
   RejectReason? get _reason =>
-      _choice == null ? null : sheetReasons[_choice!].$2;
+      _choice == null ? null : widget.reasons[_choice!].$2;
 
   bool get _valid =>
       _reason != null &&
@@ -128,9 +136,9 @@ class _RejectSheetState extends State<_RejectSheet> {
             ),
             const SizedBox(height: 16),
             pills([
-              for (var i = 0; i < sheetReasons.length; i++)
+              for (var i = 0; i < widget.reasons.length; i++)
                 ChoicePill(
-                  label: sheetReasons[i].$1,
+                  label: widget.reasons[i].$1,
                   selected: _choice == i,
                   onTap: () => setState(() => _choice = i),
                 ),

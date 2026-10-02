@@ -23,20 +23,45 @@ def tables(engine: Engine) -> set[str]:
         )
 
 
+# Only the documented tables: P2 (+ ADR 003 ledger), P3 movies/watchlist and
+# P4 sessions/recommendations (+ ADR 006 rejection_feedback).
+APP_TABLES = {
+    "users",
+    "user_preferences",
+    "idempotency_records",
+    "movies",
+    "watchlist_entries",
+    "recommendation_sessions",
+    "recommendations",
+    "rejection_feedback",
+}
+
+
+def test_p4_downgrade_keeps_p3_data_tables(database_factory: Callable[[], str]) -> None:
+    url = database_factory()
+    config = alembic_config(url)
+    engine = create_engine(url)
+    try:
+        command.upgrade(config, "head")
+        command.downgrade(config, "0002")
+        assert tables(engine) == APP_TABLES - {
+            "recommendation_sessions",
+            "recommendations",
+            "rejection_feedback",
+        }
+        command.upgrade(config, "head")
+        assert tables(engine) == APP_TABLES
+    finally:
+        engine.dispose()
+
+
 def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str]) -> None:
     url = database_factory()
     config = alembic_config(url)
     engine = create_engine(url)
     try:
         command.upgrade(config, "head")
-        # Only the documented tables: P2 (+ ADR 003 ledger) and P3 movies/watchlist.
-        assert tables(engine) == {
-            "users",
-            "user_preferences",
-            "idempotency_records",
-            "movies",
-            "watchlist_entries",
-        }
+        assert tables(engine) == APP_TABLES
 
         command.downgrade(config, "base")
         with engine.connect() as conn:
@@ -46,13 +71,7 @@ def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str])
         assert schema is None
 
         command.upgrade(config, "head")
-        assert tables(engine) == {
-            "users",
-            "user_preferences",
-            "idempotency_records",
-            "movies",
-            "watchlist_entries",
-        }
+        assert tables(engine) == APP_TABLES
     finally:
         engine.dispose()
 

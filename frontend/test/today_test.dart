@@ -225,7 +225,7 @@ void main() {
         findsOneWidget,
       );
       // Offered: feedback actions, but no completion or feed actions.
-      expect(find.text('Pick another'), findsOneWidget);
+      expect(find.text('Not feeling it'), findsOneWidget);
       expect(find.text('Already seen'), findsOneWidget);
       for (final absent in ['Mark watched', 'More like this', 'Top picks']) {
         expect(find.text(absent), findsNothing, reason: absent);

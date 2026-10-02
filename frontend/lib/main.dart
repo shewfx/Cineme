@@ -12,6 +12,7 @@ import 'features/auth/data/account_repository.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/preferences/data/profile_repository.dart';
 import 'features/search/data/search_repository.dart';
+import 'features/today/data/today_repository.dart';
 import 'features/watchlist/data/watchlist_repository.dart';
 import 'preview/preview_store.dart';
 
@@ -51,6 +52,7 @@ Future<List<Override>> realOverrides(AppConfig config) async {
     ),
     watchlistRepositoryProvider.overrideWithValue(ApiWatchlistRepository(api)),
     searchRepositoryProvider.overrideWithValue(ApiSearchRepository(api)),
+    todayRepositoryProvider.overrideWithValue(ApiTodayRepository(api)),
     // Today (P4) and History (P5) stay unavailable: no fake fallback.
   ];
 }

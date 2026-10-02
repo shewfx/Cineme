@@ -232,8 +232,8 @@ Fixture movies and users exist only in explicit test/demo seeding, never automat
 
 - P2: users and user_preferences, plus idempotency_records for PATCH /me (ADR 003). Profile bootstrap, read, and display-name/timezone edits; preference editing arrives at P3/P4; no recommendation/history tables.
 - P3: movies and watchlist_entries; their private mutations reuse the P2 idempotency ledger.
-- P4: recommendation_sessions and recommendations with bounded JSON evidence; no candidate-score table.
-- P5: viewings, movie_blocks, rejection_feedback and rating/feedback constraints.
+- P4: recommendation_sessions and recommendations with bounded JSON evidence; no candidate-score table; rejection_feedback brought forward for temporary reasons (ADR 006).
+- P5: viewings, movie_blocks and rating constraints.
 - P6: optional movie_traits table only when deliberately enabling reviewed enrichment. Core ranking must also work without it.
 
 Future-table queries do not run in earlier phases: recommendation scorer tests use typed fixtures; P4 history inputs are empty until P5 exists. Avoid placeholder database tables just to satisfy an import. Post-P5 migrations preserve real data.

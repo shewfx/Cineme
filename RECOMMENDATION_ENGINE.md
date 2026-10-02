@@ -174,6 +174,7 @@ Emit reason codes with source and values, not generated facts. Required hard-con
 - `variety`: overlap data versus recent viewing snapshot.
 - `waiting_in_watchlist`: age days when >=30.
 - `unknown_trait`: missing requested field, not a positive reason.
+- Also emitted (ADR 006): `tonight_genre_match` (tonight's preferred genre), `not_offered_before`/`not_offered_recently` (R), `tmdb_rating` (Q, modest wording), `best_remaining_match` (fallback) and uncertainty `unknown_genres`.
 
 Template policy: first state runtime fit if there is a cap and known runtime. Then use the strongest positive contribution above its neutral baseline (`weight*(component-0.5)`), selecting a reason actually supported by known subfields. Resolve equal reason contributions in component order G,C,D,A,R,Q. Recency/quality alone get modest wording. If no positive supported reason exists: “This is the best remaining match under tonight's constraints.” Add a concise uncertainty statement if requested traits are unknown. Never invent genre/style/actor/provider facts. Do not claim optimality beyond this bounded rule set.
 

@@ -1,8 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/network/api_client.dart';
+import '../../../core/network/idempotency.dart';
+import '../../../core/network/movie_dto.dart';
+
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../../shared/models/viewing.dart';
+import 'today_dto.dart';
 
 abstract interface class TodayRepository {
   /// GET /today: reads the current state; never chooses a movie.
@@ -36,9 +41,158 @@ abstract interface class TodayRepository {
 
   /// POST /recommendations/{id}/watched: tonight's completion.
   Future<TodayEnvelope> markWatched(String recommendationId, {Rating? rating});
+
+  /// GET /recommendations/{id}: the winner's score breakdown for Why. Null
+  /// when the source has none (the preview's scripted picks).
+  Future<WhyBreakdown?> why(String recommendationId);
 }
 
-/// Null until a real backend repository exists (P4). Only the explicit UI
-/// preview build overrides this with the scripted fake; a normal build never
-/// falls back to fake data.
+/// Null in builds without a backend. The normal build uses
+/// [ApiTodayRepository]; only the preview build uses the scripted fake.
 final todayRepositoryProvider = Provider<TodayRepository?>((ref) => null);
+
+/// Real build: Today through the Cinemé API. The server owns state, versions
+/// and the one current pick; this client only reads and sends deliberate
+/// commands, each with a fresh idempotency key.
+class ApiTodayRepository implements TodayRepository {
+  ApiTodayRepository(this._api);
+
+  final ApiClient _api;
+
+  /// Version of the last envelope seen; sent as expected_session_version so
+  /// a stale screen gets VERSION_CONFLICT instead of acting on another film.
+  int _version = 0;
+
+  TodayEnvelope _envelope(Map<String, dynamic> json) {
+    final envelope = todayEnvelopeFromJson(json);
+    _version = sessionVersionOf(json);
+    return envelope;
+  }
+
+  /// Documented outcomes the UI explains (pause, stale, expired, limits).
+  static const _conflicts = {
+    'CONTEXT_REQUIRED',
+    'CONTEXT_REVIEW_REQUIRED',
+    'VERSION_CONFLICT',
+    'INVALID_TRANSITION',
+    'SESSION_EXPIRED',
+    'TODAY_COMPLETED',
+    'DAILY_ATTEMPT_LIMIT',
+  };
+
+  Future<Map<String, dynamic>> _command(
+    Future<Map<String, dynamic>> Function() send,
+  ) async {
+    try {
+      return await send();
+    } on ApiError catch (e) {
+      throw _conflicts.contains(e.code) ? TodayConflict(e.code) : e;
+    }
+  }
+
+  @override
+  Future<TodayEnvelope> today() async =>
+      _envelope(await _api.get('/api/v1/today'));
+
+  @override
+  Future<TodayEnvelope> choose(
+    SessionContext context, {
+    bool continueAfterPause = false,
+  }) async => _envelope(
+    await _command(
+      () => _api.post(
+        '/api/v1/today/choose',
+        body: {
+          'expected_session_version': _version,
+          'context': sessionContextToJson(context),
+          'continue_after_pause': continueAfterPause,
+        },
+        idempotencyKey: newIdempotencyKey(),
+      ),
+    ),
+  );
+
+  @override
+  Future<TodayEnvelope> saveContext(SessionContext context) async => _envelope(
+    await _command(
+      () => _api.patch(
+        '/api/v1/today/context',
+        body: {
+          'expected_session_version': _version,
+          'context': sessionContextToJson(context),
+        },
+        idempotencyKey: newIdempotencyKey(),
+      ),
+    ),
+  );
+
+  @override
+  Future<TodayEnvelope> accept(String recommendationId) async => _envelope(
+    await _command(
+      () => _api.post(
+        '/api/v1/recommendations/${Uri.encodeComponent(recommendationId)}/accept',
+        body: {'expected_session_version': _version},
+        idempotencyKey: newIdempotencyKey(),
+      ),
+    ),
+  );
+
+  @override
+  Future<RejectResult> reject(
+    String recommendationId,
+    RejectReason reason, {
+    int? maxRuntimeMinutes,
+    Set<int> avoidGenreIds = const {},
+    required bool chooseAnother,
+  }) async {
+    final body = await _command(
+      () => _api.post(
+        '/api/v1/recommendations/${Uri.encodeComponent(recommendationId)}/reject',
+        body: {
+          'expected_session_version': _version,
+          'reason': reason.wireName,
+          'details': {
+            if (reason == RejectReason.tooLong && maxRuntimeMinutes != null)
+              'max_runtime_minutes': maxRuntimeMinutes,
+            if (reason == RejectReason.wrongGenre)
+              'avoid_genre_ids': (avoidGenreIds.toList()..sort()),
+          },
+          'choose_another': chooseAnother,
+        },
+        idempotencyKey: newIdempotencyKey(),
+      ),
+    );
+    return RejectResult(
+      outcome: replacementOutcomeFromJson(body['replacement_outcome']),
+      today: _envelope(asMap(body['today'])),
+    );
+  }
+
+  @override
+  Future<WhyBreakdown?> why(String recommendationId) async {
+    final body = await _api.get(
+      '/api/v1/recommendations/${Uri.encodeComponent(recommendationId)}',
+    );
+    final breakdown = body['breakdown'];
+    if (breakdown == null) return null;
+    final b = asMap(breakdown);
+    Map<String, double> numbers(Object? raw) => {
+      for (final e in asMap(raw).entries) e.key: (e.value as num).toDouble(),
+    };
+    return WhyBreakdown(
+      weights: numbers(b['weights']),
+      contributions: numbers(b['contributions']),
+      engineVersion: asMap(body['recommendation'])['engine_version'] as String,
+      configVersion: body['config_version'] as String,
+    );
+  }
+
+  /// Tonight's completion needs viewing history (P5); the normal build
+  /// doesn't offer Mark watched yet.
+  @override
+  Future<TodayEnvelope> markWatched(
+    String recommendationId, {
+    Rating? rating,
+  }) =>
+      throw UnsupportedError('Mark watched arrives with viewing history (P5).');
+}

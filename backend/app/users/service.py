@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 
 from .models import User, UserPreferences
-from .schemas import MePatch, MeResponse, PreferencesResponse
+from .schemas import MePatch, MeResponse, PreferencesPatch, PreferencesResponse
 
 
 def _not_initialized() -> AppError:
@@ -97,3 +97,53 @@ def apply_patch(user: User, patch: MePatch) -> None:
         changed = True
     if changed:
         user.updated_at = datetime.now(UTC)
+
+
+def preferences_out(prefs: UserPreferences) -> PreferencesResponse:
+    return PreferencesResponse(
+        version=prefs.version,
+        genre_preferences=prefs.genre_preferences,
+        blocked_genre_ids=prefs.blocked_genre_ids,
+        default_max_runtime_minutes=prefs.default_max_runtime_minutes,
+        ai_context_enabled=prefs.ai_context_enabled,
+    )
+
+
+def apply_preferences(prefs: UserPreferences, patch: PreferencesPatch) -> tuple[bool, bool]:
+    """Returns (changed, recommendation-affecting). Version conflicts 409."""
+    if patch.expected_version != prefs.version:
+        raise AppError(
+            409,
+            "VERSION_CONFLICT",
+            "Your preferences changed elsewhere. Refresh and try again.",
+            details={"current_version": prefs.version},
+        )
+    supplied = patch.model_fields_set
+    affecting = False
+    changed = False
+    if "genre_preferences" in supplied and patch.genre_preferences != prefs.genre_preferences:
+        prefs.genre_preferences = patch.genre_preferences or {}
+        affecting = True
+    if "blocked_genre_ids" in supplied and sorted(patch.blocked_genre_ids or []) != sorted(
+        prefs.blocked_genre_ids
+    ):
+        prefs.blocked_genre_ids = sorted(patch.blocked_genre_ids or [])
+        affecting = True
+    if (
+        "default_max_runtime_minutes" in supplied
+        and patch.default_max_runtime_minutes != prefs.default_max_runtime_minutes
+    ):
+        prefs.default_max_runtime_minutes = patch.default_max_runtime_minutes
+        affecting = True
+    if (
+        "ai_context_enabled" in supplied
+        and patch.ai_context_enabled is not None
+        and patch.ai_context_enabled != prefs.ai_context_enabled
+    ):
+        prefs.ai_context_enabled = patch.ai_context_enabled
+        changed = True
+    changed = changed or affecting
+    if changed:
+        prefs.version += 1
+        prefs.updated_at = datetime.now(UTC)
+    return changed, affecting

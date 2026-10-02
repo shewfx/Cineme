@@ -4,7 +4,7 @@ nothing here touches preferences or learning."""
 import base64
 import binascii
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, tuple_
@@ -15,6 +15,7 @@ from app.core.errors import AppError
 from app.movies import service as movies
 from app.movies.models import Movie
 from app.movies.provider import MovieMetadataProvider
+from app.recommendations import service as today
 from app.users.service import lock_user
 
 from .models import WatchlistEntry
@@ -44,11 +45,11 @@ def _escape_like(text: str) -> str:
 
 
 def _item(
-    entry: WatchlistEntry, movie: Movie, names: dict[int, str], base: str, today: Any
+    entry: WatchlistEntry, movie: Movie, names: dict[int, str], base: str, local: Any
 ) -> WatchlistItem:
     return WatchlistItem(
         id=entry.id,
-        movie=movies.summary(movie, names, base, today),
+        movie=movies.summary(movie, names, base, local),
         added_at=entry.added_at,
         source_type=entry.source_type,
     )
@@ -64,7 +65,7 @@ def list_entries(
 ) -> WatchlistPage:
     """Active entries, added_at DESC then id DESC. Reads only this user's rows
     and the local cache: works while TMDB is down."""
-    today = movies.local_today(session, user_id)
+    local = movies.local_today(session, user_id)
     stmt = (
         select(WatchlistEntry, Movie)
         .join(Movie, Movie.tmdb_id == WatchlistEntry.movie_id)
@@ -88,7 +89,7 @@ def list_entries(
         _encode_cursor(page[-1][0].added_at, page[-1][0].id) if len(rows) > limit else None
     )
     return WatchlistPage(
-        items=[_item(e, m, names, base, today) for e, m in page], next_cursor=next_cursor
+        items=[_item(e, m, names, base, local) for e, m in page], next_cursor=next_cursor
     )
 
 
@@ -115,20 +116,20 @@ def add(
     base = provider.image_base()
 
     with session.begin():
-        lock_user(session, user_id)
+        user = lock_user(session, user_id)
         replay = idempotency.lookup(session, user_id, key, operation, digest)
         if replay is not None:
             return replay.status, replay.body
-        today = movies.local_today(session, user_id)
+        local = movies.local_today(session, user_id)
         movie = session.get(Movie, tmdb_id)
         if movie is None or movie.metadata_status != "ready" or not movies.can_add(movie.adult):
-            raise AppError(422, "MOVIE_INELIGIBLE", "This film can't be added to Cinemé.")
+            raise AppError(422, "MOVIE_INELIGIBLE", "This film can't be added to CinemÃ©.")
         entry = session.scalar(
             select(WatchlistEntry).where(
                 WatchlistEntry.user_id == user_id, WatchlistEntry.movie_id == tmdb_id
             )
         )
-        now = datetime.now(UTC)
+        now = today.utc_now()
         if entry is not None and entry.status == "active":
             status, already = 200, True
         else:
@@ -159,9 +160,12 @@ def add(
                 entry.added_at = now
                 entry.updated_at = now
             status, already = 201, False
+            today.on_watchlist_added(session, user, now)
         session.flush()
         body = AddResponse(
-            entry=_item(entry, movie, names, base, today), already_present=already
+            entry=_item(entry, movie, names, base, local),
+            already_present=already,
+            today=today.envelope(session, user, now),
         ).model_dump(mode="json")
         idempotency.store(session, user_id, key, operation, digest, status, body)
     return status, body
@@ -175,7 +179,7 @@ def remove(
     operation = f"DELETE /api/v1/watchlist/{entry_id}"
     digest = idempotency.request_hash({})
     with session.begin():
-        lock_user(session, user_id)
+        user = lock_user(session, user_id)
         replay = idempotency.lookup(session, user_id, key, operation, digest)
         if replay is not None:
             return replay.status, replay.body
@@ -187,10 +191,12 @@ def remove(
         if entry is None:
             raise AppError(404, "NOT_FOUND", "That watchlist entry was not found.")
         if entry.status == "active":
-            now = datetime.now(UTC)
+            now = today.utc_now()
             entry.status = "removed"
             entry.removed_at = now
             entry.updated_at = now
-        body: dict[str, Any] = {"removed": True}
+            today.on_watchlist_removed(session, user, entry.movie_id, now)
+        session.flush()
+        body: dict[str, Any] = {"removed": True, "today": today.envelope(session, user)}
         idempotency.store(session, user_id, key, operation, digest, 200, body)
     return 200, body
