@@ -639,6 +639,93 @@ void main() {
       expect(find.text('Add movies'), findsOneWidget);
     });
 
+    Future<void> openSearch(WidgetTester tester, String q) async {
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      await tester.tap(find.byTooltip('Add movies'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), q);
+      await tester.pump(searchDebounce);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('search row: poster | details | Add, centred on the poster', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await openSearch(tester, 'princess');
+      final poster = tester.getRect(find.byType(MoviePoster));
+      final title = tester.getRect(find.text('The Princess Bride'));
+      final add = tester.getRect(find.widgetWithText(OutlinedButton, 'Add'));
+      expect(add.left, greaterThan(title.left));
+      expect(add.left, greaterThan(poster.right));
+      expect(add.center.dy, closeTo(poster.center.dy, 1));
+      expect(
+        find.text('Add to watchlist'),
+        findsNothing,
+        reason: 'compact visible label',
+      );
+      expect(
+        find.bySemanticsLabel('Add The Princess Bride to watchlist'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      final saved = tester.getRect(find.text('In watchlist'));
+      expect(saved.left, greaterThan(poster.right));
+      expect(saved.center.dy, closeTo(poster.center.dy, 1));
+      expect(
+        find.widgetWithText(OutlinedButton, 'Add'),
+        findsNothing,
+        reason: 'not primary',
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('search row: Not released yet stays with the details', (
+      tester,
+    ) async {
+      await openSearch(tester, 'untitled');
+      final title = tester.getRect(find.textContaining('Untitled Future'));
+      final note = tester.getRect(find.text('Not released yet'));
+      final add = tester.getRect(find.text('Add'));
+      expect(note.left, title.left);
+      expect(note.top, greaterThan(title.top));
+      expect(add.left, greaterThan(note.right));
+    });
+
+    testWidgets('search row: 360x640 at 200% text stacks the action', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(720, 1280);
+      tester.view.devicePixelRatio = 2;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await openSearch(tester, 'princess');
+      expect(tester.takeException(), isNull);
+      final title = tester.getRect(find.text('The Princess Bride'));
+      final add = tester.getRect(find.widgetWithText(OutlinedButton, 'Add'));
+      expect(add.top, greaterThan(title.bottom), reason: 'below the details');
+      expect(add.left, closeTo(title.left, 1));
+    });
+
+    testWidgets('search row: 360 wide at normal text keeps one row', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(720, 1280);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await openSearch(tester, 'princess');
+      expect(tester.takeException(), isNull);
+      final poster = tester.getRect(find.byType(MoviePoster));
+      final add = tester.getRect(find.widgetWithText(OutlinedButton, 'Add'));
+      expect(add.center.dy, closeTo(poster.center.dy, 1));
+      expect(add.right, lessThanOrEqualTo(360));
+    });
+
     testWidgets('search adds, records watched and explains each state', (
       tester,
     ) async {
@@ -658,7 +745,7 @@ void main() {
       expect(find.text('No films match “zzz”'), findsOneWidget);
 
       await search('princess');
-      await tester.tap(find.text('Add to watchlist'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
       expect(
         find.text('Added “The Princess Bride” to your watchlist.'),
@@ -667,7 +754,7 @@ void main() {
       expect(find.text('In watchlist'), findsOneWidget);
 
       await search('amélie');
-      await tester.tap(find.text('Add to watchlist'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
       expect(
         find.textContaining("You've already watched “Amélie”"),
@@ -677,7 +764,7 @@ void main() {
       // Unknown release date: saveable, labelled, never Tonight-eligible.
       await search('untitled');
       expect(find.text('Not released yet'), findsOneWidget);
-      await tester.tap(find.text('Add to watchlist'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
       expect(find.text('In watchlist'), findsOneWidget);
 
