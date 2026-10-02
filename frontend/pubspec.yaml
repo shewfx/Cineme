@@ -59,6 +59,23 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Preview-only local posters (ADR 002); image files are git-ignored.
+  assets:
+    - preview_posters/
+
+  # Jost (SIL OFL 1.1, assets/fonts/OFL.txt), static weights from upstream v3.7.
+  fonts:
+    - family: Jost
+      fonts:
+        - asset: assets/fonts/Jost-300-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Jost-400-Book.ttf
+          weight: 400
+        - asset: assets/fonts/Jost-500-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Jost-700-Bold.ttf
+          weight: 700
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

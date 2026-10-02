@@ -1,8 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// P0 placeholder. The context-first one-movie flow arrives in P1.
-class TodayPage extends StatelessWidget {
+import '../application/today_controller.dart';
+import '../data/today_repository.dart';
+import 'context_view.dart';
+import 'recommendation_view.dart';
+
+class TodayPage extends ConsumerWidget {
   const TodayPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(todayRepositoryProvider) == null) return const _Unavailable();
+    final envelope = ref.watch(todayControllerProvider).pick?.value;
+    return envelope == null
+        ? const ContextView()
+        : RecommendationView(envelope: envelope);
+  }
+}
+
+/// Normal builds have no backend repository yet (P4) and never show fake data.
+class _Unavailable extends StatelessWidget {
+  const _Unavailable();
 
   @override
   Widget build(BuildContext context) {

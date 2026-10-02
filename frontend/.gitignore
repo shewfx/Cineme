@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Preview-only local posters (ADR 002): never commit image files
+/preview_posters/*
+!/preview_posters/README.md

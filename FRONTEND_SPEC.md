@@ -69,11 +69,13 @@ Search/Add is a screen, not a fifth tab. No horizontal carousel of suggested mov
 
 Calm cinema-inspired layout: near-black backgrounds, warm light text, one restrained accent, spacious main card. No inherited design system from another project is assumed. Choose exact tokens in P1 and document them; avoid remaking the visual design in every milestone. Use an accessible light theme if needed for device settings, but one polished dark theme is sufficient V1 scope.
 
+P1 tokens (`core/theme/app_theme.dart`): background `#1C1C1C` (kept dominant), surface `#262525`, border white 12%, text `#F5EFE8`, soft text `#D9D1C9`, muted text `#A39B93`, single accent coral `#FF5046` for the selected option and primary action only. Radii: chips 16, buttons 18. Typography: Jost (SIL OFL, bundled static weights) for its geometric, poster-like restraint: 500 headings, 400 body/metadata, 700 for the 19px primary label so white-on-coral qualifies as WCAG large text; 300 only for large placeholder titles. Selection also shows a check icon, never colour alone. The chosen film's artwork runs full width and fades into charcoal; title, metadata and up to two reasons sit as a compact block on the primary action. Genres are a muted text line, not pills.
+
 Today: poster as central visual, title/year, runtime/genres, short reasons and uncertainty, primary Watch Tonight, secondary Already seen and Pick another, context chips and “Why?”. One scrollable page if text grows, without an alternate recommendation list. Buttons remain visible at typical phone height where practical; do not crop descriptions to hide action state.
 
 Reusable widgets: MoviePoster (stable aspect ratio/placeholder), RecommendationCard, RuntimeChip, GenreChips, ContextSummary, ReasonList, AsyncStateView, EmptyState, ErrorPanel, RatingSelector, RejectionSheet, MovieListTile and PrimaryAction. Keep reusable widgets behavior-specific; no configurable giant “universal card.”
 
-Accessibility: meaningful image/action semantics, 48dp touch targets, sufficient contrast, no color-only rating meanings, logical focus order, readable at 200% text scale. No movie-poster binaries bundled in source. UI fixture posters use local geometric placeholders.
+Accessibility: meaningful image/action semantics, 48dp touch targets, sufficient contrast, no color-only rating meanings, logical focus order, readable at 200% text scale. No movie-poster binaries bundled in source. UI fixture posters use local geometric placeholders. Exception (ADR 002): the UI-preview build may show developer-supplied posters from the git-ignored `frontend/preview_posters/`; they are never committed.
 
 ## State model
 
