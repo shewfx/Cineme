@@ -5,6 +5,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../preview/preview_store.dart';
+import '../../auth/application/auth_controller.dart';
+import '../../auth/data/auth_repository.dart';
 import '../../../shared/models/movie.dart';
 import '../../../shared/models/profile.dart';
 import '../application/profile_controller.dart';
@@ -75,10 +77,12 @@ class _ProfileBody extends ConsumerWidget {
               'the sentence you type will be sent, never your history.',
         ),
         const _Section('Never recommend'),
-        if (profile.blockedMovies.isEmpty)
+        if (profile.blockedMovies == null)
+          const _Row('Blocked films', 'Coming later')
+        else if (profile.blockedMovies!.isEmpty)
           const _Row('Blocked films', 'None')
         else
-          for (final m in profile.blockedMovies)
+          for (final m in profile.blockedMovies!)
             _BlockedRow(title: m.title, tmdbId: m.tmdbId),
         const _Section('About'),
         const _Row(
@@ -86,6 +90,40 @@ class _ProfileBody extends ConsumerWidget {
           'This product uses the TMDB API but is not endorsed or certified by TMDB.',
         ),
         const _PreviewTools(),
+        const _AccountSection(),
+      ],
+    );
+  }
+}
+
+/// Normal build only: who is signed in, and Sign out. Sign-out clears the
+/// local session even if the network revoke fails; the router then returns
+/// to sign-in and private screens rebuild for the next user.
+class _AccountSection extends ConsumerWidget {
+  const _AccountSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authRepositoryProvider);
+    final user = ref.watch(authUserProvider).value;
+    if (auth == null || user == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Section('Signed in'),
+        _Row('Email', user.email),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+          child: OutlinedButton(
+            onPressed: auth.signOut,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.text,
+              side: const BorderSide(color: AppColors.border),
+              minimumSize: const Size.fromHeight(48),
+            ),
+            child: const Text('Sign out'),
+          ),
+        ),
       ],
     );
   }

@@ -50,3 +50,6 @@ app.*.map.json
 # Preview-only local posters (ADR 002): never commit image files
 /preview_posters/*
 !/preview_posters/README.md
+
+# Local build-time config (see dart_defines.example.env)
+/dart_defines.env

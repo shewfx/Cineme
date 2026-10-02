@@ -4,11 +4,67 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 
 | Phase | Status |
 |---|---|
-| P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header tracked as outstanding |
+| P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header implemented in P2 |
 | P1a — Context to one movie card (fake data) | Complete: merged to `main` in PR #2 (CI green) |
 | P1b — Inventory, history, profile, loading/empty/error (fake data) | Complete: merged to `main` in PR #3 (CI green) |
-| P1c — Feedback, replacement, pause, accept vs watched, no match (fake data) | Locally verified on branch `feat/p1c-feedback`; not committed, CI not run |
-| P2–P8 | Not started |
+| P1c — Feedback, replacement, pause, accept vs watched, no match (fake data) | Complete: merged to `main` in PR #4 (CI green) |
+| P2 — Auth, profile bootstrap, persistence foundation | Complete (branch `feat/p2-backend-auth`): automated gates incl. PostgreSQL and owner manual checks passed; cross-account movie-data isolation deferred to the first P3 watchlist test |
+| P3–P8 | Not started |
+
+## P2 — 2026-10-02, branch `feat/p2-backend-auth`
+
+P2a, P2b and P2c delivered together (authorized as one task). Scope change: `PATCH /me` and the idempotency ledger brought forward from P3 ([ADR 003](adr/003-patch-me-and-idempotency-in-p2.md)); preference editing stays P3/P4. Password recovery deferred (release gate, as planned).
+
+**Backend**
+- SQLAlchemy 2.1 + psycopg 3.3 (sync), bounded pool, statement/lock timeouts 5 s / 2 s; one request-scoped session; services own transactions.
+- Alembic 1.20, migration `0001`: schema `cineme` with `users`, `user_preferences` (DATA_MODEL columns, defaults and CHECKs) and `idempotency_records`; revokes schema access from PUBLIC and, when present, Supabase `anon`/`authenticated`. Reversible.
+- `GET /readyz`: DB query plus Alembic head check (503 `not_ready` otherwise). `/healthz` unchanged.
+- Error envelope for every non-2xx including validation and unexpected 500s; `X-Request-ID` validated or generated and returned on every response (closes the item tracked since P0).
+- Token verification with PyJWT 2.15: ES256 only, JWKS from the configured project (5-minute cache, one refresh for an unknown `kid`, 2 s timeout), exact issuer, audience `authenticated`, required `exp/iat/sub/aud/iss`, 30 s leeway, UUID `sub`, signed email, role `authenticated`, no anonymous users. Outage → 503, invalid → 401. No auth bypass: tests inject real keys.
+- `POST /api/v1/me/bootstrap`: first call confirms the user with Supabase `GET /auth/v1/user` outside any DB transaction (403 `EMAIL_NOT_VERIFIED`, 503 on outage), then insert-on-conflict for user and preferences in one transaction; 201 created / 200 reused, never resets fields.
+- `GET /api/v1/me`: read-only; 409 `PROFILE_NOT_INITIALIZED` before bootstrap.
+- `PATCH /api/v1/me` (ADR 003): display name and IANA timezone (tzdata), unknown fields 422, users-row lock, UUID `Idempotency-Key` (400 `IDEMPOTENCY_KEY_REQUIRED`), replay / 409 `IDEMPOTENCY_CONFLICT`, response stored in the same transaction.
+- Settings now require `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_ISSUER` (must equal the project URL + `/auth/v1`).
+- CI backend job gets a PostgreSQL 16 service so integration and migration tests run there.
+
+**Flutter**
+- `supabase_flutter` 2.18 (sign-up, sign-in, session restore, refresh, sign-out) with session persistence in `flutter_secure_storage` 11.2; `dio` 5.11 in one `ApiClient` (bearer per request, envelope → `ApiError`, malformed responses are errors).
+- Auth gate and go_router redirects: Sign in / Create account / Check your email / setting-up (Retry, keeps the session) / config-missing. The private shell renders only after `POST /me/bootstrap` then `GET /me`.
+- Profile reads `GET /me` in normal builds, shows the signed-in email and Sign out; profile data is keyed to the signed-in user so sign-out and account switches never show the previous user's data. Blocked films show "Coming later" (blocks are P5).
+- Normal builds without `--dart-define` configuration show "This build is not configured"; Tonight/Watchlist/History still say "not available in this build yet". Preview build unchanged and never initializes Supabase.
+- Android: INTERNET permission for release; cleartext HTTP to the local API allowed in debug builds only.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` | All checks passed / 19 files formatted |
+| `uv run mypy app` | No issues in 12 source files |
+| `uv run pytest` (TEST_DATABASE_URL → local PostgreSQL 16) | 85 passed: 45 unit (settings, envelope/request IDs, readyz without DB, JWT claims/forgery/algorithms/leeway/outage/rotation, provider get-user outcomes) + 40 integration (migration up/down/up, exact table set, PUBLIC has no schema access, defaults, CHECK/FK/cascade constraints, bootstrap create/reuse/no reset, unverified email, provider outage, 8 concurrent bootstraps converge, GET read-only and 409, missing/invalid/expired/forged tokens, two-user isolation and no client user id, PATCH validation, idempotency replay/conflict/per-user/failed-not-cached/concurrent) |
+| `dart format` / `flutter analyze` | 0 changed / No issues found |
+| `flutter test` | 64 passed (49 P1 + 15 P2: routing signed out, sign-in → bootstrap → GET /me → shell, sign-in failure, restored session, setup failure with Retry keeping the session, unconfirmed email, sign-up confirmation, sign-out and account switch without leaks, unconfigured normal build, preview isolation, ApiClient bearer/idempotency header/envelope/malformed, profile JSON validation) |
+| `docker compose --env-file infra/.env -f infra/compose.yaml config --quiet` | exit 0 |
+| Manual: Alembic CLI on the dev DB | `alembic current` → `0001 (head)` |
+| Manual: API with the real Supabase project config | `/healthz` ok, `/readyz` ready, `/api/v1/me` without token 401 `AUTH_REQUIRED`, malformed token 401 `TOKEN_INVALID`; project JWKS publishes one ES256 P-256 key |
+| Manual: Android emulator, normal build | Supabase initialised; app opened on Sign in (no shell, no preview data); a wrong password reached Supabase and showed "Email or password is incorrect." |
+
+### Manual verification by the project owner (2026-10-02)
+
+| Check | Result |
+|---|---|
+| Real Supabase account signs in on the emulator | Passed |
+| Session is kept when backend setup fails (FastAPI not running) | Passed: setup screen with Retry, still signed in |
+| Retry after starting FastAPI completes bootstrap and opens the authenticated shell | Passed |
+| Backend reachable at the configured emulator URL (`http://10.0.2.2:8000`) | Passed |
+| `/healthz` and `/readyz` | Passed |
+| Cross-account movie-data isolation (A's data absent for B) | **Deferred, not passed**: P2 has no user-owned movie data. Moved to the first P3 watchlist manual test. Profile-level isolation is covered by the automated two-user integration tests. |
+
+### Remaining
+
+- The PostgreSQL CI job is verified when this branch's PR runs.
+- Least-privilege runtime role vs. migration role: local dev uses the compose superuser for both; dedicated roles and grants belong to deployment.
+- Password recovery/reset, profile-edit UI (PATCH /me is API-only), timezone picker, `PATCH /me/preferences`, blocks API: later phases.
+- Environment: Flutter must be invoked through the SDK short path (space in the SDK path breaks a native-assets hook); see TOOLING.
 
 ## P1c — 2026-10-02, branch `feat/p1c-feedback`
 
@@ -127,7 +183,7 @@ Movie screen rebuilt around full-width artwork fading into charcoal, then a comp
 ### Outstanding
 
 - **CI workflow:** verified. [Run 36962545446](https://github.com/shewfx/Cineme/actions/runs/36962545446) on `feat/p0-setup` (commit 29981c2): backend, frontend, compose all succeeded. Runner notices to address later: actions/checkout@v4 and setup-uv@v6 target deprecated Node 20; `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19.
-- **Request-ID header:** API_CONTRACT requires every response to carry a request ID header. Not implemented at P0; must land with the error envelope before any contract-facing endpoint is considered done.
+- **Request-ID header:** resolved in P2 (error envelope plus `X-Request-ID` on every response, covered by tests).
 
 ### Known notes
 

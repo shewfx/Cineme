@@ -13,6 +13,21 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Real PostgreSQL for integration and migration tests; SQLite is not a substitute.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cineme
+          POSTGRES_PASSWORD: ci-placeholder-not-a-secret
+          POSTGRES_DB: cineme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cineme -d cineme"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://cineme:ci-placeholder-not-a-secret@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
