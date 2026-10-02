@@ -1,58 +1,7 @@
-import '../../../shared/models/movie.dart';
-import '../../../shared/models/session_context.dart';
-import '../../../shared/models/today_state.dart';
-import 'today_repository.dart';
+import '../shared/models/movie.dart';
+import '../shared/models/session_context.dart';
 
-/// Scripted UI-preview data, selected only by `--dart-define=CINEME_PREVIEW=true`.
-///
-/// Not a ranking engine: each intent has a fixed, ordered list of watchlist
-/// films and the first one inside the hard runtime cap is returned. Current
-/// mood is ignored, as it is by the real scorer. Real scoring arrives in P4.
-class FakeTodayRepository implements TodayRepository {
-  FakeTodayRepository({
-    List<Movie> inventory = previewWatchlist,
-    this.latency = const Duration(milliseconds: 450),
-  }) : _byId = {for (final m in inventory) m.tmdbId: m};
-
-  final Map<int, Movie> _byId;
-  final Duration latency;
-
-  @override
-  Future<TodayEnvelope> choose(SessionContext context) async {
-    await Future<void>.delayed(latency);
-    final cap = context.maxRuntimeMinutes;
-    for (final (tmdbId, genreId) in _script[context.desiredExperience]!) {
-      final movie = _byId[tmdbId];
-      final runtime = movie?.runtimeMinutes;
-      // Unknown runtime is excluded under a cap, never treated as zero.
-      if (movie == null ||
-          (cap != null && (runtime == null || runtime > cap))) {
-        continue;
-      }
-      return TodayEnvelope(
-        state: TodayStatus.offered,
-        context: context,
-        recommendation: Recommendation(
-          id: 'preview-$tmdbId',
-          movie: movie,
-          reasons: [
-            if (context.desiredExperience == DesiredExperience.surprise)
-              const SurpriseChosen()
-            else
-              GenreMatchesIntent(
-                genre: movie.genres.firstWhere((g) => g.id == genreId),
-                intent: context.desiredExperience,
-              ),
-            if (cap != null)
-              FitsRuntime(runtimeMinutes: runtime!, capMinutes: cap),
-          ],
-        ),
-      );
-    }
-    // ponytail: no_match state is out of P1a scope; fixtures always fit 90 min.
-    throw StateError('No scripted preview film fits this context.');
-  }
-}
+// UI-preview fixture data only (`--dart-define=CINEME_PREVIEW=true`).
 
 const _action = Genre(28, 'Action');
 const _adventure = Genre(12, 'Adventure');
@@ -68,8 +17,8 @@ const _sciFi = Genre(878, 'Science Fiction');
 const _thriller = Genre(53, 'Thriller');
 const _war = Genre(10752, 'War');
 
-/// Public film facts used as fixture data; ids are fixture keys. No posters
-/// are bundled: the UI draws a designed placeholder.
+/// Seed watchlist. Public film facts used as fixture data; ids are fixture
+/// keys. No posters are bundled: the UI draws a designed placeholder.
 const previewWatchlist = <Movie>[
   Movie(
     tmdbId: 104,
@@ -150,9 +99,80 @@ const previewWatchlist = <Movie>[
   ),
 ];
 
+/// Searchable films that start outside the watchlist. The first two seed
+/// History as already watched.
+const previewSearchOnly = <Movie>[
+  Movie(
+    tmdbId: 194,
+    title: 'Amélie',
+    year: 2001,
+    runtimeMinutes: 122,
+    genres: [_comedy, _romance],
+  ),
+  Movie(
+    tmdbId: 129,
+    title: 'Spirited Away',
+    year: 2001,
+    runtimeMinutes: 125,
+    genres: [_animation, _family, _fantasy],
+  ),
+  Movie(
+    tmdbId: 2493,
+    title: 'The Princess Bride',
+    year: 1987,
+    runtimeMinutes: 98,
+    genres: [_adventure, _family, _fantasy, _comedy, _romance],
+  ),
+  Movie(
+    tmdbId: 76,
+    title: 'Before Sunrise',
+    year: 1995,
+    runtimeMinutes: 101,
+    genres: [_drama, _romance],
+  ),
+  Movie(
+    tmdbId: 376867,
+    title: 'Moonlight',
+    year: 2016,
+    runtimeMinutes: 111,
+    genres: [_drama],
+  ),
+  Movie(
+    tmdbId: 496243,
+    title: 'Parasite',
+    year: 2019,
+    runtimeMinutes: 133,
+    genres: [_comedy, _thriller, _drama],
+  ),
+  Movie(
+    tmdbId: 324857,
+    title: 'Spider-Man: Into the Spider-Verse',
+    year: 2018,
+    runtimeMinutes: 117,
+    genres: [_animation, _action, _adventure, _sciFi],
+  ),
+  Movie(
+    tmdbId: 391713,
+    title: 'Lady Bird',
+    year: 2017,
+    runtimeMinutes: 94,
+    genres: [_drama, _comedy],
+  ),
+];
+
+/// Fictional, clearly labelled fixture for the "cannot be added" state
+/// (unknown release date, `can_add=false`).
+const previewUnreleased = Movie(
+  tmdbId: 999001,
+  title: 'Untitled Future Release (preview fixture)',
+  year: null,
+  runtimeMinutes: null,
+  genres: [],
+);
+
 /// Ordered (tmdbId, matched genre id) per intent. Every list ends with a film
 /// of 90 minutes or less so each offered time option has a pick.
-const _script = <DesiredExperience, List<(int, int)>>{
+const previewScript = <DesiredExperience, List<(int, int)>>{
   DesiredExperience.makeMeLaugh: [(137, 35), (813, 35)],
   DesiredExperience.keepMeHooked: [(546554, 9648), (104, 53)],
   DesiredExperience.relax: [(8392, 10751)],

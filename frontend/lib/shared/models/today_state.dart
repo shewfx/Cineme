@@ -39,17 +39,21 @@ class Recommendation {
   final List<Reason> reasons;
 }
 
-enum TodayStatus { offered }
+/// TodayEnvelope states implemented so far (API_CONTRACT precedence).
+enum TodayStatus { notStarted, emptyWatchlist, offered }
 
-/// TodayEnvelope subset: one current recommendation plus the context it used.
+/// TodayEnvelope subset: at most one current recommendation plus its context.
+/// `offered` always carries both; other states carry neither.
 class TodayEnvelope {
-  const TodayEnvelope({
-    required this.state,
-    required this.context,
-    required this.recommendation,
-  });
+  const TodayEnvelope({required this.state, this.context, this.recommendation})
+    : assert((state == TodayStatus.offered) == (recommendation != null));
+
+  const TodayEnvelope.notStarted() : this(state: TodayStatus.notStarted);
+
+  const TodayEnvelope.emptyWatchlist()
+    : this(state: TodayStatus.emptyWatchlist);
 
   final TodayStatus state;
-  final SessionContext context;
-  final Recommendation recommendation;
+  final SessionContext? context;
+  final Recommendation? recommendation;
 }

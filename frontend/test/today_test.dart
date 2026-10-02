@@ -1,8 +1,9 @@
 import 'package:cineme/app.dart';
+import 'package:cineme/core/widgets/choice_pill.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
-import 'package:cineme/features/today/data/fake_today_repository.dart';
-import 'package:cineme/features/today/data/today_repository.dart';
 import 'package:cineme/features/today/presentation/today_widgets.dart';
+import 'package:cineme/preview/preview_catalog.dart';
+import 'package:cineme/preview/preview_store.dart';
 import 'package:cineme/shared/models/movie.dart';
 import 'package:cineme/shared/models/session_context.dart';
 import 'package:cineme/shared/models/today_state.dart';
@@ -10,13 +11,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Widget previewApp(FakeTodayRepository repository) => ProviderScope(
-  overrides: [todayRepositoryProvider.overrideWithValue(repository)],
-  child: const CinemeApp(),
-);
+PreviewStore store({List<Movie> inventory = previewWatchlist}) =>
+    PreviewStore(watchlist: inventory, latency: Duration.zero);
 
 FakeTodayRepository fake({List<Movie> inventory = previewWatchlist}) =>
-    FakeTodayRepository(inventory: inventory, latency: Duration.zero);
+    FakeTodayRepository(store(inventory: inventory));
+
+/// The full preview build: every fake repository over one shared store.
+Widget previewApp([PreviewStore? s]) => ProviderScope(
+  retry: noAutomaticRetry,
+  overrides: previewOverrides(s ?? store()),
+  child: const CinemeApp(),
+);
 
 /// Scrolls the option into view first, as a user would.
 Future<void> tapText(WidgetTester tester, String label) async {
@@ -39,7 +45,7 @@ void main() {
             final envelope = await fake().choose(
               SessionContext(desiredExperience: intent, maxRuntimeMinutes: cap),
             );
-            final runtime = envelope.recommendation.movie.runtimeMinutes!;
+            final runtime = envelope.recommendation!.movie.runtimeMinutes!;
             expect(runtime <= (cap ?? 600), isTrue, reason: '$intent cap $cap');
             expect(envelope.state, TodayStatus.offered);
           }
@@ -51,7 +57,7 @@ void main() {
       Future<int> pick(DesiredExperience intent, CurrentMood? mood) async =>
           (await fake().choose(
             SessionContext(desiredExperience: intent, currentMood: mood),
-          )).recommendation.movie.tmdbId;
+          )).recommendation!.movie.tmdbId;
 
       for (final intent in DesiredExperience.values) {
         final baseline = await pick(intent, null);
@@ -100,8 +106,8 @@ void main() {
             maxRuntimeMinutes: 90,
           ),
         );
-        expect(capped.recommendation.reasons, hasLength(2));
-        final fit = capped.recommendation.reasons
+        expect(capped.recommendation!.reasons, hasLength(2));
+        final fit = capped.recommendation!.reasons
             .whereType<FitsRuntime>()
             .single;
         expect((fit.runtimeMinutes, fit.capMinutes), (81, 90));
@@ -109,7 +115,7 @@ void main() {
         final surprise = await fake().choose(
           const SessionContext(desiredExperience: DesiredExperience.surprise),
         );
-        expect(surprise.recommendation.reasons.single, isA<SurpriseChosen>());
+        expect(surprise.recommendation!.reasons.single, isA<SurpriseChosen>());
       },
     );
   });
@@ -118,7 +124,9 @@ void main() {
     testWidgets('normal build shows no fake movie or context controls', (
       tester,
     ) async {
-      await tester.pumpWidget(const ProviderScope(child: CinemeApp()));
+      await tester.pumpWidget(
+        const ProviderScope(retry: noAutomaticRetry, child: CinemeApp()),
+      );
       await tester.pumpAndSettle();
       expect(
         find.text("Tonight's pick is not available in this build yet."),
@@ -131,7 +139,7 @@ void main() {
     testWidgets('Pick my movie is disabled until an intent is chosen', (
       tester,
     ) async {
-      await tester.pumpWidget(previewApp(fake()));
+      await tester.pumpWidget(previewApp());
       await tester.pumpAndSettle();
 
       expect(find.text('What do you want from tonight?'), findsOneWidget);
@@ -177,7 +185,7 @@ void main() {
             genres: const [],
           ),
       ];
-      await tester.pumpWidget(previewApp(fake(inventory: inventory)));
+      await tester.pumpWidget(previewApp(store(inventory: inventory)));
       await tester.pumpAndSettle();
 
       await tapText(tester, 'Keep me hooked');
@@ -226,7 +234,7 @@ void main() {
     testWidgets('Watch Tonight is intent, never watched completion', (
       tester,
     ) async {
-      await tester.pumpWidget(previewApp(fake()));
+      await tester.pumpWidget(previewApp());
       await tester.pumpAndSettle();
       await tapText(tester, 'Exciting');
       await tester.pump();
@@ -247,7 +255,7 @@ void main() {
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-      await tester.pumpWidget(previewApp(fake()));
+      await tester.pumpWidget(previewApp());
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 

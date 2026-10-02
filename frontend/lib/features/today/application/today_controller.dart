@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
+import '../../history/application/history_controllers.dart';
 import '../data/today_repository.dart';
 
 /// Tonight's context draft plus the result of the single explicit pick.
@@ -65,9 +66,29 @@ class TodayController extends Notifier<TodayViewState> {
     );
     state = state.copyWith(pick: () => const AsyncLoading());
     final result = await AsyncValue.guard(() => repository.choose(context));
+    if (!ref.mounted) return;
     state = state.copyWith(pick: () => result);
+    if (result case AsyncData(:final value)) {
+      ref.read(todayEnvelopeProvider.notifier).apply(value);
+      ref.invalidate(recommendationHistoryProvider);
+    }
   }
 }
+
+/// Server-authoritative Today (GET /today). Reloading only reads; it never
+/// chooses another movie.
+class TodayEnvelopeController extends AsyncNotifier<TodayEnvelope> {
+  @override
+  Future<TodayEnvelope> build() => ref.read(todayRepositoryProvider)!.today();
+
+  /// Applies the envelope returned by a Today mutation.
+  void apply(TodayEnvelope envelope) => state = AsyncData(envelope);
+}
+
+final todayEnvelopeProvider =
+    AsyncNotifierProvider<TodayEnvelopeController, TodayEnvelope>(
+      TodayEnvelopeController.new,
+    );
 
 final todayControllerProvider =
     NotifierProvider<TodayController, TodayViewState>(TodayController.new);

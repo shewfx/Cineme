@@ -53,7 +53,7 @@ flutter run --dart-define=CINEME_PREVIEW=true
 # or: flutter build apk --debug --dart-define=CINEME_PREVIEW=true; flutter install -d <device-id> --debug
 ```
 
-Preview mode is not labelled on screen; it is identified by this build flag. Optional local posters for the preview go in `frontend/preview_posters/<tmdbId>.jpg` (git-ignored, see that folder's README and ADR 002); without them the designed placeholder is shown.
+Preview mode is not labelled on screen; it is identified by this build flag. All preview data lives in memory and resets when the app restarts. Profile → "Simulate connection errors" (preview build only) makes every fake repository fail so error states can be checked. Optional local posters for the preview go in `frontend/preview_posters/<tmdbId>.jpg` (git-ignored, see that folder's README and ADR 002); without them the designed placeholder is shown.
 
 Checks:
 

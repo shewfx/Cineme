@@ -81,6 +81,31 @@ abstract final class AppTheme {
       bodyColor: AppColors.text,
       displayColor: AppColors.text,
     ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: AppColors.background,
+      indicatorColor: AppColors.accent.withValues(alpha: 0.16),
+      height: 68,
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? AppColors.accent
+              : AppColors.textMuted,
+        ),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontFamily: _family,
+          fontSize: 13,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w500
+              : FontWeight.w400,
+          color: states.contains(WidgetState.selected)
+              ? AppColors.text
+              : AppColors.textMuted,
+        ),
+      ),
+    ),
+    dialogTheme: const DialogThemeData(backgroundColor: AppColors.surface),
     snackBarTheme: const SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: AppColors.surface,

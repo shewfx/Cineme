@@ -7,7 +7,9 @@ void main() {
   testWidgets('launches on the Today placeholder with Cinemé branding', (
     tester,
   ) async {
-    await tester.pumpWidget(const ProviderScope(child: CinemeApp()));
+    await tester.pumpWidget(
+      const ProviderScope(retry: noAutomaticRetry, child: CinemeApp()),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Cinemé'), findsOneWidget);
