@@ -6,9 +6,10 @@ import '../theme/app_theme.dart';
 
 /// Fills its box with the film's artwork, cropped from the top.
 ///
-/// Preview builds read a git-ignored local poster `preview_posters/<id>.jpg`
-/// (ADR 002); otherwise, or when the file is missing, a designed placeholder
-/// of the same size is shown, so the layout never jumps.
+/// Real builds load the TMDB poster URL from the API; preview builds read a
+/// git-ignored local poster `preview_posters/<id>.jpg` (ADR 002). Missing or
+/// failing images show a designed placeholder of the same size, so the
+/// layout never jumps.
 class MoviePoster extends StatelessWidget {
   const MoviePoster({super.key, required this.movie});
 
@@ -21,7 +22,18 @@ class MoviePoster extends StatelessWidget {
       image: true,
       label: 'Poster for ${movie.title}',
       child: ExcludeSemantics(
-        child: isUiPreview
+        child: movie.posterUrl != null
+            // TMDB image CDN (the documented exception to backend-only TMDB
+            // access). Loading or failure shows the same-size placeholder.
+            ? Image.network(
+                movie.posterUrl!,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                frameBuilder: (context, child, frame, _) =>
+                    frame == null ? placeholder : child,
+                errorBuilder: (_, _, _) => placeholder,
+              )
+            : isUiPreview
             ? Image.asset(
                 'preview_posters/${movie.tmdbId}.jpg',
                 fit: BoxFit.cover,

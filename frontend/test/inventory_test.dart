@@ -2,6 +2,7 @@ import 'package:cineme/app.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
 import 'package:cineme/features/search/application/search_controller.dart';
 import 'package:cineme/features/search/data/search_repository.dart';
+import 'package:cineme/features/watchlist/application/watchlist_controller.dart';
 import 'package:cineme/preview/preview_catalog.dart';
 import 'package:cineme/preview/preview_store.dart';
 import 'package:cineme/shared/models/inventory.dart';
@@ -10,8 +11,10 @@ import 'package:cineme/shared/models/session_context.dart';
 import 'package:cineme/shared/models/today_state.dart';
 import 'package:cineme/shared/models/viewing.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 PreviewStore store({List<Movie> watchlist = previewWatchlist}) =>
     PreviewStore(watchlist: watchlist, latency: Duration.zero);
@@ -40,7 +43,35 @@ Future<void> goTab(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-Finder removeButton(String title) => find.byTooltip('Remove $title');
+/// The store's active entries; fake latency needs a pump under fake time.
+Future<List<WatchlistEntry>> saved(WidgetTester tester, PreviewStore s) async {
+  final page = FakeWatchlistRepository(s).list();
+  await tester.pump(const Duration(milliseconds: 1));
+  return (await page).items;
+}
+
+/// Swipes a watchlist row right by [dx] logical pixels (row is 800 wide).
+Future<void> swipe(WidgetTester tester, String title, double dx) async {
+  await tester.drag(find.text(title), Offset(dx, 0));
+  await tester.pumpAndSettle();
+  // The removal request starts when the slide-out ends; let it finish.
+  await tester.pump(const Duration(milliseconds: 1));
+  await tester.pumpAndSettle();
+}
+
+/// The last row/tile ends above the bottom navigation bar once scrolled to
+/// the end.
+Future<void> expectClearsNav(WidgetTester tester, String lastTitle) async {
+  await tester.fling(
+    find.byType(Scrollable).last,
+    const Offset(0, -20000),
+    5000,
+  );
+  await tester.pumpAndSettle();
+  final last = tester.getRect(find.text(lastTitle));
+  final nav = tester.getRect(find.byType(NavigationBar));
+  expect(last.bottom, lessThanOrEqualTo(nav.top), reason: lastTitle);
+}
 
 /// Lazy lists only build rows near the viewport; scroll like a user would.
 Future<void> reveal(WidgetTester tester, Finder f) async {
@@ -82,6 +113,8 @@ class _SlowSearch implements MovieSearchRepository {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   group('Preview store keeps the documented inventory rules', () {
     test('watchlist pages 20 at a time, newest first, then ends', () async {
       final s = store(watchlist: fillers(45));
@@ -127,30 +160,35 @@ void main() {
       expect(pick.recommendation!.movie.title, 'Airplane!');
     });
 
-    test('add: duplicate succeeds, watched and ineligible conflict', () async {
-      final repo = FakeWatchlistRepository(store());
-      expect((await repo.add(104)).alreadyPresent, isTrue);
-      expect((await repo.add(2493)).alreadyPresent, isFalse);
-      await expectLater(
-        repo.add(194), // Amélie is seeded as watched
-        throwsA(
-          isA<InventoryConflict>().having(
-            (c) => c.code,
-            'code',
-            'MOVIE_ALREADY_WATCHED',
+    test(
+      'add: duplicate succeeds, watched conflicts, unreleased saves',
+      () async {
+        final repo = FakeWatchlistRepository(store());
+        expect((await repo.add(104)).alreadyPresent, isTrue);
+        expect((await repo.add(2493)).alreadyPresent, isFalse);
+        await expectLater(
+          repo.add(194), // Amélie is seeded as watched
+          throwsA(
+            isA<InventoryConflict>().having(
+              (c) => c.code,
+              'code',
+              'MOVIE_ALREADY_WATCHED',
+            ),
           ),
-        ),
+        );
+        final unreleased = await repo.add(previewUnreleased.tmdbId);
+        expect(unreleased.alreadyPresent, isFalse);
+        expect(unreleased.entry.movie.released, isFalse);
+      },
+    );
+
+    test('an unreleased film is saved but never picked for Tonight', () async {
+      final s = store(watchlist: const [previewUnreleased]);
+      final result = await FakeTodayRepository(s).choose(
+        const SessionContext(desiredExperience: DesiredExperience.exciting),
       );
-      await expectLater(
-        repo.add(previewUnreleased.tmdbId),
-        throwsA(
-          isA<InventoryConflict>().having(
-            (c) => c.code,
-            'code',
-            'MOVIE_INELIGIBLE',
-          ),
-        ),
-      );
+      expect(result.recommendation, isNull);
+      expect(result.noMatch!.counts, {ExclusionCode.movieUnavailable: 1});
     });
 
     test(
@@ -282,40 +320,263 @@ void main() {
       },
     );
 
-    testWidgets('remove needs confirmation and is not optimistic', (
+    testWidgets('swipe below the threshold snaps back and removes nothing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+
+      final restingAt = tester.getTopLeft(find.text('Run Lola Run'));
+      // Mid-swipe the destructive treatment shows; letting go snaps back.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Run Lola Run')),
+      );
+      await gesture.moveBy(const Offset(20, 0)); // past the touch slop
+      await gesture.moveBy(const Offset(130, 0));
+      await tester.pump();
+      expect(find.text('Remove'), findsOneWidget);
+      // Hold still before letting go, so it is a release, not a fling.
+      await tester.pump(const Duration(milliseconds: 300));
+      await gesture.moveBy(const Offset(1, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Back in place (the leave-behind is clipped to nothing).
+      expect(tester.getTopLeft(find.text('Run Lola Run')), restingAt);
+      expect(find.textContaining('Removed'), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('a full swipe removes without a dialog; Undo restores', (
       tester,
     ) async {
       final s = store();
       await tester.pumpWidget(app(s));
       await tester.pumpAndSettle();
       await goTab(tester, 'Watchlist');
-      await reveal(tester, removeButton('Arrival'));
 
-      await tester.tap(removeButton('Arrival'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(find.text('Arrival'), findsOneWidget);
+      await swipe(tester, 'Run Lola Run', 600);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Run Lola Run'), findsNothing);
+      expect(find.text('Removed “Run Lola Run”.'), findsOneWidget);
+      expect(
+        (await saved(tester, s)).map((e) => e.movie.title),
+        isNot(contains('Run Lola Run')),
+        reason: 'removed through the repository, not just hidden',
+      );
 
-      // A failed removal keeps the row and says so.
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Run Lola Run'), findsOneWidget);
+      expect(
+        (await saved(tester, s)).map((e) => e.movie.title),
+        contains('Run Lola Run'),
+      );
+    });
+
+    testWidgets('a failed swipe removal restores the row and says so', (
+      tester,
+    ) async {
+      final s = store();
+      await tester.pumpWidget(app(s));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+
       s.simulateErrors = true;
-      await tester.tap(removeButton('Arrival'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
-      expect(find.text('Arrival'), findsOneWidget);
+      await swipe(tester, 'Run Lola Run', 600);
+      expect(find.text('Run Lola Run'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Run Lola Run')).dx,
+        lessThan(200),
+        reason: 'row is back in place',
+      );
       expect(
         find.textContaining("It's still in your watchlist"),
         findsOneWidget,
       );
+    });
 
-      s.simulateErrors = false;
-      await tester.tap(removeButton('Arrival'));
+    test(
+      'a second remove of the same entry is ignored while in flight',
+      () async {
+        final container = ProviderContainer(
+          retry: noAutomaticRetry,
+          overrides: previewOverrides(
+            PreviewStore(
+              watchlist: previewWatchlist,
+              latency: const Duration(milliseconds: 20),
+            ),
+          ),
+        );
+        addTearDown(container.dispose);
+        final entry = (await container.read(watchlistControllerProvider.future))
+            .items
+            .first;
+        final controller = container.read(watchlistControllerProvider.notifier);
+        final first = controller.remove(entry);
+        final second = controller.remove(entry);
+        expect(await second, isFalse);
+        expect(await first, isTrue);
+      },
+    );
+
+    testWidgets('screen readers get a Remove action instead of the swipe', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
+      await goTab(tester, 'Watchlist');
+      final row = find
+          .byWidgetPredicate(
+            (w) =>
+                w is Semantics && w.properties.customSemanticsActions != null,
+          )
+          .first;
+      expect(
+        find.descendant(of: row, matching: find.text('Run Lola Run')),
+        findsOneWidget,
+      );
+      tester.binding.performSemanticsAction(
+        SemanticsActionEvent(
+          type: SemanticsAction.customAction,
+          viewId: tester.view.viewId,
+          nodeId: tester.getSemantics(row).id,
+          arguments: CustomSemanticsAction.getIdentifier(
+            const CustomSemanticsAction(label: 'Remove from watchlist'),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 1));
       await tester.pumpAndSettle();
-      expect(find.text('Arrival'), findsNothing);
-      expect(find.text('Removed “Arrival”.'), findsOneWidget);
+      expect(find.text('Run Lola Run'), findsNothing);
+      expect(find.text('Removed “Run Lola Run”.'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('list/poster toggle switches layout and is remembered', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      expect(find.byType(SliverGrid), findsNothing);
+      expect(find.byTooltip('Add movies'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Show as posters'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SliverGrid), findsOneWidget);
+      expect(find.byTooltip('Add movies'), findsOneWidget);
+      // Posters and titles only: no date or runtime.
+      expect(find.text('Run Lola Run'), findsOneWidget);
+      expect(find.text('1998  ·  81 min'), findsNothing);
+      expect(find.textContaining('Added '), findsNothing);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('watchlist_layout'), 'posters');
+
+      // A fresh app start restores the saved layout.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      expect(find.byType(SliverGrid), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Show as list'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SliverGrid), findsNothing);
+      expect(prefs.getString('watchlist_layout'), 'list');
+    });
+
+    testWidgets('posters: missing artwork shows the placeholder at 2:3', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({'watchlist_layout': 'posters'});
+      await tester.pumpWidget(app(store(watchlist: fillers(3))));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      final poster = find.byType(MoviePoster).first;
+      expect(
+        find.descendant(of: poster, matching: find.byType(Image)),
+        findsNothing,
+      );
+      expect(find.text('FILLER 00'), findsOneWidget);
+      final size = tester.getSize(poster);
+      expect(size.height / size.width, closeTo(1.5, 0.01));
+    });
+
+    testWidgets('posters: long-press removes via the same path, with Undo', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({'watchlist_layout': 'posters'});
+      final s = store();
+      await tester.pumpWidget(app(s));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+
+      // No swipe on grid tiles.
+      await tester.drag(find.text('Run Lola Run'), const Offset(600, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Run Lola Run'), findsOneWidget);
+      expect(find.textContaining('Removed'), findsNothing);
+
+      await tester.longPress(find.text('Run Lola Run'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove from watchlist'));
+      await tester.pumpAndSettle();
+      expect(find.text('Run Lola Run'), findsNothing);
+      expect(find.text('Removed “Run Lola Run”.'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Run Lola Run'), findsOneWidget);
+    });
+
+    for (final layout in ['list', 'posters']) {
+      testWidgets('$layout: the last film scrolls clear of the nav bar', (
+        tester,
+      ) async {
+        SharedPreferences.setMockInitialValues({'watchlist_layout': layout});
+        await tester.pumpWidget(app(store(watchlist: fillers(15))));
+        await tester.pumpAndSettle();
+        await goTab(tester, 'Watchlist');
+        await expectClearsNav(tester, 'Filler 14');
+      });
+
+      testWidgets('$layout: 360x640, 200% text and a gesture inset', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(720, 1280);
+        tester.view.devicePixelRatio = 2;
+        tester.view.padding = const FakeViewPadding(bottom: 48);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        SharedPreferences.setMockInitialValues({'watchlist_layout': layout});
+
+        await tester.pumpWidget(app(store(watchlist: fillers(15))));
+        await tester.pumpAndSettle();
+        await goTab(tester, 'Watchlist');
+        expect(tester.takeException(), isNull);
+        await expectClearsNav(tester, 'Filler 14');
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('posters: 2 columns when very narrow', (tester) async {
+      tester.view.physicalSize = const Size(560, 1280);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({'watchlist_layout': 'posters'});
+      await tester.pumpWidget(app(store(watchlist: fillers(4))));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      final a = tester.getTopLeft(find.text('Filler 00'));
+      final b = tester.getTopLeft(find.text('Filler 01'));
+      final c = tester.getTopLeft(find.text('Filler 02'));
+      expect(a.dy, b.dy);
+      expect(c.dy, greaterThan(a.dy), reason: 'third tile wraps');
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('load errors offer Retry; load-more errors keep items', (
@@ -335,6 +596,10 @@ void main() {
 
       // A failed pull-to-refresh keeps the rows and says so.
       s.simulateErrors = true;
+      final list = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      );
       await tester.fling(find.text('Filler 00'), const Offset(0, 400), 1000);
       await tester.pumpAndSettle();
       expect(find.text('Filler 00'), findsOneWidget);
@@ -347,7 +612,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.text("Couldn't load more."),
         400,
-        scrollable: find.byType(Scrollable).last,
+        scrollable: list,
       );
       await tester.pumpAndSettle();
       expect(find.text('Filler 19'), findsOneWidget, reason: 'items kept');
@@ -358,7 +623,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.text('Filler 39'),
         400,
-        scrollable: find.byType(Scrollable).last,
+        scrollable: list,
       );
       expect(find.text('Filler 39'), findsOneWidget);
     });
@@ -409,9 +674,12 @@ void main() {
         findsOneWidget,
       );
 
+      // Unknown release date: saveable, labelled, never Tonight-eligible.
       await search('untitled');
-      expect(find.text("Can't be added yet"), findsOneWidget);
-      expect(find.text('Add to watchlist'), findsNothing);
+      expect(find.text('Not released yet'), findsOneWidget);
+      await tester.tap(find.text('Add to watchlist'));
+      await tester.pumpAndSettle();
+      expect(find.text('In watchlist'), findsOneWidget);
 
       await search('primer');
       await tester.tap(find.text('Already watched'));
@@ -445,11 +713,7 @@ void main() {
       expect(find.text('Run Lola Run'), findsOneWidget);
 
       await goTab(tester, 'Watchlist');
-      await reveal(tester, removeButton('Run Lola Run'));
-      await tester.tap(removeButton('Run Lola Run'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
+      await swipe(tester, 'Run Lola Run', 600);
 
       await goTab(tester, 'Tonight');
       expect(find.text('Ready for another pick?'), findsOneWidget);

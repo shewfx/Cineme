@@ -86,7 +86,7 @@ Removing or blocking the current pick supersedes it and clears the current selec
 
 ### Search / Add
 
-Nested route accessed from Watchlist or empty state. Debounced TMDB movie search; title/year disambiguation; movie details load runtime. “Add to watchlist” and “Already watched” are separate actions. No results, missing poster, upstream error and duplicate entry have distinct states. Adult-flagged items and future/unknown release dates cannot be added in V1.
+Nested route accessed from Watchlist or empty state. Debounced TMDB movie search; title/year disambiguation; movie details load runtime. “Add to watchlist” and “Already watched” are separate actions. No results, missing poster, upstream error and duplicate entry have distinct states. Adult-flagged items cannot be added in V1. Upcoming and unknown-date films can be saved, are labelled “Not released yet”, and Tonight cannot pick them until a known release date has passed (ADR 005).
 
 ### History
 

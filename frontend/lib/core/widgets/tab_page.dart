@@ -35,9 +35,15 @@ class TabPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Semantics(
-                          header: true,
-                          child: Text(title, style: text.headlineMedium),
+                        // One line even at large text sizes, so header
+                        // actions never push the content off small screens.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Semantics(
+                            header: true,
+                            child: Text(title, style: text.headlineMedium),
+                          ),
                         ),
                         if (subtitle != null) ...[
                           const SizedBox(height: 4),

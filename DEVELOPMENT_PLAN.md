@@ -70,7 +70,7 @@ Each phase delivers: small runnable behavior, meaningful tests, manual verificat
 
 **Likely files:** backend/movies, watchlist, core/http_client; frontend/core/network, features/search/watchlist/preferences/data; provider mocks; OpenAPI fixture.
 
-**Acceptance:** Runtime fetched from details, not fabricated from search. Duplicate add returns existing; cap500; restore resets age; ownership/isolation; unavailable/adult/unreleased/unknown-date films disabled/rejected. Missing runtime/null genres safe. Search throttle/upstream failure visible. Existing cached list works during outage. Correct TMDB attribution present. No unofficial JustWatch endpoint.
+**Acceptance:** Runtime fetched from details, not fabricated from search. Duplicate add returns existing; cap500; restore resets age; ownership/isolation; unavailable/adult films disabled/rejected; upcoming/unknown-date films saveable but marked not released (ADR 005). Missing runtime/null genres safe. Search throttle/upstream failure visible. Existing cached list works during outage. Correct TMDB attribution present. No unofficial JustWatch endpoint.
 
 **Tests:** Mocked API normal/malformed/null/429/404/timeout; parallel duplicate add; archived restore; ownership; page limits; stale metadata fallback; debounced search ignores old responses; add/remove update list only after success.
 

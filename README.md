@@ -1,47 +1,262 @@
-# Cinemé — repository planning package
+<div align="center">
 
-Specification version: 1.1. Prepared 2026-10-02. Status: implementation baseline, not an implemented application.
+# Cinemé
 
-Copy these files into the repository root, including `CLAUDE.md`. The archive also contains every document. No application source is included. Revision1.1 incorporates the review: bounded comparisons, explicit POST bootstrap, UI before auth, optional traits, and context-first ONE-movie UX. This revises the existing package rather than adding design documents.
+**One movie. No scrolling.**
 
-## Read order and authority
+You keep a watchlist. You tell Cinemé what you want from tonight.<br>
+It chooses **one** film from your own list — not a feed, not a carousel, not twenty "you might also like" rows.
 
-1. `CRITICAL_REVIEW.md`: concept risks and decisions made before specification.
-2. `PROJECT_SPEC.md`: product behavior and numbered invariants.
-3. `ARCHITECTURE.md`: boundaries and architecture decisions.
-4. `DATA_MODEL.md`: relational schema and transaction rules.
-5. `RECOMMENDATION_ENGINE.md`: normative scoring formulas and worked examples.
-6. `API_CONTRACT.md`: client/server wire contracts.
-7. `FRONTEND_SPEC.md`: Flutter structure and interaction details.
-8. `DEVELOPMENT_PLAN.md`: implementation phases and gates.
-9. `CLAUDE.md`: instructions Claude Code must obey.
-10. `FIRST_CLAUDE_PROMPT.md`: paste this prompt to start Phase 0 only.
+[![CI](https://github.com/shewfx/Cineme/actions/workflows/ci.yml/badge.svg)](https://github.com/shewfx/Cineme/actions/workflows/ci.yml)
+&nbsp;Flutter · FastAPI · PostgreSQL · Supabase Auth · TMDB
 
-`VALIDATION_NOTES.md` records the documentation checks and their limits. It is not evidence of an implemented or tested application.
+</div>
 
-Authority is by subject, not “last file read.” Product semantics belong to PROJECT_SPEC; mathematical behavior to RECOMMENDATION_ENGINE; schema to DATA_MODEL; wire formats to API_CONTRACT. If these disagree, report the conflict and resolve it explicitly before implementing the affected behavior. Do not silently pick an interpretation.
+---
 
-## Baseline decisions
+> **Status:** in active development. Search and a persistent per-user watchlist work end to end against real services. **The Tonight pick is not implemented yet** — that is the next phase (P4). See [Roadmap](#roadmap).
 
-Flutter Android first; Python 3.12/FastAPI modular monolith; PostgreSQL; SQLAlchemy 2 and Alembic; Supabase Auth; TMDB metadata; Riverpod and go_router. One controlled weighted scorer, confirmed desired experience separate from emotion, optional Ollama context parsing, deterministic explanation templates. Rank up to500 internally, persist winner plus at most nine runners-up, never show a Tonight feed. No Redis, queue, embeddings, agents, custom password service or streaming catalogue.
+## The problem
 
-There are nine implementation phases, P0–P8. Shipping gates are behavioral, not calendar promises. Start at P0; P1 is the fake UI prototype, P2 is minimal auth/persistence in separately gated slices; do not build the whole app in one Claude Code run.
+Most movie apps are built to help you browse *more*: endless rows, autoplaying trailers, another page of suggestions. When you already have a list of films you meant to watch, more options make the decision harder, not easier.
 
-## Source verification
+Cinemé is built to help you **decide**. The watchlist is the inventory you already trust; tonight's context narrows it; a deterministic ranking picks one film and tells you why.
 
-External facts were checked against official documentation. These are implementation references, not permission to change the architecture. Recheck provider contracts when integrating; pin compatible dependency versions in lockfiles at P0.
+## How it works
 
-| Reference | What it establishes |
+```
+ Your watchlist  ──►  Tonight's context  ──►  Deterministic ranking  ──►  One movie
+ (films you chose)    (mood, time, genres)    (explainable scoring)       (with reasons)
+     available            designed (P1 UI)        planned (P4)              planned (P4)
+```
+
+- **Watchlist** — search TMDB and save films you might watch. Implemented.
+- **Tonight's context** — what you want from the evening (e.g. *exciting*, *comforting*), an optional time limit and genres to avoid. The flow exists in the preview build; the real backend arrives with P4.
+- **Ranking** — a pure, deterministic scoring engine specified in [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md). Planned for P4.
+- **One movie** — Tonight always exposes exactly one actionable film, even when it ranked hundreds internally.
+
+## What works today
+
+| Area | Capability |
 |---|---|
-| [TMDB FAQ](https://developer.themoviedb.org/docs/faq) | Developer/noncommercial use, attribution and commercial licensing distinction |
-| [TMDB details](https://developer.themoviedb.org/reference/movie-details) and [search workflow](https://developer.themoviedb.org/docs/search-and-query-for-details) | Search and movie detail calls are separate; fetch details for runtime |
-| [TMDB images](https://developer.themoviedb.org/docs/image-basics) and [rate limiting](https://developer.themoviedb.org/docs/rate-limiting) | Image configuration and handling upstream throttling |
-| [JustWatch partner documentation](https://apis.justwatch.com/docs/content_partner/) | Partner catalogue/availability integration; this does not establish permission or an OAuth flow for private watchlists |
-| [Letterboxd export](https://letterboxd.com/user/exportdata/) and [CSV format](https://letterboxd.com/about/importing-data/) | User-exported files are a plausible later ingestion source; actual export columns must be inspected |
-| [Supabase password auth](https://supabase.com/docs/guides/auth/passwords), [JWT keys](https://supabase.com/docs/guides/auth/signing-keys) | Managed authentication and asymmetric JWT verification |
-| [Flutter architecture guidance](https://docs.flutter.dev/app-architecture/recommendations) and [Riverpod](https://riverpod.dev/) | Presentation/data separation and manageable async state |
-| [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs) | Local schema-constrained generation; provider capabilities are not universal |
+| Accounts | Supabase email/password sign-up and sign-in, sessions in Android secure storage, explicit profile bootstrap |
+| Backend | FastAPI verifies Supabase JWTs and scopes every private read and write to the caller |
+| Search | TMDB movie search through the backend, with years, genres and real poster artwork |
+| Watchlist | Persistent per-user watchlist in PostgreSQL: add, duplicate detection, pagination, remove with Undo |
+| Watchlist views | List or poster grid, remembered on the device; swipe a row to remove, long-press a poster for actions |
+| Upcoming films | Upcoming or undated films can be saved and are labelled "Not released yet"; they will not be eligible for Tonight until released |
+| Resilience | The saved watchlist keeps working while TMDB is down; failures are shown, never replaced with fake data |
+| Isolation | Users can never see or change each other's watchlists (covered by PostgreSQL integration tests) |
+| Preview mode | An opt-in build with scripted, in-memory data that shows the full designed flow — including Tonight, feedback and history — without contacting any service |
 
-## Completion definition
+Not there yet: the real Tonight pick, viewing history and ratings, feedback and learning, natural-language context. Those screens exist only in the preview build.
 
-An authenticated user can search, add movies, get one persisted choice, inspect its reasons, reject it with the correct scope, mark it watched, rate it, and see future scores change. The same works with the LLM disabled. A second account cannot read or mutate any private data from the first. A reproducible demo and tests prove these claims.
+## Product principles
+
+These rules come from [PROJECT_SPEC.md](PROJECT_SPEC.md) and constrain every phase:
+
+- **Exactly one actionable movie for Tonight.** No grid, no adjacent alternatives, no swipe-to-reroll.
+- **The watchlist is inventory, not taste.** Adding a film is not a signal that you like it.
+- **"Not tonight" is temporary.** Rejecting tonight's pick is not a permanent dislike; *never recommend* is a separate, reversible block.
+- **Hard constraints are never silently relaxed.** If nothing fits your time limit, you get an honest "no match", not a film from outside your rules or your watchlist.
+- **Accepting is not watching.** Marking a film watched is deliberate; a rating is long-term evidence.
+- **Deterministic and explainable.** The same inputs give the same pick, with reasons you can read.
+- **AI does not choose the movie** and never invents movie facts. Unknown metadata stays unknown.
+
+## Recommendation philosophy
+
+Cinemé is intentionally not a thin LLM wrapper. The planned engine ranks only films already in your watchlist, using structured inputs: your stated intent for tonight, runtime and genre metadata, your preferences, your viewing history and earlier offers. Every component and weight is specified up front, and the scorer has no network, database, clock or model access — inputs are passed in explicitly, so a pick can be reproduced and tested.
+
+If a language model is added (an optional local adapter is planned for P7), its only job is to turn a sentence like *"something light, I'm tired, under two hours"* into a typed proposal that you review. It cannot select a film, change your preferences or apply anything on its own, and the app works fully with it switched off.
+
+## Screenshots
+
+<!--
+  No screenshots are committed yet. Add real captures from a device or emulator:
+    docs/screenshots/search.png      Search with TMDB results
+    docs/screenshots/watchlist.png   Watchlist, list view
+    docs/screenshots/posters.png     Watchlist, poster view
+    docs/screenshots/tonight.png     Tonight pick (after P4; until then, preview build only)
+  Do not commit TMDB poster files on their own; app screenshots showing posters are fine.
+-->
+
+_Screenshots will be added here (`docs/screenshots/`)._
+
+## Architecture
+
+```
+            ┌────────────────────────┐
+            │  Flutter (Android app) │
+            └─────┬────────────┬─────┘
+     sign-in,     │            │  REST + JWT
+     session      │            │
+                  ▼            ▼
+      ┌────────────────┐   ┌──────────────────────────┐        ┌──────────────┐
+      │ Supabase Auth  │   │   FastAPI (modular        │ ─────► │   TMDB API   │
+      │  (identity)    │◄──│   monolith)               │ token  │  (metadata)  │
+      └────────────────┘   │  verifies JWTs, owns      │ stays  └──────────────┘
+         JWKS public keys  │  authorization + logic    │ here
+                           └────────────┬─────────────┘
+                                        ▼
+                              ┌──────────────────┐
+                              │   PostgreSQL     │
+                              │ (SQLAlchemy +    │
+                              │  Alembic)        │
+                              └──────────────────┘
+
+   Poster images load directly from TMDB's image CDN (the one documented exception).
+```
+
+- **Flutter never talks to the application database.** All private data goes through the FastAPI API.
+- **Supabase provides identity only.** The app signs in with Supabase; FastAPI verifies the access token against Supabase's public signing keys and takes the user's identity from it — never from a client-supplied user id.
+- **FastAPI owns authorization and product logic.** Every private operation is scoped to the caller; another user's resource is a plain 404.
+- **The TMDB credential is backend-only.** It never ships in the Android build. Movie metadata is cached in PostgreSQL so a saved watchlist keeps working during a TMDB outage.
+- Mutations use idempotency keys so a retried request never applies twice.
+
+Details: [ARCHITECTURE.md](ARCHITECTURE.md), [DATA_MODEL.md](DATA_MODEL.md), [API_CONTRACT.md](API_CONTRACT.md).
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| App | Flutter / Dart, Riverpod, go_router, Dio, supabase_flutter, flutter_secure_storage |
+| API | Python 3.12, FastAPI, Pydantic, HTTPX, PyJWT |
+| Data | PostgreSQL 16, SQLAlchemy 2, psycopg 3, Alembic |
+| Identity | Supabase Auth (ES256 JWTs) |
+| Metadata | TMDB API |
+| Tooling | uv, Ruff, mypy, pytest, Docker Compose (local PostgreSQL), GitHub Actions |
+
+## Roadmap
+
+Phases and their gates are defined in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md); verified results are recorded in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+
+| Phase | Scope | Status |
+|---|---|---|
+| P0 | Bootable repository, toolchain, CI | Complete |
+| P1 | Full UX prototype on fake data (Tonight, feedback, inventory, history) | Complete |
+| P2 | Supabase auth, profile bootstrap, PostgreSQL foundation | Complete |
+| P3 | TMDB search and persistent per-user watchlist | **Current** — implemented, in final review |
+| P4 | Deterministic daily selection: the real Tonight pick, with evidence | Planned (next) |
+| P5 | Feedback, watched/ratings and conservative learning | Planned |
+| P6 | Structured tonight context and time interpretation | Planned |
+| P7 | Optional local LLM context adapter | Planned |
+| P8 | Release hardening, deployment and portfolio evidence | Planned |
+
+## Running locally
+
+Commands are PowerShell on Windows; full details and troubleshooting are in [docs/TOOLING.md](docs/TOOLING.md).
+
+### Prerequisites
+
+- Python 3.12 via [uv](https://docs.astral.sh/uv/) 0.12
+- Flutter 3.47 (stable) with the Android SDK and an emulator or device
+- Docker Desktop (local PostgreSQL)
+- Your own **Supabase** project (email auth, ES256 signing keys) and a **TMDB** API Read Access Token
+
+### 1. PostgreSQL
+
+```powershell
+Copy-Item infra/.env.example infra/.env        # set a local-only password
+docker compose --env-file infra/.env -f infra/compose.yaml up -d
+```
+
+### 2. Backend
+
+```powershell
+Copy-Item backend/.env.example backend/.env    # fill in locally; git-ignored
+cd backend
+uv sync
+uv run --env-file .env alembic upgrade head
+uv run --env-file .env uvicorn app.main:build_app --factory --host 0.0.0.0 --port 8000
+```
+
+`backend/.env` needs `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_ISSUER`, `TMDB_READ_ACCESS_TOKEN` and, for tests, `TEST_DATABASE_URL`. The example file contains placeholders only. Never use a Supabase secret/service-role key. Startup fails with a clear message if a setting is missing.
+
+Check it: `Invoke-RestMethod http://127.0.0.1:8000/readyz`
+
+### 3. Flutter app
+
+```powershell
+cd frontend
+Copy-Item dart_defines.example.env dart_defines.env   # API_BASE_URL, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
+flutter pub get
+flutter run --dart-define-from-file=dart_defines.env
+```
+
+`API_BASE_URL=http://10.0.2.2:8000` reaches the local API from the Android emulator. Only the public Supabase publishable key goes into the app. Without configuration the app says it is not configured — it never falls back to fake data.
+
+### Preview build (no services needed)
+
+```powershell
+cd frontend
+flutter run --dart-define=CINEME_PREVIEW=true
+```
+
+Scripted in-memory data that shows the whole designed experience. It never contacts Supabase, the API, PostgreSQL or TMDB.
+
+## Testing
+
+Both suites run in [GitHub Actions](.github/workflows/ci.yml) on every push and pull request, with a real PostgreSQL 16 service for the backend.
+
+```powershell
+# backend (PostgreSQL running; integration tests need TEST_DATABASE_URL)
+cd backend
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy app
+uv run --env-file .env pytest
+
+# app
+cd frontend
+dart format --output=none --set-exit-if-changed lib test
+flutter analyze
+flutter test
+```
+
+- **Backend:** unit tests (TMDB adapter normalization, timeouts, retries, error mapping) and PostgreSQL integration tests for ownership and isolation, idempotent retries, concurrent adds, database constraints and migrations. SQLite is deliberately not used as a stand-in. TMDB is mocked; tests never call the network.
+- **App:** widget and repository tests over a fake API and the preview store — loading, empty and error states, account switching without data leaks, swipe removal and Undo, small screens at 200% text.
+
+## Repository structure
+
+```
+backend/         FastAPI app (app/core, app/users, app/movies, app/watchlist), Alembic migrations, tests
+frontend/        Flutter app (lib/features/*, lib/core, lib/preview), tests
+infra/           Docker Compose for local PostgreSQL
+docs/            Implementation status, tooling, architecture decision records (docs/adr)
+*.md (root)      Product, architecture, data, API, frontend and engine specifications
+```
+
+## Documentation
+
+The root specifications are the source of truth, each for its own subject:
+
+| Document | Authority |
+|---|---|
+| [PROJECT_SPEC.md](PROJECT_SPEC.md) | Product behavior and invariants |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Boundaries and architecture decisions |
+| [DATA_MODEL.md](DATA_MODEL.md) | Relational schema and transaction rules |
+| [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md) | Scoring formulas and worked examples |
+| [API_CONTRACT.md](API_CONTRACT.md) | Client/server wire contracts |
+| [FRONTEND_SPEC.md](FRONTEND_SPEC.md) | Flutter structure and interaction details |
+| [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) | Phases and gates |
+| [CRITICAL_REVIEW.md](CRITICAL_REVIEW.md) | Concept risks and decisions taken before specification |
+| [docs/adr/](docs/adr) | Approved deviations |
+
+If two documents disagree, the conflict is reported and resolved explicitly before the affected behavior is built. Agent instructions live in [CLAUDE.md](CLAUDE.md); the original planning-package notes (baseline decisions, external sources, completion definition) are in [docs/PLANNING_PACKAGE.md](docs/PLANNING_PACKAGE.md).
+
+## Contributing
+
+- Work in a feature branch per phase or task; keep commits scoped.
+- Preserve the product invariants and architecture boundaries above; significant deviations need an ADR.
+- Formatter, static analysis and tests pass before merge.
+- No secrets in Git: `.env` files and `dart_defines.env` stay local; example files hold placeholders only.
+
+## TMDB attribution
+
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+Movie metadata and images are provided by [The Movie Database (TMDB)](https://www.themoviedb.org/) and used under its developer terms for this noncommercial project.
+
+## License
+
+No license has been added yet. Until one is, all rights are reserved by the author.

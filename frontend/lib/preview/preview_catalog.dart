@@ -160,14 +160,15 @@ const previewSearchOnly = <Movie>[
   ),
 ];
 
-/// Fictional, clearly labelled fixture for the "cannot be added" state
-/// (unknown release date, `can_add=false`).
+/// Fictional, clearly labelled fixture for an unknown release date: it can
+/// be saved but is never Tonight-eligible.
 const previewUnreleased = Movie(
   tmdbId: 999001,
   title: 'Untitled Future Release (preview fixture)',
   year: null,
   runtimeMinutes: null,
   genres: [],
+  released: false,
 );
 
 /// Scripted priority per intent (P1a order). After these, the fake offers

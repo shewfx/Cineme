@@ -8,6 +8,7 @@ BASE = {
     "SUPABASE_URL": "https://abc.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_x",
     "SUPABASE_JWT_ISSUER": "https://abc.supabase.co/auth/v1",
+    "TMDB_READ_ACCESS_TOKEN": "tmdb-test",
 }
 
 
@@ -20,7 +21,14 @@ def test_reads_p2_configuration() -> None:
 
 
 @pytest.mark.parametrize(
-    "missing", ["DATABASE_URL", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_JWT_ISSUER"]
+    "missing",
+    [
+        "DATABASE_URL",
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_JWT_ISSUER",
+        "TMDB_READ_ACCESS_TOKEN",
+    ],
 )
 def test_p2_requires_database_and_identity_settings(missing: str) -> None:
     env = {k: v for k, v in BASE.items() if k != missing}

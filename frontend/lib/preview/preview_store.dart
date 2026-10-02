@@ -205,7 +205,9 @@ class PreviewStore {
     final eligible = <Movie>[];
     for (final e in _active) {
       final m = e.movie;
-      final code = _blocked.contains(m.tmdbId)
+      final code = !m.released
+          ? ExclusionCode.movieUnavailable
+          : _blocked.contains(m.tmdbId)
           ? ExclusionCode.movieBlocked
           : _offeredToday.contains(m.tmdbId)
           ? ExclusionCode.offeredThisSession
@@ -493,9 +495,6 @@ class FakeWatchlistRepository implements WatchlistRepository {
     await _s._io();
     final movie = _s._catalog[tmdbId];
     if (movie == null) throw const InventoryConflict('NOT_FOUND');
-    if (identical(movie, previewUnreleased)) {
-      throw const InventoryConflict('MOVIE_INELIGIBLE');
-    }
     if (_s._watched(tmdbId)) {
       throw const InventoryConflict('MOVIE_ALREADY_WATCHED');
     }
@@ -564,8 +563,9 @@ class FakeSearchRepository implements MovieSearchRepository {
                     year: m.year,
                     runtimeMinutes: null,
                     genres: m.genres,
+                    released: m.released,
                   ),
-            canAdd: !identical(m, previewUnreleased),
+            canAdd: true,
           ),
       ],
     );

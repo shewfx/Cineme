@@ -15,6 +15,8 @@ class PagedListView<T> extends StatelessWidget {
     required this.onRetry,
     required this.onRefresh,
     required this.onLoadMore,
+    this.gridDelegate,
+    this.gridPadding = EdgeInsets.zero,
   });
 
   final AsyncValue<PagedState<T>> value;
@@ -23,6 +25,23 @@ class PagedListView<T> extends StatelessWidget {
   final VoidCallback onRetry;
   final Future<void> Function() onRefresh;
   final VoidCallback onLoadMore;
+
+  /// Set to lay the items out as a grid instead of a list.
+  final SliverGridDelegate? gridDelegate;
+  final EdgeInsets gridPadding;
+
+  /// Building the last item (lazily, near the end) asks for the next page.
+  /// Slivers always build their first child, so the trigger can't live in
+  /// a separate trailing sliver.
+  Widget item(BuildContext context, PagedState<T> s, int i) {
+    if (i == s.items.length - 1 &&
+        s.hasMore &&
+        s.loadMoreError == null &&
+        !s.loadingMore) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => onLoadMore());
+    }
+    return itemBuilder(context, s.items[i]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +52,6 @@ class PagedListView<T> extends StatelessWidget {
       error: (_, _) => ErrorPanel(onRetry: onRetry),
       data: (s) {
         if (s.items.isEmpty) return empty;
-        final extra = s.hasMore ? 1 : 0;
         return RefreshIndicator(
           onRefresh: () async {
             try {
@@ -53,19 +71,39 @@ class PagedListView<T> extends StatelessWidget {
               }
             }
           },
-          child: ListView.builder(
+          child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 24),
-            itemCount: s.items.length + extra,
-            itemBuilder: (context, i) {
-              if (i < s.items.length) return itemBuilder(context, s.items[i]);
-              if (s.loadMoreError == null && !s.loadingMore) {
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => onLoadMore(),
-                );
-              }
-              return LoadMoreRow(error: s.loadMoreError, onRetry: onLoadMore);
-            },
+            slivers: [
+              if (gridDelegate == null)
+                SliverList.builder(
+                  itemCount: s.items.length,
+                  itemBuilder: (context, i) => item(context, s, i),
+                )
+              else
+                SliverPadding(
+                  padding: gridPadding,
+                  sliver: SliverGrid.builder(
+                    gridDelegate: gridDelegate!,
+                    itemCount: s.items.length,
+                    itemBuilder: (context, i) => item(context, s, i),
+                  ),
+                ),
+              // Always built, so the spinner runs only while a page loads.
+              if (s.loadingMore || s.loadMoreError != null)
+                SliverToBoxAdapter(
+                  child: LoadMoreRow(
+                    error: s.loadMoreError,
+                    onRetry: onLoadMore,
+                  ),
+                ),
+              // The last row scrolls clear of anything overlapping the
+              // bottom edge (system insets, floating snack bars).
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 24 + MediaQuery.paddingOf(context).bottom,
+                ),
+              ),
+            ],
           ),
         );
       },

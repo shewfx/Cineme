@@ -39,6 +39,7 @@ dependencies:
   supabase_flutter: ^2.18.0
   dio: ^5.11.1
   flutter_secure_storage: ^11.2.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

@@ -62,11 +62,12 @@ Major common errors: 401 `AUTH_REQUIRED`/`TOKEN_INVALID`; 404 `NOT_FOUND` for no
     }
   ],
   "poster_url": null,
-  "can_add": true
+  "can_add": true,
+  "released": true
 }
 ```
 
-MovieDetails extends summary with `release_date`, `overview`, `original_language`, `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` for known adult/unreleased/unknown-date items; add revalidates. Title/year/source test fixtures are not copied live vote data.
+MovieDetails extends summary with `release_date`, `overview`, `original_title` (null when equal to title), `original_language`, `vote_average`/`vote_count` (TMDB metadata, display-only, never ranking input; ADR 004), `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` only for adult or unavailable items; upcoming and unknown-date films can be saved (ADR 005). `released` is true only when `release_date` is known and on or before the user's local date; Tonight eligibility requires it (engine `movie_unavailable`). Add revalidates. Title/year/source test fixtures are not copied live vote data.
 
 ### SessionContext (complete accepted context, no text)
 
@@ -323,11 +324,11 @@ Active entries sorted added_at DESC,id DESC.200 `{items:[{id:"uuid",movie:MovieS
 
 ### POST `/watchlist`
 
-Request `{tmdb_id:104}`; metadata fetch outside private transaction.201 `{entry:{...},already_present:false,today:TodayEnvelope}`; duplicate active returns200 same entry/already_present=true. Removed eligible entry restores and resets age. Validates adult/release/runtime normalization.409 `MOVIE_ALREADY_WATCHED`, `MOVIE_BLOCKED`, `WATCHLIST_LIMIT`;422 `MOVIE_INELIGIBLE`;404 missing movie;503 upstream. Adding never replaces existing offered/accepted pick. If current pointer is no_match, clear it and increment session version to expose expanded eligibility.
+Request `{tmdb_id:104}`; metadata fetch outside private transaction.201 `{entry:{...},already_present:false,today:TodayEnvelope}` (until P4 the `today` field is omitted; ADR 004); duplicate active returns200 same entry/already_present=true. Removed eligible entry restores and resets age. Validates adult flag and runtime normalization; upcoming/unknown-date films are saved with `released=false` (ADR 005).409 `MOVIE_ALREADY_WATCHED`, `MOVIE_BLOCKED`, `WATCHLIST_LIMIT`;422 `MOVIE_INELIGIBLE`;404 missing movie;503 upstream. Adding never replaces existing offered/accepted pick. If current pointer is no_match, clear it and increment session version to expose expanded eligibility.
 
 ### DELETE `/watchlist/{entry_id}`
 
-Archive owned entry,200 `{removed:true,today:TodayEnvelope}`. Already removed succeeds.404 wrong owner/nonexistent. Supersede and clear current choice when it matches; do not generate replacement. Cached no-match also clears when candidate inventory changes.
+Archive owned entry,200 `{removed:true,today:TodayEnvelope}` (`today` omitted until P4; ADR 004). Already removed succeeds.404 wrong owner/nonexistent. Supersede and clear current choice when it matches; do not generate replacement. Cached no-match also clears when candidate inventory changes.
 
 ## Today and context
 

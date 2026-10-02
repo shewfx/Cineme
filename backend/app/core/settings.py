@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, HttpUrl, model_validator
 
 class Settings(BaseModel):
     """Settings validated at startup. From P2 the app needs PostgreSQL and the
-    Supabase Auth project (ARCHITECTURE "Configuration and secrets"); TMDB and
-    AI settings arrive with their phases."""
+    Supabase Auth project; from P3 the TMDB read token (ARCHITECTURE
+    "Configuration and secrets"). AI settings arrive with their phase."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -24,6 +24,9 @@ class Settings(BaseModel):
     supabase_url: HttpUrl
     supabase_publishable_key: str
     supabase_jwt_issuer: str
+
+    # P3: backend-only TMDB v4 read access token. Never sent to Flutter.
+    tmdb_read_access_token: str
 
     @model_validator(mode="after")
     def _issuer_matches_project(self) -> Self:

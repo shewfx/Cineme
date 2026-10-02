@@ -18,7 +18,7 @@ Locked application packages: FastAPI 0.142.2, Starlette 1.7.0, Pydantic 2.13.5, 
 
 ## Backend
 
-From P2 the backend needs PostgreSQL and the Supabase Auth dev project. Copy `backend/.env.example` to `backend/.env` (git-ignored) and fill it: `DATABASE_URL` and `TEST_DATABASE_URL` use the password from `infra/.env`; `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_JWT_ISSUER` (= `SUPABASE_URL` + `/auth/v1`) come from the Supabase dashboard. Never use a secret/service-role key. The Supabase project must sign access tokens with an asymmetric ES256 key (check `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`) and require email confirmation.
+From P2 the backend needs PostgreSQL and the Supabase Auth dev project. Copy `backend/.env.example` to `backend/.env` (git-ignored) and fill it: `DATABASE_URL` and `TEST_DATABASE_URL` use the password from `infra/.env`; `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_JWT_ISSUER` (= `SUPABASE_URL` + `/auth/v1`) come from the Supabase dashboard. Never use a secret/service-role key. From P3 the backend also needs `TMDB_READ_ACCESS_TOKEN` (TMDB v4 "API Read Access Token"); it stays in `backend/.env` and never goes into the Flutter build. The Supabase project must sign access tokens with an asymmetric ES256 key (check `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`) and require email confirmation.
 
 ```powershell
 cd backend
@@ -29,7 +29,7 @@ Invoke-RestMethod http://127.0.0.1:8000/healthz          # -> status ok (process
 Invoke-RestMethod http://127.0.0.1:8000/readyz           # -> status ready (DB + migration head)
 ```
 
-Binding `0.0.0.0` lets the Android emulator reach the API at `http://10.0.2.2:8000`. Invalid or missing settings stop startup with an error naming the setting. Migrations are a separate step; the app never migrates on startup.
+Apply new migrations after pulling (`alembic upgrade head`; P3 adds `0002`). Binding `0.0.0.0` lets the Android emulator reach the API at `http://10.0.2.2:8000`. Invalid or missing settings stop startup with an error naming the setting. Migrations are a separate step; the app never migrates on startup.
 
 Checks (PostgreSQL must be running; integration tests create and drop throwaway databases through `TEST_DATABASE_URL` and fail, not skip, without it):
 
@@ -115,3 +115,7 @@ Moving the SDK to a path without spaces (for example `D:\flutter`) removes the n
 ## Docker Desktop after a full disk
 
 When C: filled up, Docker Desktop stayed stuck ("Docker Desktop is unable to start") even after space was freed. `docker desktop restart` recovered it; then start PostgreSQL with the compose commands above.
+
+## TMDB connection resets on this network
+
+From this machine about half of new TLS connections to `api.themoviedb.org` were reset (`WinError 10054`), with or without Cinemé (some ISPs interfere with TMDB). The backend re-attempts connection setup (ADR 004) and keeps connections pooled, which made searches reliable. If search still shows "Search isn't available right now", check `uvicorn` output for `tmdb ... error=ConnectError` and try another network or a VPN; the saved watchlist keeps working because it is read from PostgreSQL.

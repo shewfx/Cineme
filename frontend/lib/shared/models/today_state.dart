@@ -56,6 +56,7 @@ class Recommendation {
 
 /// Primary exclusion codes, in the engine's precedence order.
 enum ExclusionCode {
+  movieUnavailable('not released yet'),
   movieBlocked('never recommend'),
   offeredThisSession('already offered tonight'),
   genreBlocked('in a genre you avoided tonight'),
