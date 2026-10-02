@@ -9,8 +9,83 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P1b — Inventory, history, profile, loading/empty/error (fake data) | Complete: merged to `main` in PR #3 (CI green) |
 | P1c — Feedback, replacement, pause, accept vs watched, no match (fake data) | Complete: merged to `main` in PR #4 (CI green) |
 | P2 — Auth, profile bootstrap, persistence foundation | Complete: merged to `main` in PR #5 (CI green incl. PostgreSQL); cross-account movie-data isolation deferred to the P3 two-account test |
-| P3 — TMDB search and persistent watchlist | Ready for commit on branch `feat/p3-tmdb-watchlist` (uncommitted): all automated gates pass incl. PostgreSQL; single-account emulator checks passed with live TMDB; two-account isolation passed (project owner, 2026-10-02) |
-| P4–P8 | Not started |
+| P3 — TMDB search and persistent watchlist | Complete: merged to `main` in PR #6 (CI green incl. PostgreSQL); two-account isolation passed (project owner) |
+| P4 — Deterministic daily selection (+ ADR 006 rejection/Already watched, ADR 007 availability) | Complete on branch `feat/p4-tonight-recommendations`: all automated gates pass incl. PostgreSQL; emulator flows exercised against the real watchlist; published via PR (see git history). Two-account Tonight isolation on a device not performed (second account's credentials unavailable); covered by automated tests |
+| P5–P8 | Not started |
+
+## P4 — 2026-10-02, branch `feat/p4-tonight-recommendations`
+
+Real Tonight: one deterministic pick from the caller's own watchlist, explained, stable across reloads, with temporary rejection and the pause brought forward by [ADR 006](adr/006-p4-temporary-rejection-and-why.md). Already seen, Never recommend, Mark watched, ratings and blocks stay P5.
+
+**Backend**
+- Engine `weighted_v1` / config `weights_v1` (`app/recommendations/engine.py`, `weights_v1.json`): pure `rank(RankingInput, EngineConfig)`, Decimal precision 28 HALF_EVEN, `score = 35G + 30C + 10D + 10A + 10R + 5Q`, filters in documented precedence (`movie_unavailable` incl. unknown/future release date, `already_watched`, `movie_blocked`, `offered_this_session`, `genre_blocked`, `runtime_unknown`, `runtime_exceeded`), tie-break total desc → added_at asc → tmdb_id asc, reason codes plus uncertainties. Config validated (exact keys, ranges, weights sum 100) and hashed (SHA-256 of canonical JSON). No network, database, clock or randomness.
+- Migration `0003`: `recommendation_sessions` (unique user/local date, timezone snapshot, DST-aware `day_ends_at`, JSONB context, version, deferred circular pointer), `recommendations` (one row per attempt incl. no-match; checks for selected/no-match shape, score range, ≤9 runners-up, resolved/accepted timestamps; partial unique index = at most one offered/accepted per session) and `rejection_feedback` (ADR 006). No candidate-score table; evidence ≤64 KiB with trailing runners-up dropped first.
+- Endpoints: `GET /today` (read-only), `PATCH /today/context`, `POST /today/choose`, `POST /recommendations/{id}/accept`, `POST /recommendations/{id}/reject`, `GET /recommendations`, `GET /recommendations/{id}`, `GET /recommendations/{id}/comparison`, `GET`/`PATCH /me/preferences`; `POST`/`DELETE /watchlist` now return `today`. All mutations: users-row lock, P2 idempotency ledger, `expected_session_version` (409 `VERSION_CONFLICT` with current version), no network inside the lock. States derived per API_CONTRACT precedence; reload never selects. Pause after 3 rejections (`CONTEXT_REVIEW_REQUIRED` unless Continue once or a real scoring change; mood-only edits don't count), 20 attempts/day (`DAILY_ATTEMPT_LIMIT`), `SESSION_EXPIRED` for another day's pick, `INVALID_TRANSITION` for non-current picks. Profile cap/blocked genres combine as minimum/union with `overridden_fields`. Invalidation: scoring-context or recommendation-affecting preference edits supersede the open pick; removing the picked film supersedes it; adding a film clears a cached no-match.
+
+**Flutter**
+- `ApiTodayRepository` + DTOs replace the normal-build placeholder; Today reloads per user and when the watchlist changes. Context-first flow, ONE card, "Not feeling it" reason sheet (no Already seen in the normal build), pause/Continue once/Stop, accept ("Tonight's plan", Change my mind), no-match with counts, empty watchlist → Add movies. Server-rendered reason text; "Why this film?" winner-only drawer with component points and engine/config version. Stale version/expired day reload Today and say so. Already seen, Never recommend and Mark watched hidden until P5. Preview build unchanged apart from the shared label and Why (no scores in the fake).
+- Search rows (owner request): poster | details | compact Add / In watchlist centred on the poster, "Not released yet" in the details, stacked action at large text.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | All passed (27 source files) |
+| `uv run pytest` (local PostgreSQL 16) | 263 passed: 57 engine unit tests (worked examples 74.333333 / 61.681818, relax swap 67.272727 / 64.833333, no-trait baseline 64.833333 / 55.000000, every filter and its precedence, cap equality, release day, intent matrix, pace/trait boundaries, rating shrinkage and edit replacement, Jaccard, floor-day saturation, vote shrinkage, ties, shuffled input, metamorphic unrelated candidate, 500 candidates, invalid configs, no network/clock imports) + 36 Today integration tests (read-only GET, context required, first pick and reload stability, mood-only keep, 4 parallel chooses → one pick, replay/conflict, stale version, unreleased/undated/unknown-runtime filters, cap never relaxed, avoided genres, reject + one replacement, no same-day re-offer, too_long/wrong_genre/want_lighter effects and validation, pause/Continue once/context lift, daily cap, context patch no-op/mood/scoring, accept no-op/persistence/no history, isolation 404s, timezone rollover and SESSION_EXPIRED, day end, preference invalidation and minimum cap, watchlist invalidation, history/detail/comparison, ≤9 runners-up, 500-film round trip, identical state → identical pick) + migration up/down/up incl. 0003→0002→head + all P0–P3 tests |
+| Large watchlist | 500 synthetic films: `POST /today/choose` round trip 111–123 ms locally (TestClient + PostgreSQL 16, one grouped offer-history query, no TMDB calls); pure ranking of 500 candidates well under the 2 s test bound |
+| `dart format` / `flutter analyze` | 0 changed / No issues found |
+| `flutter test` | 110 passed (+20 real Tonight over a fake Today API: wire format and versions, conflicts, context-first single film, reopen without re-choose, Why drawer, single accept on double tap, three reasons and Too long/Different genre details, pause + Continue once, Stop, no match, empty watchlist, backend/auth failure, stale version message, account switch reload, 360x640 at 200%, preview keeps fakes; +4 search-row layout tests) |
+| `docker compose -f infra/compose.yaml config --quiet` | OK |
+| APK scan | No TMDB token, TMDB API host, variable name, database URL or Supabase secret/service-role key (only library doc text) |
+
+### Manual emulator run (project owner's real account, 36 → 37 films, normal build)
+
+1–5. Keep me hooked + Under 2 hours → ONE film: Léon: The Professional (111 min) with "111 minutes, within your 119-minute limit." and "Its genre (Crime) fits your “Keep me hooked” choice."
+6. Force-stop and reopen → same film, no new attempt.
+7. Why → reasons plus G 17.5/35, C 24.0/30, D 5.0/10, A 0.0/10, R 10.0/10, Q 4.1/5, weighted_v1 · weights_v1 (consistent: no preferences/history yet, added today, never offered).
+8–11. Not feeling it → Not feeling this one → Show another → Kill Bill: Vol. 1; Léon not returned.
+12. Two more passes (→ My Fault) → "That's 3 passes tonight" with Adjust / Continue once / Stop.
+14. Continue once → exactly one film (Tetris, 118 min).
+13. Edit tonight → Make me laugh → Crazy, Stupid, Love. (Comedy).
+15–16. Watch Tonight → "Tonight's plan"; force-stop/reopen → still accepted; no Mark watched (P5).
+Accepted-pick replacement asked "Replace tonight's plan?" before changing context to Up to 90 min → Not Another Teen Movie (89 min).
+17–18. Pass on it (4th pass pauses again; Continue once) → "Nothing in your watchlist fits tonight — Of the 37 films in your watchlist: 1 not released yet, 6 already offered tonight, 30 longer than your time limit." No relaxing of the cap.
+19. Avengers: Secret Wars (2027) added from Search ("Not released yet") and counted as not released; never selected.
+20. Watchlist list/poster views and Search add still work; state survived an API restart plus app restart.
+
+### Close-out additions (2026-10-02)
+
+- **Already watched** inside Not feeling it (ADR 006 amendment): migration `0004` creates `viewings` (DATA_MODEL shape); the reason records a past viewing (date null unless a past one is supplied, no rating, no recommendation link, never tonight's completion), archives the watchlist entry, counts as a rejection, and selects a replacement only on Show another. Viewed films are excluded thereafter; re-adding returns `409 MOVIE_ALREADY_WATCHED`; D uses viewing genre snapshots as specified; preferences untouched.
+- **Streaming availability** (ADR 007): `GET /movies/{id}/availability` (JustWatch data via TMDB, 24 h cache on the movie row, stale fallback, visible failure without cache), `GET /watch/regions`, `PATCH /me country_code` with timezone-derived default. Tonight's "Available on" section (subscription first, free marked, rent/buy muted, JustWatch attribution); nothing shown when unknown/empty/failing. Display-only: no scoring effect, no call during selection.
+- **Edit tonight selectors**: three compact fields opening bottom-sheet lists (current value checked, closes on choice, mood/time clearable); Save and Pick with this context unchanged.
+- **Idempotent retries**: `RetryKeys` keeps a command's key after an ambiguous failure (no response/timeout/5xx) so retrying the same command is replayed by the server; success or 4xx settles it. Used by Today, watchlist and region mutations.
+- Search rows (separate commit), "pass N tonight" wording, and a mojibake fix in one watchlist error message.
+
+### Final gates
+
+| Check | Result |
+|---|---|
+| `ruff check` / `ruff format --check` / `mypy app` | All passed (30 source files) |
+| `pytest` (PostgreSQL 16) | 286 passed (+23 since the first P4 run: 13 availability incl. normalization/region/cache/stale/failure/shared cache/no scoring call, 5 Already watched/replay/privacy, migration table set) |
+| 500-film watchlist | `POST /today/choose` round trip 100 ms locally after adding the viewing-history query (was 111–123 ms) |
+| `dart format` / `flutter analyze` / `flutter test` | 0 changed / no issues / 118 passed (+8: selectors restore/clear/200%, Already watched path, provider rendering, empty/failure states, same-key retry and replay, settled keys and visible conflicts, single accept after a lost response) |
+| `docker compose ... config --quiet` | OK |
+
+### Manual emulator run 2 (normal build, real account, 227-film watchlist)
+
+- Profile → Streaming region sheet listed TMDB's regions; chose India → "IN".
+- Tonight (existing accepted Bugonia): "Available on JioHotstar", "Also to rent or buy on Apple TV Store, Zee5, Amazon Video", "Streaming data: JustWatch · IN" — identical to the cached TMDB data for IN.
+- Edit tonight: three selectors restored Make me laugh / Okay / Any length; mood sheet checked "Okay"; choosing "Not set" closed the sheet; Save kept the accepted film (mood-only). Keep me hooked + Under 2 hours + Pick with this context asked "Replace tonight's plan?", then picked The Imitation Game (113 min) with rent/buy-only availability (no fabricated streaming).
+- Not feeling it → Already watched (sheet text: date unknown, not tonight's movie) → Stop for tonight: database shows one viewing (source already_watched, watched_at null, rating null, recommendation_id null), watchlist entry archived, session not completed; no auto-pick (paused, as passes ≥ 3).
+- Continue once → exactly one film (The Mask, 101 min), stable across restart; Why showed G 17.5, C 24.0, D 10.0 (new viewing shares no genre), A 0.0, R 10.0, Q 3.5; Watch Tonight persisted across restart.
+- Not re-run this round: no-match (17 films ≤ 90 min make it impractical on the real list; verified in run 1 and by tests) and provider failure on device (covered by tests).
+
+### Known limits / deferred
+
+- Two-account Tonight isolation was not performed on a device (no credentials for the second account); automated coverage: `test_old_or_foreign_recommendations_cannot_be_acted_on`, `test_viewings_are_private`, `test_deterministic_pick_for_identical_state`, Flutter account-switch tests.
+- P5: Never recommend/blocks, Mark watched, ratings and learning from them, manual viewings, History UI, `GET /recommendations` UI.
+- The region list has no search field; availability can be up to 24 h old.
+- Backlog (not P4): local bounded poster-thumbnail disk cache (TMDB poster path stays the source of truth; expiry/eviction; refetch corrupted or missing files; never unbounded).
 
 ## P3 — 2026-10-02, branch `feat/p3-tmdb-watchlist`
 
