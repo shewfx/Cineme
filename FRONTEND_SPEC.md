@@ -81,7 +81,7 @@ Accessibility: meaningful image/action semantics, 48dp touch targets, sufficient
 
 TodayController holds `AsyncValue<TodayEnvelope>` plus an independent action status and preserved last successful envelope. Server is authoritative for statuses, versions, current pick and history. Do not optimistically mark watched or reject. Disable in-flight buttons; show action progress without blanking the entire movie card. If mutation fails, retain the last card and show retry/contextual error.
 
-Each deliberate action gets a UUID idempotency key. Keep body/key together through a network retry. After an ambiguous timeout offer Retry with the same key; do not generate a new key automatically. After success or a known validation/conflict failure, the next deliberate action gets a new key.
+Each deliberate action gets a UUID idempotency key. Keep body/key together through a network retry: after an ambiguous failure (no response, timeout, 5xx) the same command reuses its key (`RetryKeys`), so the server replays; success or a 4xx settles it and the next action gets a new key. After an ambiguous timeout offer Retry with the same key; do not generate a new key automatically. After success or a known validation/conflict failure, the next deliberate action gets a new key.
 
 Version conflict reloads Today and displays “Tonight's choice changed.” Preserve typed note/context in the editor; do not automatically resubmit stale action against a different film. Cached idempotency replay may return an older envelope after other actions; perform GET Today after replay if response version is older than already held state. Never move state backwards.
 
@@ -110,11 +110,11 @@ Pick my movie sends complete reviewed context through POST choose, applying cont
 
 Render exactly one prominent card: poster,title/year,runtime,genres,one/two factual reasons. Primary Watch Tonight; secondary Already seen and Not feeling it (Already seen, Never recommend and Mark watched are hidden in the normal build until P5 adds viewing history; ADR 006). “Why this film?” beside Edit tonight opens the winner-only drawer: stored reasons plus component points of each weight from GET /recommendations/{id}. No Top picks, horizontal carousels, recommendation grids, adjacent alternatives or swipe-to-re-roll. Keep score math behind Why; this drawer shows winner only. A secondary developer comparison endpoint is never used to add film choices to Tonight.
 
-Accepted state shows Mark watched and Change my mind. Completed keeps its one watched card and rating/history links; no new movie. Empty inventory shows Add movies. No match shows aggregate explanation and Adjust context/Add action, never another catalogue. Error retains current card/context draft where safe. API retry button retries GET or the same deliberate command key, never chooses as a side effect of a read.
+Under the film's details, “Available on” lists the region's subscription/free providers with logos, rent/buy as a muted line and “Streaming data: JustWatch · <region>”; nothing is shown when unknown, empty or failing (ADR 007). Accepted state shows Mark watched and Change my mind. Completed keeps its one watched card and rating/history links; no new movie. Empty inventory shows Add movies. No match shows aggregate explanation and Adjust context/Add action, never another catalogue. Error retains current card/context draft where safe. API retry button retries GET or the same deliberate command key, never chooses as a side effect of a read.
 
 ### Lightweight replacement sheet
 
-Pick another offers Not feeling this one / Too long / Something lighter / Different genre / Already seen / Just give me another. Simple skip needs no text or questionnaire. Both Not feeling and Just give me another map to temporary not_tonight. Never recommend is separate under More actions, with explicit persistent-block explanation.
+Not feeling it offers Not feeling this one / Too long / Something lighter / Different genre / Already watched / Just give me another (Already watched records a past viewing with unknown date; ADR 006 amendment). Simple skip needs no text or questionnaire. Both Not feeling and Just give me another map to temporary not_tonight. Never recommend is separate under More actions, with explicit persistent-block explanation.
 
 Too long shows optional lower cap; Different genre requires selected-film genre IDs; Already seen confirms known viewing/date uncertainty. Direct card Already seen uses the same command/confirmation, without treating it as tonight's completion. Optional Other/note remains in advanced feedback.
 
@@ -124,7 +124,7 @@ Third/later rejection returns paused. Show Adjust tonight's context as primary, 
 
 ### Context editor
 
-Basic controls: confirmed desired experience, optional current mood and time. Advanced controls: prefer/avoid genre IDs and optional pace/complexity/heaviness targets with coverage caveat. Do not expose fine-grained movie-trait sliders as a launch prerequisite. The full product works with no reviewed traits.
+Basic controls: confirmed desired experience, optional current mood and time. Edit tonight shows them as three compact selector fields (What do you want? / How are you feeling? Optional / How much time? Optional) that open a bottom-sheet list with the current value checked; choosing closes the sheet; mood and time can be cleared (Not set / Any length). The first-run context screen keeps its one-tap choices. Advanced controls: prefer/avoid genre IDs and optional pace/complexity/heaviness targets with coverage caveat. Do not expose fine-grained movie-trait sliders as a launch prerequisite. The full product works with no reviewed traits.
 
 Show parsed proposal/draft and field uncertainty. Emotion-only input opens lightweight desired-effect choices; sad never implies comedy. User may Save context (clear scoring-context-changed active pick without generating) or Pick with this context (atomic choose with context). Replacing accepted film is visibly confirmed. Cancel changes nothing. AI failure retains text and controls. A proposal can never mutate automatically. Profile hard limits remain visible and cannot be weakened by session controls.
 

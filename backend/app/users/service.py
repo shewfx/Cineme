@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.movies.availability import region_for
 
 from .models import User, UserPreferences
 from .schemas import MePatch, MeResponse, PreferencesPatch, PreferencesResponse
@@ -40,6 +41,8 @@ def read_profile(session: Session, user_id: uuid.UUID) -> MeResponse:
         id=user.id,
         display_name=user.display_name,
         timezone=user.timezone,
+        country_code=user.country_code,
+        region=region_for(user),
         created_at=user.created_at,
         preferences=PreferencesResponse(
             version=prefs.version,
@@ -94,6 +97,9 @@ def apply_patch(user: User, patch: MePatch) -> None:
         and patch.timezone != user.timezone
     ):
         user.timezone = patch.timezone
+        changed = True
+    if "country_code" in patch.model_fields_set and patch.country_code != user.country_code:
+        user.country_code = patch.country_code
         changed = True
     if changed:
         user.updated_at = datetime.now(UTC)

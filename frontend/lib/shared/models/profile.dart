@@ -10,6 +10,8 @@ class Profile {
     required this.defaultMaxRuntimeMinutes,
     required this.aiContextEnabled,
     required this.blockedMovies,
+    this.region,
+    this.regionChosen = false,
   });
 
   final String? displayName;
@@ -24,4 +26,11 @@ class Profile {
   /// Null when the build cannot list blocks yet (GET /me/blocks arrives
   /// with blocks in P5); never shown as "None" in that case.
   final List<Movie>? blockedMovies;
+
+  /// Streaming region (ISO country) for "Available on": the user's choice,
+  /// else the one the time zone implies; null when unknown.
+  final String? region;
+
+  /// Whether [region] was chosen rather than derived from the time zone.
+  final bool regionChosen;
 }

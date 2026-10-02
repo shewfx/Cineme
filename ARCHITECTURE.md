@@ -152,6 +152,10 @@ Movie details retained in PostgreSQL are usable metadata snapshots, default fres
 
 Cache TMDB configuration in process for 24 hours with configured safe poster-base fallback. Use the library-backed JWKS cache as above. No server recommendation-result cache: the persisted session is the result. No client disk cache of private API responses in V1. Flutter's image cache is acceptable; do not pre-download catalogues/posters.
 
+## Streaming availability (ADR 007)
+
+The backend calls TMDB `/movie/{id}/watch/providers` (JustWatch data) only for display, once per film per 24 h, and stores the normalized result for every region on the shared movie row. The user's region comes from `users.country_code` or the timezone's country (tzdata `zone.tab`). Selection never calls it; it is not a ranking input. JustWatch attribution is shown wherever providers are.
+
 ## Errors, resilience and limits
 
 Domain errors map to the API envelope. Upstream errors never leak tokens or response bodies. HTTPX timeouts: TMDB connect 3 seconds/read 5 seconds; cap whole integration operation at 8 seconds, one bounded retry for idempotent reads on transient network/502/503 failures when budget allows. Connection setup may be re-attempted up to three times at the transport level (nothing sent yet; ADR 004). For 429 preserve bounded Retry-After and fail visibly. No retry loop on 401/404. LLM has no automatic repair/retry in V1; failed proposal returns structured-only fallback.

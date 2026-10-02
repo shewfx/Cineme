@@ -226,6 +226,10 @@ Start with this hand-chosen baseline. Capture accept/reject/complete rates, scop
 
 Filters and primary exclusion counts; missing/null boundary cases; cap equality; desired-experience matrix and emotion-independence; pace targets; trait maximum at 0/1; rating shrinkage and edits; no learning from rejection; multigenre allocation; diversity Jaccard; floor-day/saturation boundaries; quality shrinkage; weight sum; shuffled candidate input; exact ties; complete test-fixture replay and bounded stored-comparison checks; worked-example totals; no network access. Include a metamorphic test that an unrelated added candidate never changes existing component scores.
 
+## Inputs added at P4 close-out
+
+From the already_watched rejection (ADR 006 amendment) viewings exist before P5: they feed the `already_watched` filter and the D component's recent genre snapshots exactly as specified above. No ratings exist yet, so G is unchanged. Streaming availability (ADR 007) is display-only and never an input.
+
 ## No-enrichment baseline and product boundary
 
 Core signals come from runtime/genre metadata when known, preferences, history, watchlist dates, earlier offers and shrunk external votes. Metadata is not literally always available: null policies still apply. Pace/complexity/heaviness are optional additions, not prerequisites. An empty trait dataset must pass all functional release gates. Existing synthetic worked examples exercise enhanced metadata; also test the same fixtures with all traits null. With exciting intent and requested unknown pace/complexity, C=(.8+.5+.5)/3=.6 for Lola and (.2+.5+.5)/3=.4 for Grand. Totals are64.833333 and55.000000 respectively; the engine remains usable and admits uncertainty.

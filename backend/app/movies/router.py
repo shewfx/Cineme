@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy.orm import Session
@@ -6,9 +6,16 @@ from sqlalchemy.orm import Session
 from app.core.auth import Identity, current_identity
 from app.core.db import get_session
 
-from . import service
+from . import availability, service
 from .provider import MovieMetadataProvider
-from .schemas import GenreOut, GenresResponse, MovieDetails, SearchResponse
+from .schemas import (
+    AvailabilityResponse,
+    GenreOut,
+    GenresResponse,
+    MovieDetails,
+    RegionsResponse,
+    SearchResponse,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["movies"])
 
@@ -53,3 +60,20 @@ def genres(identity: CallerIdentity, provider: Provider) -> GenresResponse:
         items=[GenreOut(id=g.id, name=g.name) for g in service.genre_list(provider)],
         version="tmdb_genres_v1",
     )
+
+
+@router.get("/movies/{tmdb_id}/availability", response_model=AvailabilityResponse)
+def movie_availability(
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    tmdb_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
+) -> dict[str, Any]:
+    """Where the film streams in the caller's region (JustWatch via TMDB).
+    May refresh the shared availability cache; display-only, never ranking."""
+    return availability.availability(session, provider, identity.user_id, tmdb_id)
+
+
+@router.get("/watch/regions", response_model=RegionsResponse)
+def watch_regions(identity: CallerIdentity, provider: Provider) -> dict[str, Any]:
+    return {"items": availability.regions(provider)}

@@ -11,6 +11,7 @@ import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../history/data/history_repository.dart';
 import '../application/today_controller.dart';
+import 'availability_section.dart';
 import 'feedback_sheets.dart';
 import 'today_widgets.dart';
 import 'why_sheet.dart';
@@ -35,8 +36,9 @@ class RecommendationView extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final width = MediaQuery.sizeOf(context).width;
     final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
-    // Already seen, Never recommend and Mark watched record viewing history
-    // or blocks, which arrive in P5; the normal build hides them until then.
+    // The card's direct Already seen, Never recommend and Mark watched need
+    // P5 (history UI, blocks, completion); the normal build hides them.
+    // "Already watched" inside Not feeling it works everywhere (ADR 006).
     final historyAvailable = ref.watch(historyRepositoryProvider) != null;
 
     /// Failures keep the current card and say so; nothing is optimistic.
@@ -58,7 +60,6 @@ class RecommendationView extends ConsumerWidget {
         movie: movie,
         tonight: tonight,
         rejectionCount: envelope.rejectionCount,
-        includeAlreadySeen: historyAvailable,
       );
       if (request == null) return;
       await guard(
@@ -347,6 +348,8 @@ class RecommendationView extends ConsumerWidget {
                                   ),
                                 ),
                                 const SizedBox(height: 16),
+                                if (state != TodayStatus.completed)
+                                  AvailabilitySection(tmdbId: movie.tmdbId),
                                 if (state == TodayStatus.completed &&
                                     viewing != null) ...[
                                   Text('How was it?', style: text.titleMedium),

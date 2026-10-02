@@ -153,7 +153,7 @@ About must display approved TMDB logo and the notice: “This product uses the T
 
 ## Future, explicitly outside V1
 
-CSV preview/resolve/commit importer; Letterboxd export adapter; authorized provider integrations; rewatches; actor/director affinity; reliable trait-enrichment review tooling; validated LLM explanation wording; streaming availability with regional freshness; push reminders; online experiments and weight tuning; offline support; web/iOS release; social features only after proving the one-choice product.
+CSV preview/resolve/commit importer; Letterboxd export adapter; authorized provider integrations; rewatches; actor/director affinity; reliable trait-enrichment review tooling; validated LLM explanation wording; streaming availability as a filter or ranking signal (V1 shows display-only availability per region, ADR 007); push reminders; online experiments and weight tuning; offline support; web/iOS release; social features only after proving the one-choice product.
 
 ## Storage boundary
 

@@ -15,7 +15,7 @@ const sheetReasons = <(String, RejectReason)>[
   ('Too long', RejectReason.tooLong),
   ('Something lighter', RejectReason.wantLighter),
   ('Different genre', RejectReason.wrongGenre),
-  ('Already seen', RejectReason.alreadyWatched),
+  ('Already watched', RejectReason.alreadyWatched),
   ('Just give me another', RejectReason.notTonight),
 ];
 
@@ -38,7 +38,6 @@ Future<RejectRequest?> showRejectSheet(
   required Movie movie,
   required SessionContext tonight,
   required int rejectionCount,
-  bool includeAlreadySeen = true,
 }) => showModalBottomSheet<RejectRequest>(
   context: context,
   isScrollControlled: true,
@@ -48,11 +47,7 @@ Future<RejectRequest?> showRejectSheet(
     movie: movie,
     tonight: tonight,
     rejectionCount: rejectionCount,
-    // Already seen records viewing history, which arrives in P5.
-    reasons: [
-      for (final r in sheetReasons)
-        if (includeAlreadySeen || r.$2 != RejectReason.alreadyWatched) r,
-    ],
+    reasons: sheetReasons,
   ),
 );
 
@@ -192,7 +187,9 @@ class _RejectSheetState extends State<_RejectSheet> {
             if (widget.rejectionCount + 1 >= 3) ...[
               const SizedBox(height: 12),
               Text(
-                "That's your third pass tonight, so Cinemé will pause instead of picking again.",
+                widget.rejectionCount + 1 == 3
+                    ? "That's your third pass tonight, so Cinemé will pause instead of picking again."
+                    : "That's pass ${widget.rejectionCount + 1} tonight, so Cinemé will pause instead of picking again.",
                 style: text.labelMedium?.copyWith(color: AppColors.textMuted),
               ),
             ],

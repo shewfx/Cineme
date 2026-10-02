@@ -17,6 +17,7 @@ from app.movies.models import Movie
 from app.movies.provider import MovieMetadataProvider
 from app.recommendations import service as today
 from app.users.service import lock_user
+from app.viewings.models import Viewing
 
 from .models import WatchlistEntry
 from .schemas import AddResponse, WatchlistItem, WatchlistPage
@@ -122,8 +123,12 @@ def add(
             return replay.status, replay.body
         local = movies.local_today(session, user_id)
         movie = session.get(Movie, tmdb_id)
+        if session.scalar(
+            select(Viewing.id).where(Viewing.user_id == user_id, Viewing.movie_id == tmdb_id)
+        ):
+            raise AppError(409, "MOVIE_ALREADY_WATCHED", "You've already watched this film.")
         if movie is None or movie.metadata_status != "ready" or not movies.can_add(movie.adult):
-            raise AppError(422, "MOVIE_INELIGIBLE", "This film can't be added to CinemÃ©.")
+            raise AppError(422, "MOVIE_INELIGIBLE", "This film can't be added to Cinemé.")
         entry = session.scalar(
             select(WatchlistEntry).where(
                 WatchlistEntry.user_id == user_id, WatchlistEntry.movie_id == tmdb_id

@@ -26,3 +26,12 @@ API_CONTRACT "Recommendation actions and history" (reject reasons in P4, reason 
 ## Validation
 
 PostgreSQL integration tests for reject/replacement, pause, Continue once, context-change lift, daily cap, detail validation, history/detail/comparison and isolation; Flutter tests for the reason sheet (no Already seen in the normal build), pause and Continue once, Why drawer and the hidden P5 actions; emulator run against the real watchlist.
+
+## Amendment — Already watched in P4 (2026-10-02, approved by the project owner)
+
+"Already watched" moves into P4 as a reason inside Not feeling it, because the recommendation loop needs a way to say "I've seen it" without permanent blocks or the History UI.
+
+- Reason `already_watched` (optional `details.watched_at`: null or a past timestamp; nothing else) records a known past viewing in `viewings` (source `already_watched`, `watched_at` null when unknown, **no rating**, `recommendation_id` null so it is never tonight's completion), archives the active watchlist entry, rejects the current pick and counts towards the pause like any rejection. A replacement is chosen only with `choose_another=true` (the sheet's Show another); Stop for tonight selects nothing.
+- The `viewings` table (DATA_MODEL shape, unchanged) is therefore created in P4 (migration `0004`). Only this path writes it; ratings, manual logging, Mark watched and the History UI remain P5.
+- Effects on selection follow the frozen engine: a viewed film is excluded (`already_watched`), re-adding it to the watchlist is refused with `409 MOVIE_ALREADY_WATCHED`, and the diversity component D now has viewing genre snapshots to compare with. Genre affinity G is unchanged because no ratings exist; preferences are never modified.
+- The card's direct "Already seen" button stays P5/preview-only; the normal build offers Already watched inside Not feeling it.

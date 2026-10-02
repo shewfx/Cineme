@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/network/idempotency.dart';
 import '../../../shared/models/profile.dart';
 
 /// Explicit app-profile setup after sign-in (API_CONTRACT): POST
@@ -9,6 +10,12 @@ abstract interface class AccountRepository {
   Future<void> bootstrap();
 
   Future<Profile> me();
+
+  /// PATCH /me {country_code}; null goes back to the time zone's country.
+  Future<void> setRegion(String? countryCode);
+
+  /// GET /watch/regions: (code, name) pairs TMDB has providers for.
+  Future<List<(String, String)>> regions();
 }
 
 /// Null in the UI-preview build.
@@ -18,6 +25,7 @@ class ApiAccountRepository implements AccountRepository {
   ApiAccountRepository(this._api);
 
   final ApiClient _api;
+  final _keys = RetryKeys();
 
   @override
   Future<void> bootstrap() async {
@@ -27,6 +35,24 @@ class ApiAccountRepository implements AccountRepository {
 
   @override
   Future<Profile> me() async => profileFromJson(await _api.get('/api/v1/me'));
+
+  @override
+  Future<void> setRegion(String? countryCode) async {
+    final body = {'country_code': countryCode};
+    await _keys.send(
+      commandFingerprint('PATCH', '/api/v1/me', body),
+      (key) => _api.patch('/api/v1/me', body: body, idempotencyKey: key),
+    );
+  }
+
+  @override
+  Future<List<(String, String)>> regions() async {
+    final body = await _api.get('/api/v1/watch/regions');
+    return [
+      for (final r in body['items'] as List<Object?>)
+        ((r as Map)['code'] as String, r['name'] as String),
+    ];
+  }
 }
 
 Map<String, dynamic> _map(Object? value) {
@@ -49,10 +75,14 @@ Profile profileFromJson(Map<String, dynamic> json) {
   final displayName = json['display_name'];
   final cap = prefs['default_max_runtime_minutes'];
   final ai = prefs['ai_context_enabled'];
+  final region = json['region'];
+  final chosen = json['country_code'];
   if (json['id'] is! String ||
       timezone is! String ||
       (displayName != null && displayName is! String) ||
       (cap != null && cap is! int) ||
+      (region != null && region is! String) ||
+      (chosen != null && chosen is! String) ||
       ai is! bool) {
     throw _malformed;
   }
@@ -64,5 +94,7 @@ Profile profileFromJson(Map<String, dynamic> json) {
     defaultMaxRuntimeMinutes: cap as int?,
     aiContextEnabled: ai,
     blockedMovies: null,
+    region: region as String?,
+    regionChosen: chosen != null,
   );
 }

@@ -91,6 +91,10 @@ class TodayController extends Notifier<TodayViewState> {
     currentMood: () => state.currentMood == value ? null : value,
   );
 
+  /// Sets or clears the optional mood (selector sheets choose explicitly).
+  void setMood(CurrentMood? value) =>
+      state = state.copyWith(currentMood: () => value);
+
   void selectMaxRuntime(int? minutes) =>
       state = state.copyWith(maxRuntimeMinutes: () => minutes);
 

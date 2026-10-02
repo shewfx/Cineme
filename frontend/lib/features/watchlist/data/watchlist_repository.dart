@@ -31,6 +31,9 @@ class ApiWatchlistRepository implements WatchlistRepository {
 
   final ApiClient _api;
 
+  /// Same command after an ambiguous failure -> same key (server replay).
+  final _keys = RetryKeys();
+
   @override
   Future<Paged<WatchlistEntry>> list({String? cursor}) async {
     final body = await _api.get(
@@ -45,10 +48,11 @@ class ApiWatchlistRepository implements WatchlistRepository {
   @override
   Future<WatchlistAddResult> add(int tmdbId) async {
     try {
-      final body = await _api.post(
-        '/api/v1/watchlist',
-        body: {'tmdb_id': tmdbId},
-        idempotencyKey: newIdempotencyKey(),
+      final request = {'tmdb_id': tmdbId};
+      final body = await _keys.send(
+        commandFingerprint('POST', '/api/v1/watchlist', request),
+        (key) =>
+            _api.post('/api/v1/watchlist', body: request, idempotencyKey: key),
       );
       final already = body['already_present'];
       if (already is! bool) throw malformedResponse;
@@ -63,9 +67,10 @@ class ApiWatchlistRepository implements WatchlistRepository {
 
   @override
   Future<void> remove(String entryId) async {
-    await _api.delete(
-      '/api/v1/watchlist/${Uri.encodeComponent(entryId)}',
-      idempotencyKey: newIdempotencyKey(),
+    final path = '/api/v1/watchlist/${Uri.encodeComponent(entryId)}';
+    await _keys.send(
+      commandFingerprint('DELETE', path, null),
+      (key) => _api.delete(path, idempotencyKey: key),
     );
   }
 

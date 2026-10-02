@@ -65,10 +65,16 @@ class AcceptRequest(BaseModel):
     expected_session_version: int = Field(ge=1)
 
 
-# P4 supports the temporary reasons (ADR 006). already_watched and
-# never_recommend need viewings/blocks and arrive with P5.
+# P4 supports the temporary reasons plus already_watched (ADR 006);
+# never_recommend needs blocks and arrives with P5.
 RejectReason = Literal[
-    "not_tonight", "too_long", "wrong_genre", "too_serious", "want_lighter", "other"
+    "not_tonight",
+    "too_long",
+    "wrong_genre",
+    "too_serious",
+    "want_lighter",
+    "already_watched",
+    "other",
 ]
 
 
@@ -146,9 +152,20 @@ class FeedbackOut(BaseModel):
     created_at: datetime
 
 
+class ViewingSummary(BaseModel):
+    id: uuid.UUID
+    movie: MovieSummary
+    watched_at: datetime | None
+    recorded_at: datetime
+    source: str
+    rating: str | None
+    version: int
+    recommendation_id: uuid.UUID | None
+
+
 class RejectResponse(BaseModel):
     feedback: FeedbackOut
-    viewing: None
+    viewing: ViewingSummary | None
     today: TodayEnvelope
     replacement_outcome: Literal["selected", "no_match", "paused", "daily_limit", "not_requested"]
 

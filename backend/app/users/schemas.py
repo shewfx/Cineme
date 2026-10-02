@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.movies.availability import iso_countries
+
 
 class PreferencesResponse(BaseModel):
     version: int
@@ -20,6 +22,10 @@ class MeResponse(BaseModel):
     id: uuid.UUID
     display_name: str | None
     timezone: str
+    # Chosen streaming region, and the effective one (chosen, else implied
+    # by the timezone, else null). ADR 007.
+    country_code: str | None
+    region: str | None
     created_at: datetime
     preferences: PreferencesResponse
 
@@ -67,6 +73,8 @@ class MePatch(BaseModel):
 
     display_name: str | None = Field(default=None, max_length=80)
     timezone: str | None = Field(default=None, max_length=64)
+    # Null clears the choice (the timezone's country is used instead).
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
 
     @field_validator("display_name")
     @classmethod
@@ -78,8 +86,15 @@ class MePatch(BaseModel):
     @model_validator(mode="after")
     def _something(self) -> Self:
         if not self.model_fields_set:
-            raise ValueError("send display_name, timezone or both")
+            raise ValueError("send display_name, timezone or country_code")
         return self
+
+    @field_validator("country_code")
+    @classmethod
+    def _country(cls, v: str | None) -> str | None:
+        if v is not None and v not in iso_countries():
+            raise ValueError("country_code must be an ISO 3166-1 alpha-2 code, e.g. IN")
+        return v
 
     @field_validator("timezone")
     @classmethod

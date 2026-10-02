@@ -8,6 +8,7 @@ import 'package:cineme/core/widgets/movie_poster.dart';
 import 'package:cineme/features/auth/data/account_repository.dart';
 import 'package:cineme/features/auth/data/auth_repository.dart';
 import 'package:cineme/features/preferences/data/profile_repository.dart';
+import 'package:cineme/features/availability/data/availability_repository.dart';
 import 'package:cineme/features/today/data/today_repository.dart';
 import 'package:cineme/preview/preview_store.dart';
 import 'package:cineme/shared/models/session_context.dart';
@@ -58,6 +59,17 @@ class FakeTodayApi implements HttpClientAdapter {
   int attempts = 0;
   final offered = <int>{};
   int _ids = 0;
+
+  /// Mutations actually applied (replays don't count).
+  int processed = 0;
+
+  /// Apply the next N mutations, then lose the response (ambiguous failure).
+  int dropResponses = 0;
+  final _ledger = <String, (String, int, Object)>{};
+  final keys = <String>[];
+
+  /// GET /movies/{id}/availability bodies by film; missing -> 503.
+  final availability = <int, Map<String, dynamic>>{};
 
   Map<String, dynamic> get state {
     final String s;
@@ -188,6 +200,13 @@ class FakeTodayApi implements HttpClientAdapter {
     if (options.method == 'GET' && path == '/api/v1/today') {
       return _json(200, state);
     }
+    if (options.method == 'GET' && path.endsWith('/availability')) {
+      final id = int.parse(path.split('/')[4]);
+      final a = availability[id];
+      return a == null
+          ? _error(503, 'DEPENDENCY_UNAVAILABLE')
+          : _json(200, {'tmdb_id': id, ...a});
+    }
     if (options.method == 'GET' &&
         path.startsWith('/api/v1/recommendations/')) {
       return _json(200, {
@@ -210,12 +229,40 @@ class FakeTodayApi implements HttpClientAdapter {
         'config_version': 'weights_v1',
       });
     }
+    // Idempotency ledger, like the server: same key + same request replays.
+    final key = options.headers['Idempotency-Key'] as String;
+    keys.add(key);
+    final fingerprint = '${options.method} $path ${jsonEncode(body)}';
+    final stored = _ledger[key];
+    if (stored != null) {
+      return stored.$1 == fingerprint
+          ? _json(stored.$2, stored.$3)
+          : _error(409, 'IDEMPOTENCY_CONFLICT');
+    }
+    final response = _mutate(path, body);
+    final (status, json) = response;
+    if (status < 300) {
+      processed++;
+      _ledger[key] = (fingerprint, status, json);
+    }
+    if (dropResponses > 0) {
+      dropResponses--;
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.receiveTimeout,
+      );
+    }
+    return status < 300 ? _json(status, json) : _error(status, json as String);
+  }
+
+  /// Applies one command; (status, body) or (status, error code).
+  (int, Object) _mutate(String path, Map<String, dynamic> body) {
     if (body['expected_session_version'] != version) {
-      return _error(409, 'VERSION_CONFLICT');
+      return (409, 'VERSION_CONFLICT');
     }
     if (path == '/api/v1/today/choose') {
       if (body['context'] == null && context == null) {
-        return _error(422, 'CONTEXT_REQUIRED');
+        return (422, 'CONTEXT_REQUIRED');
       }
       final next = body['context'] as Map<String, dynamic>?;
       final changed =
@@ -224,25 +271,25 @@ class FakeTodayApi implements HttpClientAdapter {
           next['desired_experience'] != context!['desired_experience'];
       if (next != null) context = next;
       if (current != null && current!['status'] != 'no_match' && !changed) {
-        return _json(200, state);
+        return (200, state);
       }
       if (rejections >= 3 && body['continue_after_pause'] != true && !changed) {
-        return _error(409, 'CONTEXT_REVIEW_REQUIRED');
+        return (409, 'CONTEXT_REVIEW_REQUIRED');
       }
       version++;
       _select();
-      return _json(201, state);
+      return (201, state);
     }
     if (path == '/api/v1/today/context') {
       context = body['context'] as Map<String, dynamic>;
       current = null;
       version++;
-      return _json(200, state);
+      return (200, state);
     }
     if (path.endsWith('/accept')) {
       current = {...current!, 'status': 'accepted'};
       version++;
-      return _json(200, state);
+      return (200, state);
     }
     if (path.endsWith('/reject')) {
       rejections++;
@@ -267,18 +314,32 @@ class FakeTodayApi implements HttpClientAdapter {
           outcome = current!['status'] == 'no_match' ? 'no_match' : 'selected';
         }
       }
-      return _json(200, {
-        'feedback': {
-          'id': 'f',
-          'reason': body['reason'],
-          'created_at': '2026-10-02T20:00:00Z',
+      return (
+        200,
+        {
+          'feedback': {
+            'id': 'f',
+            'reason': body['reason'],
+            'created_at': '2026-10-02T20:00:00Z',
+          },
+          'viewing': body['reason'] == 'already_watched'
+              ? {
+                  'id': 'v1',
+                  'movie': film(1, 'x', 90),
+                  'watched_at': null,
+                  'recorded_at': '2026-10-02T20:00:00Z',
+                  'source': 'already_watched',
+                  'rating': null,
+                  'version': 1,
+                  'recommendation_id': null,
+                }
+              : null,
+          'today': state,
+          'replacement_outcome': outcome,
         },
-        'viewing': null,
-        'today': state,
-        'replacement_outcome': outcome,
-      });
+      );
     }
-    return _error(404, 'NOT_FOUND');
+    return (404, 'NOT_FOUND');
   }
 
   @override
@@ -318,6 +379,9 @@ class TodayRig {
         AccountProfileRepository(FakeAccount()),
       ),
       todayRepositoryProvider.overrideWithValue(ApiTodayRepository(api)),
+      availabilityRepositoryProvider.overrideWithValue(
+        ApiAvailabilityRepository(api),
+      ),
     ],
     child: const CinemeApp(),
   );
@@ -636,6 +700,176 @@ void main() {
       expect(find.text('Not this one?'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+  });
+
+  group('Already watched, availability and retries', () {
+    testWidgets('Already watched records history, then one deliberate choice', (
+      tester,
+    ) async {
+      final rig = await start(tester);
+      await pickExciting(tester);
+      await tapText(tester, 'Not feeling it');
+      expect(find.text('Already watched'), findsOneWidget);
+      await tapText(tester, 'Already watched');
+      expect(find.textContaining('date unknown'), findsOneWidget);
+      await tapText(tester, 'Stop for tonight');
+      final sent = rig.server.commands('/reject').single.data as Map;
+      expect(sent['reason'], 'already_watched');
+      expect(sent['details'], isEmpty, reason: 'no rating, no inferred date');
+      expect(
+        sent['choose_another'],
+        isFalse,
+        reason: 'no automatic replacement',
+      );
+      expect(find.byType(MoviePoster), findsNothing);
+      expect(rig.server.commands('/today/choose'), hasLength(1));
+    });
+
+    testWidgets('Available on shows only the providers TMDB returned', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': [
+          {'id': 8, 'name': 'Netflix', 'logo_url': null},
+          {'id': 122, 'name': 'JioHotstar', 'logo_url': null},
+        ],
+        'free': <Object>[],
+        'rent': [
+          {'id': 2, 'name': 'Apple TV', 'logo_url': null},
+        ],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(find.text('Available on'), findsOneWidget);
+      expect(find.text('Netflix'), findsOneWidget);
+      expect(find.text('JioHotstar'), findsOneWidget);
+      expect(find.text('Also to rent or buy on Apple TV'), findsOneWidget);
+      expect(find.text('Streaming data: JustWatch · IN'), findsOneWidget);
+      expect(find.text('Prime Video'), findsNothing);
+    });
+
+    testWidgets('no providers, unknown region or a failure show nothing', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      rig.server.availability[14337] = {
+        'region': null,
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(find.text('Available on'), findsNothing);
+      expect(find.textContaining('JustWatch'), findsNothing);
+      // 329865 has no scripted data: the API fails; the card is unaffected.
+      rig.server.films.removeAt(0);
+      await tapText(tester, 'Not feeling it');
+      await tapText(tester, 'Not feeling this one');
+      await tapText(tester, 'Show another');
+      expect(find.byType(MoviePoster), findsOneWidget);
+      expect(find.text('Watch Tonight'), findsOneWidget);
+      expect(find.text('Available on'), findsNothing);
+    });
+
+    test(
+      'an ambiguous failure is retried with the same key and replayed',
+      () async {
+        final rig = TodayRig();
+        final repo = ApiTodayRepository(rig.api);
+        final pick = await repo.choose(
+          const SessionContext(desiredExperience: DesiredExperience.exciting),
+        );
+        final id = pick.recommendation!.id;
+        rig.server.dropResponses = 1;
+        await expectLater(
+          repo.accept(id),
+          throwsA(isA<ApiError>().having((e) => e.status, 'status', isNull)),
+        );
+        expect(rig.server.processed, 2, reason: 'the accept did commit');
+        final retried = await repo.accept(id);
+        expect(retried.state, TodayStatus.accepted);
+        expect(rig.server.processed, 2, reason: 'replayed, not applied twice');
+        expect(rig.server.keys[1], rig.server.keys[2], reason: 'same key');
+
+        // A genuinely new action gets a new key.
+        await repo.reject(id, RejectReason.notTonight, chooseAnother: false);
+        expect(rig.server.keys.last, isNot(rig.server.keys[2]));
+        expect(rig.server.keys.toSet(), hasLength(3));
+      },
+    );
+
+    test('a definite error settles the key; conflicts stay visible', () async {
+      final rig = TodayRig();
+      final repo = ApiTodayRepository(rig.api);
+      const ctx = SessionContext(desiredExperience: DesiredExperience.relax);
+      rig.server.failStatus = 503;
+      await expectLater(repo.choose(ctx), throwsA(isA<ApiError>()));
+      rig.server.failStatus = 422;
+      rig.server.failCode = 'VALIDATION_ERROR';
+      await expectLater(repo.choose(ctx), throwsA(isA<ApiError>()));
+      rig.server.failStatus = null;
+      await repo.choose(ctx);
+      final keys = [
+        for (final r in rig.server.requests)
+          if (r.method == 'POST') r.headers['Idempotency-Key'],
+      ];
+      expect(keys[0], keys[1], reason: '503 was ambiguous: same key');
+      expect(keys[2], isNot(keys[1]), reason: 'after a 4xx, a new key');
+
+      // A server-side key conflict is surfaced, not swallowed or retried.
+      rig.server.failStatus = 409;
+      rig.server.failCode = 'IDEMPOTENCY_CONFLICT';
+      await expectLater(
+        repo.choose(ctx),
+        throwsA(
+          isA<ApiError>().having((e) => e.code, 'code', 'IDEMPOTENCY_CONFLICT'),
+        ),
+      );
+    });
+
+    testWidgets(
+      'tapping Watch Tonight again after a lost response accepts once',
+      (tester) async {
+        final rig = await start(tester);
+        await pickExciting(tester);
+        rig.server.dropResponses = 1;
+        await tapText(tester, 'Watch Tonight');
+        expect(find.textContaining("Couldn't reach Cinemé"), findsOneWidget);
+        tester
+            .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+            .hideCurrentSnackBar();
+        await tester.pumpAndSettle();
+        await tapText(tester, 'Watch Tonight');
+        expect(find.text("Tonight's plan"), findsOneWidget);
+        expect(rig.server.processed, 2, reason: 'one choose, one accept');
+        final acceptKeys = {
+          for (final r in rig.server.commands('/accept'))
+            r.headers['Idempotency-Key'],
+        };
+        expect(acceptKeys, hasLength(1));
+      },
+    );
   });
 
   testWidgets('preview Tonight keeps its fakes and P5 actions', (tester) async {

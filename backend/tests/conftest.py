@@ -28,7 +28,12 @@ from app.core.auth import Identity, TokenVerifier
 from app.core.errors import AppError
 from app.core.settings import Settings
 from app.main import BACKEND_DIR, create_app
-from app.movies.provider import GenreRef, ProviderMovie, ProviderSearchPage
+from app.movies.provider import (
+    GenreRef,
+    ProviderMovie,
+    ProviderSearchPage,
+    normalize_watch_providers,
+)
 
 PROJECT = "https://test-project.supabase.co"
 ISSUER = f"{PROJECT}/auth/v1"
@@ -119,6 +124,9 @@ class FakeMovieProvider:
         self.films = {f.tmdb_id: f for f in films or []}
         self.down = False
         self.detail_calls: list[int] = []
+        # Raw TMDB /watch/providers payloads by film; normalized like TMDB's.
+        self.availability: dict[int, dict[str, Any]] = {}
+        self.availability_calls: list[int] = []
 
     def _check(self) -> None:
         if self.down:
@@ -147,6 +155,17 @@ class FakeMovieProvider:
 
     def image_base(self) -> str:
         return "https://image.tmdb.org/t/p/"
+
+    def watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        self.availability_calls.append(tmdb_id)
+        self._check()
+        return normalize_watch_providers(
+            {"id": tmdb_id, "results": self.availability.get(tmdb_id, {})}
+        )
+
+    def watch_regions(self) -> tuple[tuple[str, str], ...]:
+        self._check()
+        return (("IN", "India"), ("US", "United States of America"))
 
 
 @pytest.fixture

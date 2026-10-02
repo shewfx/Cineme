@@ -80,15 +80,29 @@ class ApiTodayRepository implements TodayRepository {
     'DAILY_ATTEMPT_LIMIT',
   };
 
+  /// Keeps a command's key across an ambiguous failure so a retry of the
+  /// same command is replayed by the server, never applied twice.
+  final _keys = RetryKeys();
+
   Future<Map<String, dynamic>> _command(
-    Future<Map<String, dynamic>> Function() send,
+    String method,
+    String path,
+    Map<String, Object?> body,
   ) async {
     try {
-      return await send();
+      return await _keys.send(
+        commandFingerprint(method, path, body),
+        (key) => method == 'PATCH'
+            ? _api.patch(path, body: body, idempotencyKey: key)
+            : _api.post(path, body: body, idempotencyKey: key),
+      );
     } on ApiError catch (e) {
       throw _conflicts.contains(e.code) ? TodayConflict(e.code) : e;
     }
   }
+
+  String _rec(String id, String action) =>
+      '/api/v1/recommendations/${Uri.encodeComponent(id)}/$action';
 
   @override
   Future<TodayEnvelope> today() async =>
@@ -99,42 +113,26 @@ class ApiTodayRepository implements TodayRepository {
     SessionContext context, {
     bool continueAfterPause = false,
   }) async => _envelope(
-    await _command(
-      () => _api.post(
-        '/api/v1/today/choose',
-        body: {
-          'expected_session_version': _version,
-          'context': sessionContextToJson(context),
-          'continue_after_pause': continueAfterPause,
-        },
-        idempotencyKey: newIdempotencyKey(),
-      ),
-    ),
+    await _command('POST', '/api/v1/today/choose', {
+      'expected_session_version': _version,
+      'context': sessionContextToJson(context),
+      'continue_after_pause': continueAfterPause,
+    }),
   );
 
   @override
   Future<TodayEnvelope> saveContext(SessionContext context) async => _envelope(
-    await _command(
-      () => _api.patch(
-        '/api/v1/today/context',
-        body: {
-          'expected_session_version': _version,
-          'context': sessionContextToJson(context),
-        },
-        idempotencyKey: newIdempotencyKey(),
-      ),
-    ),
+    await _command('PATCH', '/api/v1/today/context', {
+      'expected_session_version': _version,
+      'context': sessionContextToJson(context),
+    }),
   );
 
   @override
   Future<TodayEnvelope> accept(String recommendationId) async => _envelope(
-    await _command(
-      () => _api.post(
-        '/api/v1/recommendations/${Uri.encodeComponent(recommendationId)}/accept',
-        body: {'expected_session_version': _version},
-        idempotencyKey: newIdempotencyKey(),
-      ),
-    ),
+    await _command('POST', _rec(recommendationId, 'accept'), {
+      'expected_session_version': _version,
+    }),
   );
 
   @override
@@ -145,23 +143,17 @@ class ApiTodayRepository implements TodayRepository {
     Set<int> avoidGenreIds = const {},
     required bool chooseAnother,
   }) async {
-    final body = await _command(
-      () => _api.post(
-        '/api/v1/recommendations/${Uri.encodeComponent(recommendationId)}/reject',
-        body: {
-          'expected_session_version': _version,
-          'reason': reason.wireName,
-          'details': {
-            if (reason == RejectReason.tooLong && maxRuntimeMinutes != null)
-              'max_runtime_minutes': maxRuntimeMinutes,
-            if (reason == RejectReason.wrongGenre)
-              'avoid_genre_ids': (avoidGenreIds.toList()..sort()),
-          },
-          'choose_another': chooseAnother,
-        },
-        idempotencyKey: newIdempotencyKey(),
-      ),
-    );
+    final body = await _command('POST', _rec(recommendationId, 'reject'), {
+      'expected_session_version': _version,
+      'reason': reason.wireName,
+      'details': {
+        if (reason == RejectReason.tooLong && maxRuntimeMinutes != null)
+          'max_runtime_minutes': maxRuntimeMinutes,
+        if (reason == RejectReason.wrongGenre)
+          'avoid_genre_ids': (avoidGenreIds.toList()..sort()),
+      },
+      'choose_another': chooseAnother,
+    });
     return RejectResult(
       outcome: replacementOutcomeFromJson(body['replacement_outcome']),
       today: _envelope(asMap(body['today'])),

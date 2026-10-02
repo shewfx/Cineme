@@ -94,7 +94,7 @@ Each phase delivers: small runnable behavior, meaningful tests, manual verificat
 
 **Deferred:** Full rejection/watched/rating flows, applying context and LLM. Do not deploy as finished product yet.
 
-**Scope change (ADR 006):** P4 also implements temporary rejection (not_tonight, too_long, wrong_genre, too_serious, want_lighter, other) with one atomic replacement, the third-rejection pause, Continue once and the 20-attempt cap, plus PATCH /today/context, PATCH /me/preferences and `today` in watchlist responses. Already seen, Never recommend, Mark watched, ratings and blocks remain P5.
+**Scope change (ADR 006):** P4 also implements temporary rejection (not_tonight, too_long, wrong_genre, too_serious, want_lighter, other) with one atomic replacement, the third-rejection pause, Continue once and the 20-attempt cap, plus PATCH /today/context, PATCH /me/preferences and `today` in watchlist responses. Already watched (inside Not feeling it) and display-only streaming availability with a region setting were added at close-out (ADR 006 amendment, ADR 007). Never recommend, Mark watched, ratings, blocks and the History UI remain P5.
 
 ## P5 — Feedback, completion and conservative learning
 

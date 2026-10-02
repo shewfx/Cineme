@@ -631,3 +631,125 @@ def test_deterministic_pick_for_identical_state(a: Tonight, b: Tonight, engine: 
 
 def test_local_date_is_a_date(stocked: Tonight) -> None:
     assert date.fromisoformat(stocked.get()["local_date"])
+
+
+# --- already watched (ADR 006) and idempotent replays ---------------------------------
+
+
+def test_already_watched_records_history_not_tonight(stocked: Tonight, engine: Engine) -> None:
+    rec_id, movie = stocked.pick(stocked.choose(ctx()).json())
+    prefs_before = scalar(engine, "SELECT genre_preferences::text FROM cineme.user_preferences")
+    body = stocked.reject(rec_id, "already_watched").json()
+    viewing = body["viewing"]
+    assert viewing["movie"]["tmdb_id"] == movie
+    assert viewing["watched_at"] is None, "date unknown, never assumed to be tonight"
+    assert viewing["rating"] is None and viewing["source"] == "already_watched"
+    assert viewing["recommendation_id"] is None, "not tonight's completion"
+    assert body["replacement_outcome"] == "not_requested"
+    today = body["today"]
+    assert today["state"] == "ready" and today["session"]["completed_at"] is None
+    assert today["session"]["rejection_count"] == 1
+    status = scalar(
+        engine, "SELECT status FROM cineme.watchlist_entries WHERE movie_id = :m", m=movie
+    )
+    assert status == "removed"
+    assert scalar(engine, "SELECT genre_preferences::text FROM cineme.user_preferences") == (
+        prefs_before
+    )
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE rating IS NOT NULL") == 0
+    # Re-adding a known-watched film is refused, so it can't come back.
+    again = stocked.add(movie)
+    assert again.status_code == 409 and again.json()["error"]["code"] == "MOVIE_ALREADY_WATCHED"
+
+
+def test_watched_films_are_excluded_from_future_picks(
+    stocked: Tonight, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec_id, movie = stocked.pick(stocked.choose(ctx()).json())
+    stocked.reject(rec_id, "already_watched", choose_another=True)
+    # Even if the archived entry were active again, the viewing excludes it.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE cineme.watchlist_entries SET status='active', removed_at=NULL"
+                " WHERE movie_id = :m"
+            ),
+            {"m": movie},
+        )
+    clock = [datetime.now(UTC) + timedelta(days=2)]
+    monkeypatch.setattr(today_service, "utc_now", lambda: clock[0])
+    stocked.version = 0
+    seen = set()
+    rec = stocked.choose(ctx()).json()
+    while rec["recommendation"] and rec["recommendation"]["status"] == "offered":
+        seen.add(rec["recommendation"]["movie"]["tmdb_id"])
+        nxt = stocked.reject(rec["recommendation"]["id"], choose_another=True).json()
+        if nxt["replacement_outcome"] != "selected":
+            break
+        rec = nxt["today"]
+    assert movie not in seen
+    counts = stocked.choose(ctx(desired_experience="relax")).json()
+    if counts["state"] == "no_match":
+        assert (
+            "already_watched"
+            in counts["recommendation"]["no_match_summary"]["primary_exclusion_counts"]
+        )
+
+
+def test_already_watched_accepts_a_past_date_only(stocked: Tonight) -> None:
+    rec_id, _ = stocked.pick(stocked.choose(ctx()).json())
+    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    assert (
+        stocked.reject(rec_id, "already_watched", details={"watched_at": future}).status_code == 422
+    )
+    assert stocked.reject(rec_id, "already_watched", details={"rating": "loved"}).status_code == 422
+    past = "2019-05-04T20:00:00+00:00"
+    body = stocked.reject(rec_id, "already_watched", details={"watched_at": past}).json()
+    assert body["viewing"]["watched_at"] == "2019-05-04T20:00:00Z"
+
+
+def test_reject_and_accept_replays_never_apply_twice(stocked: Tonight, engine: Engine) -> None:
+    rec_id, _ = stocked.pick(stocked.choose(ctx()).json())
+    version = stocked.version
+    key = str(uuid.uuid4())
+    body = {
+        "expected_session_version": version,
+        "reason": "already_watched",
+        "choose_another": True,
+    }
+    first = stocked.post(f"/api/v1/recommendations/{rec_id}/reject", body, key)
+    replay = stocked.post(f"/api/v1/recommendations/{rec_id}/reject", body, key)
+    assert replay.status_code == first.status_code == 200
+    assert replay.json() == first.json(), "the stored response, even though the version moved"
+    assert scalar(engine, "SELECT count(*) FROM cineme.rejection_feedback") == 1
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings") == 1
+    assert scalar(engine, "SELECT count(*) FROM cineme.recommendations") == 2
+    conflict = stocked.post(
+        f"/api/v1/recommendations/{rec_id}/reject", body | {"reason": "not_tonight"}, key
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+    new_id = first.json()["today"]["recommendation"]["id"]
+    stocked.version = first.json()["today"]["session"]["version"]
+    accept_key = str(uuid.uuid4())
+    a1 = stocked.post(
+        f"/api/v1/recommendations/{new_id}/accept",
+        {"expected_session_version": stocked.version},
+        accept_key,
+    )
+    a2 = stocked.post(
+        f"/api/v1/recommendations/{new_id}/accept",
+        {"expected_session_version": a1.json()["session"]["version"] - 1},
+        accept_key,
+    )
+    assert a2.json() == a1.json()
+
+
+def test_viewings_are_private(stocked: Tonight, b: Tonight, engine: Engine) -> None:
+    rec_id, movie = stocked.pick(stocked.choose(ctx()).json())
+    stocked.reject(rec_id, "already_watched")
+    assert b.add(movie).status_code == 201, "A's history never blocks B"
+    b_pick = b.choose(ctx()).json()
+    assert b_pick["recommendation"]["movie"]["tmdb_id"] == movie
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE user_id = :u", u=b.id) == 0
