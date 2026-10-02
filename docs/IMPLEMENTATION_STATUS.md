@@ -4,7 +4,7 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 
 | Phase | Status |
 |---|---|
-| P0 — Bootable repository skeleton | Locally verified; CI unverified (not yet run on GitHub Actions) |
+| P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header tracked as outstanding |
 | P1–P8 | Not started |
 
 ## P0 — 2026-10-02, branch `feat/p0-setup`
@@ -30,7 +30,7 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 
 ### Unverified / outstanding
 
-- **CI workflow:** written but never executed (no remote; nothing pushed). Stays unverified until a GitHub Actions run passes.
+- **CI workflow:** verified. [Run 36962545446](https://github.com/shewfx/Cineme/actions/runs/36962545446) on `feat/p0-setup` (commit 29981c2): backend, frontend, compose all succeeded. Runner notices to address later: actions/checkout@v4 and setup-uv@v6 target deprecated Node 20; `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19.
 - **Request-ID header:** API_CONTRACT requires every response to carry a request ID header. Not implemented at P0; must land with the error envelope before any contract-facing endpoint is considered done.
 
 ### Known notes
