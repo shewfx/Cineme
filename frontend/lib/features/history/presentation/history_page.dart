@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/paged_list_view.dart';
@@ -83,14 +84,47 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       title: 'No picks yet',
                       message: 'Each film Tonight picks for you appears here.',
                     ),
-                    itemBuilder: (context, r) => MovieListTile(
-                      key: ValueKey(r.id),
-                      movie: r.movie,
-                      lines: [
-                        '${r.status.label}  ·  ${shortDate(r.createdAt)}',
+                    itemBuilder: (context, r) {
+                      final lines = [
+                        [
+                          r.status.label,
+                          ?r.reasonLabel,
+                          shortDate(r.createdAt),
+                        ].join('  ·  '),
                         'For “${r.desiredExperience.label}”',
-                      ],
-                    ),
+                      ];
+                      final movie = r.movie;
+                      if (movie != null) {
+                        return MovieListTile(
+                          key: ValueKey(r.id),
+                          movie: movie,
+                          lines: lines,
+                        );
+                      }
+                      // A no-match attempt has no film to show.
+                      return Padding(
+                        key: ValueKey(r.id),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 10,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Nothing fitted',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            for (final line in lines)
+                              Text(
+                                line,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: AppColors.textMuted),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                     onRetry: () =>
                         ref.invalidate(recommendationHistoryProvider),
                     onRefresh: () =>

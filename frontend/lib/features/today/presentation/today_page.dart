@@ -8,6 +8,7 @@ import '../application/today_controller.dart';
 import '../data/today_repository.dart';
 import 'context_view.dart';
 import 'recommendation_view.dart';
+import 'today_states.dart';
 
 class TodayPage extends ConsumerWidget {
   const TodayPage({super.key});
@@ -29,8 +30,17 @@ class TodayPage extends ConsumerWidget {
             ),
           ),
           data: (envelope) => switch (envelope.state) {
-            TodayStatus.offered => RecommendationView(envelope: envelope),
+            TodayStatus.offered ||
+            TodayStatus.accepted ||
+            TodayStatus.completed => RecommendationView(envelope: envelope),
             TodayStatus.notStarted => const ContextView(),
+            TodayStatus.ready => ContextView(
+              key: const ValueKey('ready'),
+              mode: ContextMode.ready,
+              today: envelope,
+            ),
+            TodayStatus.paused => PausedView(envelope: envelope),
+            TodayStatus.noMatch => NoMatchView(envelope: envelope),
             TodayStatus.emptyWatchlist => Scaffold(
               body: SafeArea(
                 child: EmptyState(

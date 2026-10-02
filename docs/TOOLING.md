@@ -80,7 +80,7 @@ The port binds to `127.0.0.1` only. P0 creates no tables; schema arrives through
 
 ## Low disk space on C:
 
-If `flutter pub get` or Gradle fails with "not enough space on the disk", redirect caches for the current PowerShell session:
+If `flutter pub get` or Gradle fails with "not enough space on the disk", or `flutter test` hangs with no output (it writes temporary files to `%TEMP%`), redirect caches for the current PowerShell session:
 
 ```powershell
 $c = 'D:\cineme-tool-cache'

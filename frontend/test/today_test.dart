@@ -32,8 +32,11 @@ Future<void> tapText(WidgetTester tester, String label) async {
   await tester.pump();
 }
 
-bool isSelected(WidgetTester tester, String label) =>
-    tester.widget<ChoicePill>(find.widgetWithText(ChoicePill, label)).selected;
+/// True if any pill with this label is selected (labels can repeat, e.g.
+/// the feeling-down follow-up "Surprise me").
+bool isSelected(WidgetTester tester, String label) => tester
+    .widgetList<ChoicePill>(find.widgetWithText(ChoicePill, label))
+    .any((p) => p.selected);
 
 void main() {
   group('FakeTodayRepository', () {
@@ -82,18 +85,21 @@ void main() {
           runtimeMinutes: null,
           genres: [Genre(35, 'Comedy')],
         );
-        final inventory = [
-          for (final m in previewWatchlist) m.tmdbId == 813 ? unknown : m,
-        ];
-        expect(
-          fake(inventory: inventory).choose(
-            const SessionContext(
-              desiredExperience: DesiredExperience.makeMeLaugh,
-              maxRuntimeMinutes: 90,
-            ),
+        final groundhog = previewWatchlist.firstWhere((m) => m.tmdbId == 137);
+        // Honest no match: one film has unknown runtime, one is too long.
+        final r = await fake(inventory: [unknown, groundhog]).choose(
+          const SessionContext(
+            desiredExperience: DesiredExperience.makeMeLaugh,
+            maxRuntimeMinutes: 90,
           ),
-          throwsStateError,
         );
+        expect(r.state, TodayStatus.noMatch);
+        expect(r.recommendation, isNull);
+        expect(r.noMatch!.candidateCount, 2);
+        expect(r.noMatch!.counts, {
+          ExclusionCode.runtimeUnknown: 1,
+          ExclusionCode.runtimeExceeded: 1,
+        });
       },
     );
 
@@ -220,13 +226,10 @@ void main() {
         find.text('Keep me hooked  ·  up to 90 min  ·  feeling tired'),
         findsOneWidget,
       );
-      // No later-milestone or feed actions.
-      for (final absent in [
-        'Mark watched',
-        'Pick another',
-        'Already seen',
-        'More like this',
-      ]) {
+      // Offered: feedback actions, but no completion or feed actions.
+      expect(find.text('Pick another'), findsOneWidget);
+      expect(find.text('Already seen'), findsOneWidget);
+      for (final absent in ['Mark watched', 'More like this', 'Top picks']) {
         expect(find.text(absent), findsNothing, reason: absent);
       }
     });
@@ -242,9 +245,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await tapText(tester, 'Watch Tonight');
-      await tester.pump();
-      expect(find.textContaining("Watch Tonight isn't saved"), findsOneWidget);
-      expect(find.textContaining('never that you watched'), findsOneWidget);
+      await tester.pumpAndSettle();
+      // Accepted: still the same single film, now a plan, not a viewing.
+      expect(find.text("Tonight's plan"), findsOneWidget);
+      expect(find.text('Mark watched'), findsOneWidget);
+      expect(find.text('Watch Tonight'), findsNothing);
       expect(find.byType(MoviePoster), findsOneWidget);
     });
 

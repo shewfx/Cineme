@@ -42,15 +42,19 @@ class RecordWatchedResult {
 
 enum RecommendationStatus {
   offered('Offered'),
+  accepted('Planned for tonight'),
+  rejected('Passed'),
+  watched('Watched'),
   superseded('Cleared'),
-  watched('Watched');
+  noMatch('No match');
 
   const RecommendationStatus(this.label);
 
   final String label;
 }
 
-/// Recommendation history row: what was offered, when and for which intent.
+/// Recommendation history row: what was offered (or no match), when, for
+/// which intent, and the rejection reason if any.
 class RecommendationRecord {
   const RecommendationRecord({
     required this.id,
@@ -58,11 +62,26 @@ class RecommendationRecord {
     required this.status,
     required this.createdAt,
     required this.desiredExperience,
+    this.reasonLabel,
   });
 
+  /// Null only for a no-match attempt.
+  final Movie? movie;
   final String id;
-  final Movie movie;
   final RecommendationStatus status;
   final DateTime createdAt;
   final DesiredExperience desiredExperience;
+  final String? reasonLabel;
+
+  RecommendationRecord withStatus(
+    RecommendationStatus status, {
+    String? reasonLabel,
+  }) => RecommendationRecord(
+    id: id,
+    movie: movie,
+    status: status,
+    createdAt: createdAt,
+    desiredExperience: desiredExperience,
+    reasonLabel: reasonLabel ?? this.reasonLabel,
+  );
 }

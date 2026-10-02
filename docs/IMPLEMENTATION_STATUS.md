@@ -6,10 +6,45 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 |---|---|
 | P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header tracked as outstanding |
 | P1a — Context to one movie card (fake data) | Complete: merged to `main` in PR #2 (CI green) |
-| P1b — Inventory, history, profile, loading/empty/error (fake data) | Locally verified on branch `feat/p1b-inventory`; not committed, CI not run |
-| P1c, P2–P8 | Not started |
+| P1b — Inventory, history, profile, loading/empty/error (fake data) | Complete: merged to `main` in PR #3 (CI green) |
+| P1c — Feedback, replacement, pause, accept vs watched, no match (fake data) | Locally verified on branch `feat/p1c-feedback`; not committed, CI not run |
+| P2–P8 | Not started |
 
-## P1b — 2026-10-02, branch `feat/p1b-inventory`
+## P1c — 2026-10-02, branch `feat/p1c-feedback`
+
+The preview store now models one daily session with all documented Today states (`not_started`, `ready`, `offered`, `accepted`, `completed`, `paused`, `no_match`, `empty_watchlist`) in API_CONTRACT precedence, behind the same `TodayRepository` boundary (`choose` with `continueAfterPause`, `saveContext`, `accept`, `reject`, `markWatched`; `HistoryRepository.rateViewing`; `ProfileRepository.unblock`).
+
+- **Watch Tonight** = accept (intention; no viewing, film stays in the watchlist). **Mark watched** = completion (viewing with date, archives the film, day completed; further choose/save → `TODAY_COMPLETED`). **Rating** is separate, optional and replaces the single observation.
+- **Pick another** sheet with the documented reasons (both skips → `not_tonight`; Too long with optional lower cap that must be below the current cap; Something lighter → Relaxing + heaviness target; Different genre needs ≥1 of the film's genres; Already seen). Show another selects exactly ONE replacement; Stop for tonight selects none.
+- **Already seen** (card or sheet) records a past viewing with unknown date, never tonight's completion. **Never recommend** sits under More actions and is a reversible block (Unblock in Profile; does not re-add to the watchlist; blocked films can't be re-added from Search until unblocked).
+- **Exclusions** in the engine's precedence: blocked, offered this session, tonight's avoided genres, unknown runtime under a cap, over the cap. A film offered once today is never offered again.
+- **Pause** on the third rejection: no automatic replacement; Adjust tonight's context, Continue once (one film, count not reset), or Stop. Unchanged or mood-only context → `CONTEXT_REVIEW_REQUIRED`; a genuine scoring change allows one attempt.
+- **Edit tonight** (`/today/context`): Save or Pick with this context; mood-only edits keep the pick, scoring changes clear it (visible confirmation when replacing an accepted plan); back changes nothing.
+- **No match**: aggregate counts that sum to the candidate count, Adjust context / Add movies; never an error, no limit relaxed, nothing outside the watchlist.
+- **Feeling down** reveals the four documented follow-ups (Cheer me up, Something comforting, Let me feel it, Surprise me); nothing is preselected.
+- Scripted selection stays non-ranking: P1a order first, then remaining eligible films in watchlist order; a film whose genres don't match the intent says so ("Its genres don't clearly match …").
+- Profile: natural-language context shown as "Coming later"; account and preference sections marked read-only ("Editing is coming later").
+- `core/state/revision.dart`: a counter Today bumps after watchlist/viewing/block changes so Watchlist, watched history and Profile reload without features importing each other.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `dart format --output=none --set-exit-if-changed lib test` | 0 changed |
+| `flutter analyze` | No issues found |
+| `flutter test` | 49 passed (P1a + P1b + 23 P1c): accept is intention; Mark watched completes once and locks the day; rating replaces; one new film per replacement and no same-session repeats; third-rejection pause, mood-only and unchanged context blocked, Continue once without reset, real change allowed; Stop; Already seen; Never recommend block/unblock; Too long cap validation (invalid request changes nothing); Different genre validation and exclusion; Something lighter; Edit tonight invalidation rules; honest no-match counts incl. tight cap; mood never changes the pick sequence; screen flows for Pick another, pause/Continue once, Watch Tonight → Mark watched with rating → History, no-match view, feeling-down follow-ups, Edit tonight Save and back-cancel, Profile "Coming later", all lifecycle screens at 360×640 / 200% text |
+| Emulator 411dp | Down follow-ups; offered card with Already seen / Pick another / Watch Tonight; reason sheet incl. genre and shorter-limit options and third-pass note; two replacements; pause; Continue once → no match with counts; History recommendations with reasons; More actions; Already seen dialog; Edit tonight mood-only Save kept the film; accepted; Mark watched sheet with rating; completed card; Profile |
+| Emulator 360×640dp at font scale 2.0 | Offered, reason sheet and accepted screens usable; content scrolls with actions visible |
+
+Found and fixed during verification: a 200%-text overflow in the context line + Edit tonight row; reasons pushed below the fold once two action rows existed (art now sized from the available height); app-bar tint on Edit tonight. Note: the C: drive filled up again and `flutter test` hung silently until `%TEMP%` was redirected to D: (TOOLING updated).
+
+### Not in P1c
+
+- Session versions, idempotency keys and conflict-reload behaviour are backend/HTTP concerns (P2+); the fake has no versions.
+- Daily attempt cap (20/day, `daily_limit` outcome), day rollover/timezone, `too_serious` and `other` reasons with notes, advanced context controls (prefer genres, pace, complexity), "Why?" detail drawer, rating edits from History rows, movie details, sign-out (P2), preference editing (P3).
+- Visual polish deferred until real imagery arrives in P3.
+
+
 
 Four-tab stateful shell (Tonight, Watchlist, History, Profile) plus a nested full-screen `/search`. Each feature has a repository interface whose provider is null in normal builds; the preview build wires every fake from `lib/preview/` over one in-memory `PreviewStore`, which keeps the cross-screen rules: Tonight picks only from the active watchlist; removing a film or logging it as already watched archives it and, if it was tonight's pick, clears it (recorded as cleared) without choosing another; picks appear in recommendation history. Today now reads `GET /today`-style state (`not_started`, `empty_watchlist`, `offered`) and re-reads after inventory changes, never re-picking.
 

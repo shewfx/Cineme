@@ -142,6 +142,8 @@ class _ResultRow extends ConsumerWidget {
               SearchOutcome.alreadyWatched =>
                 "You've already watched “$t”, so it isn't added.",
               SearchOutcome.ineligible => "“$t” can't be added yet.",
+              SearchOutcome.blocked =>
+                "You chose never to recommend “$t”. Unblock it in Profile first.",
               SearchOutcome.recorded => 'Recorded “$t” as watched.',
               SearchOutcome.alreadyRecorded =>
                 '“$t” was already in your history.',

@@ -108,9 +108,9 @@ void main() {
       );
       await watchlist.remove(entry.id);
 
-      expect((await today.today()).state, TodayStatus.notStarted);
+      expect((await today.today()).state, TodayStatus.ready);
       final records = (await FakeHistoryRepository(s).recommendations()).items;
-      expect(records.first.movie.tmdbId, 104);
+      expect(records.first.movie!.tmdbId, 104);
       expect(records.first.status, RecommendationStatus.superseded);
     });
 
@@ -174,7 +174,7 @@ void main() {
           isNot(contains(104)),
         );
         // Logging a past viewing never completes tonight; it clears the pick.
-        expect((await today.today()).state, TodayStatus.notStarted);
+        expect((await today.today()).state, TodayStatus.ready);
 
         final again = await history.recordAlreadyWatched(104);
         expect(again.alreadyRecorded, isTrue);
@@ -452,7 +452,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await goTab(tester, 'Tonight');
-      expect(find.text('What do you want from tonight?'), findsOneWidget);
+      expect(find.text('Ready for another pick?'), findsOneWidget);
       await goTab(tester, 'History');
       await tester.tap(find.text('Recommendations'));
       await tester.pumpAndSettle();
