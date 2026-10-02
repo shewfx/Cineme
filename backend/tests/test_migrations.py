@@ -29,8 +29,14 @@ def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str])
     engine = create_engine(url)
     try:
         command.upgrade(config, "head")
-        # Only the documented P2 tables (ADR 003 adds the idempotency ledger).
-        assert tables(engine) == {"users", "user_preferences", "idempotency_records"}
+        # Only the documented tables: P2 (+ ADR 003 ledger) and P3 movies/watchlist.
+        assert tables(engine) == {
+            "users",
+            "user_preferences",
+            "idempotency_records",
+            "movies",
+            "watchlist_entries",
+        }
 
         command.downgrade(config, "base")
         with engine.connect() as conn:
@@ -40,7 +46,13 @@ def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str])
         assert schema is None
 
         command.upgrade(config, "head")
-        assert tables(engine) == {"users", "user_preferences", "idempotency_records"}
+        assert tables(engine) == {
+            "users",
+            "user_preferences",
+            "idempotency_records",
+            "movies",
+            "watchlist_entries",
+        }
     finally:
         engine.dispose()
 

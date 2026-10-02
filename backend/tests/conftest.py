@@ -11,6 +11,8 @@ import os
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from dataclasses import replace
+from datetime import date
 from typing import Any
 
 import jwt
@@ -26,6 +28,7 @@ from app.core.auth import Identity, TokenVerifier
 from app.core.errors import AppError
 from app.core.settings import Settings
 from app.main import BACKEND_DIR, create_app
+from app.movies.provider import GenreRef, ProviderMovie, ProviderSearchPage
 
 PROJECT = "https://test-project.supabase.co"
 ISSUER = f"{PROJECT}/auth/v1"
@@ -39,6 +42,7 @@ def make_settings(database_url: str = UNUSED_DB, **overrides: Any) -> Settings:
         "supabase_url": PROJECT,
         "supabase_publishable_key": "sb_publishable_test_placeholder",
         "supabase_jwt_issuer": ISSUER,
+        "tmdb_read_access_token": "tmdb-test-placeholder",
     }
     values.update(overrides)
     return Settings.model_validate(values)
@@ -86,6 +90,77 @@ class FakeIdentityProvider:
             raise AppError(503, "DEPENDENCY_UNAVAILABLE", "down", retryable=True)
         if identity.user_id in self.unconfirmed:
             raise AppError(403, "EMAIL_NOT_VERIFIED", "Confirm your email address.")
+
+
+def film(tmdb_id: int, title: str, **overrides: Any) -> ProviderMovie:
+    values: dict[str, Any] = {
+        "tmdb_id": tmdb_id,
+        "title": title,
+        "original_title": None,
+        "release_date": date(2000, 1, 1),
+        "genre_ids": (18,),
+        "poster_path": f"/p{tmdb_id}.jpg",
+        "overview": None,
+        "adult": False,
+        "vote_average": 7.0,
+        "vote_count": 100,
+        "runtime_minutes": 100,
+        "original_language": "en",
+        "genres": (GenreRef(18, "Drama"),),
+    }
+    values.update(overrides)
+    return ProviderMovie(**values)
+
+
+class FakeMovieProvider:
+    """Scripted TMDB stand-in; counts calls and can be taken down."""
+
+    def __init__(self, films: list[ProviderMovie] | None = None) -> None:
+        self.films = {f.tmdb_id: f for f in films or []}
+        self.down = False
+        self.detail_calls: list[int] = []
+
+    def _check(self) -> None:
+        if self.down:
+            raise AppError(503, "DEPENDENCY_UNAVAILABLE", "down", retryable=True)
+
+    def search(self, query: str, page: int) -> ProviderSearchPage:
+        self._check()
+        hits = [
+            # Search results never carry runtime or genre names.
+            replace(f, runtime_minutes=None, genres=())
+            for f in self.films.values()
+            if query.lower() in f.title.lower()
+        ]
+        return ProviderSearchPage(page=page, total_pages=1 if hits else 0, results=tuple(hits))
+
+    def details(self, tmdb_id: int) -> ProviderMovie:
+        self.detail_calls.append(tmdb_id)
+        self._check()
+        if tmdb_id not in self.films:
+            raise AppError(404, "NOT_FOUND", "That film was not found.")
+        return self.films[tmdb_id]
+
+    def genres(self) -> tuple[GenreRef, ...]:
+        self._check()
+        return (GenreRef(18, "Drama"), GenreRef(28, "Action"))
+
+    def image_base(self) -> str:
+        return "https://image.tmdb.org/t/p/"
+
+
+@pytest.fixture
+def movies() -> FakeMovieProvider:
+    return FakeMovieProvider(
+        [
+            film(104, "Run Lola Run", runtime_minutes=81, genre_ids=(28, 18)),
+            film(329865, "Arrival", runtime_minutes=116),
+            film(14337, "Primer", runtime_minutes=77, poster_path=None),
+            film(888, "Future Film", release_date=date(2999, 1, 1)),
+            film(889, "Undated Film", release_date=None),
+            film(890, "Adult Film", adult=True),
+        ]
+    )
 
 
 @pytest.fixture
@@ -145,7 +220,7 @@ def migrated_url(database_factory: Callable[[], str]) -> str:
 def engine(migrated_url: str) -> Iterator[Engine]:
     eng = create_engine(migrated_url)
     with eng.begin() as conn:
-        conn.execute(text("TRUNCATE cineme.users CASCADE"))
+        conn.execute(text("TRUNCATE cineme.users, cineme.movies CASCADE"))
     yield eng
     eng.dispose()
 
@@ -157,12 +232,17 @@ def provider() -> FakeIdentityProvider:
 
 @pytest.fixture
 def client(
-    engine: Engine, signer: Signer, provider: FakeIdentityProvider, migrated_url: str
+    engine: Engine,
+    signer: Signer,
+    provider: FakeIdentityProvider,
+    movies: FakeMovieProvider,
+    migrated_url: str,
 ) -> TestClient:
     app = create_app(
         make_settings(migrated_url),
         engine=engine,
         verifier=signer.verifier(),
         identity_provider=provider,
+        movie_provider=movies,
     )
     return TestClient(app)

@@ -8,8 +8,49 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P1a — Context to one movie card (fake data) | Complete: merged to `main` in PR #2 (CI green) |
 | P1b — Inventory, history, profile, loading/empty/error (fake data) | Complete: merged to `main` in PR #3 (CI green) |
 | P1c — Feedback, replacement, pause, accept vs watched, no match (fake data) | Complete: merged to `main` in PR #4 (CI green) |
-| P2 — Auth, profile bootstrap, persistence foundation | Complete (branch `feat/p2-backend-auth`): automated gates incl. PostgreSQL and owner manual checks passed; cross-account movie-data isolation deferred to the first P3 watchlist test |
-| P3–P8 | Not started |
+| P2 — Auth, profile bootstrap, persistence foundation | Complete: merged to `main` in PR #5 (CI green incl. PostgreSQL); cross-account movie-data isolation deferred to the P3 two-account test |
+| P3 — TMDB search and persistent watchlist | Ready for commit on branch `feat/p3-tmdb-watchlist` (uncommitted): all automated gates pass incl. PostgreSQL; single-account emulator checks passed with live TMDB; two-account isolation passed (project owner, 2026-10-02) |
+| P4–P8 | Not started |
+
+## P3 — 2026-10-02, branch `feat/p3-tmdb-watchlist`
+
+Flutter → FastAPI → TMDB and Flutter → FastAPI → PostgreSQL. No recommendation, scoring or Tonight selection (P4). Contract adjustments in [ADR 004](adr/004-p3-watchlist-contract-adjustments.md) (accepted) and [ADR 005](adr/005-save-upcoming-films.md) (saving upcoming films; swipe removal).
+
+**Backend**
+- Migration `0002`: `movies` (shared TMDB metadata cache keyed by `tmdb_id`; checks on runtime 1..600, votes, relative poster path, status, non-blank title) and `watchlist_entries` (per user, unique `(user_id, movie_id)` incl. archived rows, status/`removed_at` consistency, `source_type` `manual`, keyset index). Metadata refreshes never touch entries.
+- `TMDB_READ_ACCESS_TOKEN` required at startup (no fake-results fallback). `MovieMetadataProvider` interface; `TmdbProvider` (HTTPX, bearer, connect 3 s / read 5 s, 8 s budget, one request retry for transient failures, connection-setup retries, 429 → `RATE_LIMITED` with bounded Retry-After, 404, malformed → 502, outage → 503, error-class logging without URLs or tokens). Genre registry and image configuration cached 24 h with a safe poster-base fallback.
+- Normalization into Cinemé shapes: runtime 0 → null, empty or invalid date → null, unvetted poster paths dropped, items without id or title skipped, votes range-checked, original title null when equal to title. No raw TMDB JSON stored or returned.
+- Endpoints: `GET /api/v1/movies/search` (runtime only from cache; `can_add` false only for adult/unavailable; `released` true only for a known date on or before the user's local date), `GET /api/v1/movies/{tmdb_id}` (7-day cache, stale fallback during outages, adult films never stored), `GET /api/v1/genres`, `GET /api/v1/watchlist` (newest first, cursor, `q` with escaped LIKE, works while TMDB is down), `POST /api/v1/watchlist` (details fetched outside the lock, idempotency preflight and recheck under the users-row lock, 201 new/restored with reset age, 200 already present, 422 `MOVIE_INELIGIBLE` for adult films; upcoming and unknown-date films are saved with `released=false` and their date preserved for P4's `movie_unavailable` exclusion, 409 `WATCHLIST_LIMIT` at 500 active), `DELETE /api/v1/watchlist/{entry_id}` (archives; another user's or unknown id → 404). Mutations use the P2 idempotency ledger. Watchlist changes never modify preferences.
+
+**Flutter**
+- Normal build: `ApiSearchRepository` and `ApiWatchlistRepository` behind the existing interfaces (UUID v4 idempotency key per deliberate add/remove; documented outcomes → `InventoryConflict`; malformed data → visible error). Search keeps debounce, 2-character minimum, stale-response guard and its states. Posters load from the TMDB image CDN with the same-size placeholder while loading, on failure or when missing. "Already watched" is hidden until viewing history exists (P5). The watchlist reloads per signed-in user. Watchlist: swipe a row right to remove (threshold with snap-back, no dialog, in-flight guard, failure restores the row) with an Undo snack bar; screen-reader Remove action; List/Poster toggle (3-column 2:3 grid, 2 columns when very narrow, titles only, long-press → Remove) remembered on the device via `shared_preferences` (promoted from transitive to direct, same locked 2.5.5); the last row/tile scrolls clear of the navigation bar and system insets; pagination triggers lazily from the last item in both layouts. Search and rows label upcoming/undated films “Not released yet”.
+- Preview build unchanged: fakes only, never builds an API client or contacts Supabase/FastAPI/PostgreSQL/TMDB.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | All passed (33 files formatted; 21 source files) |
+| `uv run pytest` (local PostgreSQL 16) | 169 passed after the ADR 005 change (was 167): 86 unit (incl. 40 TMDB adapter: normalization of partial/malformed data, retries, timeouts, budget, 429/404/401/5xx, malformed payloads, caches, poster vetting, token never in errors) + 81 integration (incl. 42 P3: search shapes and unknowns, `can_add`, cached runtime, missing poster, validation, upstream failure, auth/profile required, details cache and stale fallback, add/duplicate/list/pagination/filter/remove/restore, ineligible films not saved, outage saves nothing, list during outage, 500 cap, preferences untouched, metadata refresh keeps entries, two-user isolation incl. 404 for another user's entry, no client owner, auth required, idempotency replay/conflict/remove replay, parallel duplicate adds, 10 database constraints, migration table set) |
+| `dart format` / `flutter analyze` | 0 changed / No issues found |
+| `flutter test` | 86 passed after the Watchlist UX/ADR 005 work (64 earlier + 22 P3; first 9: real repositories over a fake Cinemé API, add/duplicate/remove reflecting server state, network poster vs placeholder, backend failure with Retry, auth failure, account switch without leaks, preview isolation; then 13 replacing the old confirm-dialog test: swipe snap-back below threshold, swipe removal without dialog + Undo, failed swipe restores the row, in-flight duplicate remove ignored, screen-reader Remove action, List/Poster toggle persisted across restart, poster placeholder at 2:3, poster long-press removal + Undo and no grid swipe, nav-bar clearance and 360x640 + 200% text + gesture inset in both layouts, 2-column grid when narrow, unreleased film saved but never picked in preview) |
+| Live TMDB adapter | Ambiguous "Arrival" search shows six titles disambiguated by year; details give runtime 116 and genre names; unknown id → 404; 20/20 fresh-connection searches after the connection-retry fix |
+| Emulator, normal build, project owner's restored session (single account) | Search shows TMDB posters and years; poster-less 1986 entry shows the placeholder; add → "In watchlist"; duplicate add → "already in your watchlist"; list persisted across an app restart **and** a backend restart; remove persisted across an app restart (verified before the swipe redesign); rows archived, not deleted; no TMDB token, API host or variable name anywhere in the APK |
+
+### Two-account isolation (project owner, 2026-10-02)
+
+Passed, as reported by the project owner: a film added to account A's watchlist did not appear in account B's. This also closes the P2 deferred cross-account check. Automated coverage of the same rule: `test_users_never_see_or_change_each_others_watchlists` (PostgreSQL) and the Flutter account-switch test.
+
+### Final gates (2026-10-02, after ADR 005 and the Watchlist UX changes)
+
+`ruff check` passed; `ruff format --check` 33 files formatted; `mypy app` no issues in 21 files; `pytest` 169 passed (PostgreSQL 16); `docker compose -f infra/compose.yaml config --quiet` exit 0; `dart format` 0 changed; `flutter analyze` no issues; `flutter test` 86 passed. Secret scan of changed/new files: nothing found; no generated files untracked. Not yet verified on the device: swipe removal, poster view and bottom-nav clearance (APK and running API predate these changes).
+
+### Deferred / risks
+
+- Explicit `POST /movies/{id}/refresh`, the in-process rate limiter (60 reads/min, 30 writes/min per subject), the OpenAPI contract snapshot, source-adapter interface, and preference editing (`PATCH /me/preferences`, needs Today; ADR 004).
+- TMDB logo asset in About: only the text notice is shown; add the approved logo before release.
+- An ambiguous network timeout on add or remove makes a new key on the next tap; same-key retry UI comes with the P4 command flows.
+- Development network resets TMDB connections intermittently (TOOLING).
 
 ## P2 — 2026-10-02, branch `feat/p2-backend-auth`
 

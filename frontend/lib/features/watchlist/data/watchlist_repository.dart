@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/network/api_client.dart';
+import '../../../core/network/idempotency.dart';
+import '../../../core/network/movie_dto.dart';
 import '../../../shared/models/inventory.dart';
 
 abstract interface class WatchlistRepository {
@@ -16,7 +19,61 @@ abstract interface class WatchlistRepository {
 
 const pageSize = 20;
 
-/// Null until the real API repository exists (P3); preview overrides it.
+/// Null in builds without a backend; the preview overrides it with a fake.
 final watchlistRepositoryProvider = Provider<WatchlistRepository?>(
   (ref) => null,
 );
+
+/// Real build: the caller's watchlist through the Cinemé API. Membership is
+/// inventory only; nothing here touches taste or preferences.
+class ApiWatchlistRepository implements WatchlistRepository {
+  ApiWatchlistRepository(this._api);
+
+  final ApiClient _api;
+
+  @override
+  Future<Paged<WatchlistEntry>> list({String? cursor}) async {
+    final body = await _api.get(
+      '/api/v1/watchlist',
+      query: {'limit': pageSize, 'cursor': ?cursor},
+    );
+    return Paged([
+      for (final e in asList(body['items'])) watchlistEntryFromJson(asMap(e)),
+    ], body['next_cursor'] as String?);
+  }
+
+  @override
+  Future<WatchlistAddResult> add(int tmdbId) async {
+    try {
+      final body = await _api.post(
+        '/api/v1/watchlist',
+        body: {'tmdb_id': tmdbId},
+        idempotencyKey: newIdempotencyKey(),
+      );
+      final already = body['already_present'];
+      if (already is! bool) throw malformedResponse;
+      return WatchlistAddResult(
+        entry: watchlistEntryFromJson(asMap(body['entry'])),
+        alreadyPresent: already,
+      );
+    } on ApiError catch (e) {
+      throw _conflicts.contains(e.code) ? InventoryConflict(e.code) : e;
+    }
+  }
+
+  @override
+  Future<void> remove(String entryId) async {
+    await _api.delete(
+      '/api/v1/watchlist/${Uri.encodeComponent(entryId)}',
+      idempotencyKey: newIdempotencyKey(),
+    );
+  }
+
+  /// Documented outcomes the UI explains rather than treating as failures.
+  static const _conflicts = {
+    'MOVIE_INELIGIBLE',
+    'MOVIE_ALREADY_WATCHED',
+    'MOVIE_BLOCKED',
+    'WATCHLIST_LIMIT',
+  };
+}

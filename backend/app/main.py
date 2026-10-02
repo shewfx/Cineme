@@ -19,7 +19,10 @@ from app.core.auth import (
 from app.core.db import make_engine
 from app.core.errors import install_error_handling
 from app.core.settings import Settings, load_settings
+from app.movies.provider import MovieMetadataProvider, TmdbProvider
+from app.movies.router import router as movies_router
 from app.users.router import router as users_router
+from app.watchlist.router import router as watchlist_router
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -36,9 +39,11 @@ def create_app(
     engine: Engine | None = None,
     verifier: TokenVerifier | None = None,
     identity_provider: IdentityProvider | None = None,
+    movie_provider: MovieMetadataProvider | None = None,
 ) -> FastAPI:
-    """Collaborators default to the configured project and database. Tests pass
-    their own signing keys and a fake provider; there is no disabled-auth mode."""
+    """Collaborators default to the configured project, database and TMDB.
+    Tests pass their own signing keys and fake providers; there is no
+    disabled-auth mode and no fake-results fallback."""
     logging.basicConfig(level=settings.log_level)
     docs_enabled = settings.environment != "production"
     app = FastAPI(
@@ -57,6 +62,7 @@ def create_app(
         settings.supabase_publishable_key,
         httpx.Client(timeout=httpx.Timeout(5.0, connect=2.0)),
     )
+    app.state.movie_provider = movie_provider or TmdbProvider(settings.tmdb_read_access_token)
     head = migration_head()
     install_error_handling(app)
 
@@ -77,6 +83,8 @@ def create_app(
         return {"status": "ready"}
 
     app.include_router(users_router)
+    app.include_router(movies_router)
+    app.include_router(watchlist_router)
     return app
 
 

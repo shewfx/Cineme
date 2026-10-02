@@ -43,10 +43,27 @@ class ApiClient {
   final Dio _dio;
   final AccessTokenSource _token;
 
-  Future<Map<String, dynamic>> get(String path) => _send('GET', path);
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, Object> query = const {},
+  }) => _send('GET', path, query: query);
 
-  Future<Map<String, dynamic>> post(String path, {Object? body}) =>
-      _send('POST', path, body: body);
+  /// [idempotencyKey] is required for private mutations; bootstrap is exempt.
+  Future<Map<String, dynamic>> post(
+    String path, {
+    Object? body,
+    String? idempotencyKey,
+  }) => _send(
+    'POST',
+    path,
+    body: body,
+    headers: {'Idempotency-Key': ?idempotencyKey},
+  );
+
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    required String idempotencyKey,
+  }) => _send('DELETE', path, headers: {'Idempotency-Key': idempotencyKey});
 
   /// Private mutations carry the caller's UUID [idempotencyKey]; a retry of
   /// the same command must reuse it.
@@ -66,12 +83,14 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String> headers = const {},
+    Map<String, Object> query = const {},
   }) async {
     final token = await _token();
     try {
       final response = await _dio.request<Object?>(
         path,
         data: body,
+        queryParameters: query.isEmpty ? null : query,
         options: Options(
           method: method,
           headers: {

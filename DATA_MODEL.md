@@ -53,7 +53,7 @@ JSON avoids a table for at most roughly twenty genre scores. No learned preferen
 |---|---|---|
 | tmdb_id | bigint | PK; CHECK >0; V1 canonical movie identity |
 | title / original_title | text | Required title, original nullable |
-| release_date | date, nullable | Year derived; unknown cannot be added |
+| release_date | date, nullable | Year derived; unknown stays null. Upcoming/unknown may be saved but are not Tonight-eligible (ADR 005) |
 | runtime_minutes | smallint, nullable | CHECK null or 1..600; upstream 0 becomes null |
 | genre_ids | integer[], `{}` | Distinct validated IDs |
 | overview | text, nullable | Display-only, never scorer input |
@@ -65,7 +65,7 @@ JSON avoids a table for at most roughly twenty genre scores. No learned preferen
 | metadata_status | text | `ready` or `unavailable` |
 | fetched_at / created_at / updated_at | timestamptz | Freshness and cache audit |
 
-Unreleased, adult or unknown-date results may appear only as disabled search items; do not persist them on add. Existing cached movie can later be marked unavailable; exclude until explicit refresh fixes it. No stored full upstream JSON or credits in V1. Shared metadata is not user-private. Preserve movies while referenced by histories.
+Adult results may appear only as disabled search items and are never persisted. Upcoming and unknown-date films can be saved; eligibility is derived from `release_date` and the user's local date at ranking time, never stored as a flag (ADR 005). Existing cached movie can later be marked unavailable; exclude until explicit refresh fixes it. No stored full upstream JSON or credits in V1. Shared metadata is not user-private. Preserve movies while referenced by histories.
 
 ### `movie_traits`
 

@@ -14,6 +14,7 @@ class Movie {
     required this.runtimeMinutes,
     required this.genres,
     this.posterUrl,
+    this.released = true,
   });
 
   final int tmdbId;
@@ -24,4 +25,8 @@ class Movie {
   final int? runtimeMinutes;
   final List<Genre> genres;
   final String? posterUrl;
+
+  /// Known release date on or before the user's local date. Upcoming and
+  /// unknown-date films can be saved but are never Tonight-eligible.
+  final bool released;
 }

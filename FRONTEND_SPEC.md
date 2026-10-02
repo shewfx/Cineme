@@ -130,7 +130,7 @@ Show parsed proposal/draft and field uncertainty. Emotion-only input opens light
 
 ### Watchlist/Search
 
-Watchlist pagination, stable rows and remove confirmation. Search debounce300ms, minimum2 characters, page-by-page results. Cancel older HTTP query or discard responses with old query sequence. Runtime unknown until detail fetch; no N+1 runtime calls. Show duplicate-add as already saved. Loading-more failure keeps existing items with inline retry. Empty search and empty watchlist use different copy.
+Watchlist pagination and stable rows; List or Poster layout (3-column grid, 2 when very narrow; device-local preference). Remove by swiping a list row right (threshold, snap-back below it, no dialog) or long-pressing a poster, with an immediate Undo; a failed removal restores the row and explains; screen readers get a Remove action (ADR 005). Search debounce300ms, minimum2 characters, page-by-page results. Cancel older HTTP query or discard responses with old query sequence. Runtime unknown until detail fetch; no N+1 runtime calls. Show duplicate-add as already saved. Loading-more failure keeps existing items with inline retry. Empty search and empty watchlist use different copy.
 
 ### History
 

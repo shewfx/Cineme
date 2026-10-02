@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/inventory.dart';
+import '../../history/data/history_repository.dart';
 import '../application/search_controller.dart';
 import '../data/search_repository.dart';
 
@@ -141,7 +142,7 @@ class _ResultRow extends ConsumerWidget {
                 '“$t” is already in your watchlist.',
               SearchOutcome.alreadyWatched =>
                 "You've already watched “$t”, so it isn't added.",
-              SearchOutcome.ineligible => "“$t” can't be added yet.",
+              SearchOutcome.ineligible => "“$t” can't be added.",
               SearchOutcome.blocked =>
                 "You chose never to recommend “$t”. Unblock it in Profile first.",
               SearchOutcome.recorded => 'Recorded “$t” as watched.',
@@ -190,7 +191,7 @@ class _ResultRow extends ConsumerWidget {
         child: CircularProgressIndicator(strokeWidth: 2.5),
       );
     } else if (!result.canAdd || mark == ResultMark.ineligible) {
-      footer = const _Status(Icons.block, "Can't be added yet");
+      footer = const _Status(Icons.block, "Can't be added");
     } else if (mark == ResultMark.watched) {
       footer = const _Status(Icons.check, 'Watched');
     } else {
@@ -198,6 +199,9 @@ class _ResultRow extends ConsumerWidget {
         spacing: 8,
         runSpacing: 4,
         children: [
+          // Saveable, but never picked for Tonight until it's out.
+          if (!result.movie.released)
+            const _Status(Icons.schedule, 'Not released yet'),
           if (mark == ResultMark.saved)
             const _Status(Icons.bookmark, 'In watchlist')
           else
@@ -208,7 +212,9 @@ class _ResultRow extends ConsumerWidget {
                 () => ref.read(searchControllerProvider.notifier).add(result),
               ),
             ),
-          _SmallAction(label: 'Already watched', onPressed: confirmWatched),
+          // Logging a past viewing needs viewing history (P5).
+          if (ref.watch(historyRepositoryProvider) != null)
+            _SmallAction(label: 'Already watched', onPressed: confirmWatched),
         ],
       );
     }

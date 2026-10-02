@@ -154,7 +154,7 @@ Cache TMDB configuration in process for 24 hours with configured safe poster-bas
 
 ## Errors, resilience and limits
 
-Domain errors map to the API envelope. Upstream errors never leak tokens or response bodies. HTTPX timeouts: TMDB connect 3 seconds/read 5 seconds; cap whole integration operation at 8 seconds, one bounded retry for idempotent reads on transient network/502/503 failures when budget allows. For 429 preserve bounded Retry-After and fail visibly. No retry loop on 401/404. LLM has no automatic repair/retry in V1; failed proposal returns structured-only fallback.
+Domain errors map to the API envelope. Upstream errors never leak tokens or response bodies. HTTPX timeouts: TMDB connect 3 seconds/read 5 seconds; cap whole integration operation at 8 seconds, one bounded retry for idempotent reads on transient network/502/503 failures when budget allows. Connection setup may be re-attempted up to three times at the transport level (nothing sent yet; ADR 004). For 429 preserve bounded Retry-After and fail visibly. No retry loop on 401/404. LLM has no automatic repair/retry in V1; failed proposal returns structured-only fallback.
 
 Database statement/lock timeouts: five/two seconds; conflict/timeout maps to 409 or retryable 503 as appropriate. Server requests return request IDs. Failed transaction means no partial rejection, watch or idempotency completion.
 
