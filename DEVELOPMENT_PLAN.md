@@ -1,6 +1,6 @@
 # Cinemé — gated development plan
 
-Version 1.1. Nine phases P0–P8. Each task/run implements one explicitly authorized phase or a smaller slice. Do not build everything in one pass. This plan deliberately puts the visible UI prototype first, identity before real private data, and structured context before AI. P2 uses separately gated submilestones so auth cannot become a framework-building marathon.
+Version 1.1. Nine phases P0–P8. Verified progress: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). Each task/run implements one explicitly authorized phase or a smaller slice. Do not build everything in one pass. This plan deliberately puts the visible UI prototype first, identity before real private data, and structured context before AI. P2 uses separately gated submilestones so auth cannot become a framework-building marathon.
 
 ## Working model
 
@@ -18,7 +18,7 @@ Each phase delivers: small runnable behavior, meaningful tests, manual verificat
 
 **Acceptance:** Health200 safe body; invalid settings fail clearly; Flutter placeholder boots; no TMDB/Supabase/LLM secrets required; no tables/auth/business services; compose config validates; formatting/lint/type/static/tests pass on available tools with unmet device prerequisites honestly reported. CI pins recorded Flutter version rather than mutable “latest.”
 
-**Tests/checks:** backend health/settings unit tests; Flutter launch widget test; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest`; `dart format --output=none --set-exit-if-changed lib test`, `flutter analyze`, `flutter test`; `docker compose -f infra/compose.yaml config` at root.
+**Tests/checks:** backend health/settings unit tests; Flutter launch widget test; `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest`; `dart format --output=none --set-exit-if-changed lib test`, `flutter analyze`, `flutter test`; `docker compose --env-file infra/.env -f infra/compose.yaml config` at root.
 
 **Manual:** PowerShell terminal starts backend; call Invoke-RestMethod /healthz. Run Android emulator via Flutter; confirm Cinemé placeholder. If Docker installed, start DB and inspect healthy status, without creating tables. Ensure example config contains placeholders only.
 
