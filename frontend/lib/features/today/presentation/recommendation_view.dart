@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_canvas.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
@@ -15,6 +16,10 @@ import 'feedback_sheets.dart';
 import 'tonight_hero.dart';
 import 'today_widgets.dart';
 import 'why_sheet.dart';
+
+/// Tallest hero on a desktop browser (the phone-width canvas); phones keep
+/// the 60% share.
+const desktopHeroMaxHeight = 530.0;
 
 /// Exactly ONE film, offered, accepted (Watch Tonight) or completed (Mark
 /// watched): a hero of blurred artwork with the sharp poster card in front,
@@ -254,13 +259,24 @@ class RecommendationView extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, box) {
                 final screenHeight = MediaQuery.sizeOf(context).height;
-                final heroHeight = math.max(
-                  220.0,
-                  math.min(
-                    screenHeight * (largeText ? 0.4 : 0.6),
-                    box.maxHeight - (largeText ? 110 : 130),
-                  ),
-                );
+                // About 60% of a phone's height; on a tall desktop window
+                // (held to the phone-width canvas) it stops growing, so the
+                // poster is not lost in a huge blurred field.
+                final share = screenHeight * (largeText ? 0.4 : 0.6);
+                // A whole logical pixel (so a whole device pixel at 1x, 2x and
+                // 3x): a fractional edge paints a faint line of the blurred
+                // artwork on the partial pixel row where the hero ends.
+                final heroHeight = math
+                    .max(
+                      220.0,
+                      math.min(
+                        AppCanvasScope.constrained(context)
+                            ? math.min(share, desktopHeroMaxHeight)
+                            : share,
+                        box.maxHeight - (largeText ? 110 : 130),
+                      ),
+                    )
+                    .floorToDouble();
                 return SingleChildScrollView(
                   child: Column(
                     children: [
@@ -360,29 +376,6 @@ class RecommendationView extends ConsumerWidget {
                                   color: AppColors.textMuted,
                                 ),
                               ),
-                            ] else ...[
-                              // Up to two reasons plus one uncertainty; the
-                              // rest lives behind "Why this film?".
-                              for (final reason in [
-                                ...recommendation.reasons
-                                    .where((r) => !isUncertain(r))
-                                    .take(2),
-                                ...recommendation.reasons
-                                    .where(isUncertain)
-                                    .take(1),
-                              ])
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Text(
-                                    reasonText(reason),
-                                    textAlign: TextAlign.center,
-                                    style: text.bodyLarge?.copyWith(
-                                      color: isUncertain(reason)
-                                          ? AppColors.textMuted
-                                          : AppColors.textSoft,
-                                    ),
-                                  ),
-                                ),
                             ],
                           ],
                         ),
@@ -433,6 +426,7 @@ Future<bool> _confirm(
 Future<void> _moreActions(BuildContext context, VoidCallback neverRecommend) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.surface,
       showDragHandle: true,
       builder: (sheet) => SafeArea(

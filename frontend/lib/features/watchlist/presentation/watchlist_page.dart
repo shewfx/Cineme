@@ -225,6 +225,7 @@ class _PosterTile extends ConsumerWidget {
   Future<void> _actions(BuildContext context, WidgetRef ref) async {
     final remove = await showModalBottomSheet<bool>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.surface,
       showDragHandle: true,
       builder: (sheet) => SafeArea(

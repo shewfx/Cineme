@@ -28,6 +28,8 @@ void sizeWindow(
   addTearDown(tester.view.reset);
 }
 
+Finder get floatingNav => find.byKey(const ValueKey('floating-nav'));
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -88,8 +90,8 @@ void main() {
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
 
-      final nav = find.byType(NavigationBar);
-      expect(tester.getSize(nav).width, 480);
+      final nav = floatingNav;
+      expect(tester.getSize(nav).width, 480 - 56, reason: '28 px each side');
       expect(tester.getCenter(nav).dx, 720);
       // Width-based decisions inside the app see the canvas, not the window.
       final inner = tester.element(find.text('Tonight').first);
@@ -103,7 +105,7 @@ void main() {
 
       await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(NavigationBar)).width, 480);
+      expect(tester.getSize(floatingNav).width, 480 - 56);
       expect(tester.getSize(find.byType(Scaffold).first).width, 480);
     });
 
@@ -114,7 +116,7 @@ void main() {
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
 
-      expect(tester.getSize(find.byType(NavigationBar)).width, 390);
+      expect(tester.getSize(floatingNav).width, 390 - 56);
       final outside = find.byWidgetPredicate(
         (w) => w is ColoredBox && w.color == const Color(0xFF111111),
       );
@@ -127,27 +129,90 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(AppCanvas), findsNothing);
-      expect(tester.getSize(find.byType(NavigationBar)).width, 1440);
+      expect(tester.getSize(floatingNav).width, 1440 - 56);
     });
   });
 
   group('iPhone safe areas', () {
-    testWidgets('bottom navigation clears the home indicator', (tester) async {
-      sizeWindow(tester, const Size(390, 844));
+    testWidgets('the navigation floats clear of the sides and home indicator', (
+      tester,
+    ) async {
+      sizeWindow(tester, const Size(390, 844), bottomInset: 34, topInset: 47);
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
-      final plainHeight = tester.getSize(find.byType(NavigationBar)).height;
 
+      final nav = tester.getRect(floatingNav);
+      expect(nav.left, 28);
+      expect(nav.right, 390 - 28);
+      // 20 px of air above the 34 px home-indicator region, not touching it.
+      expect(nav.bottom, 844 - 34 - 20);
+      expect(844 - 34 - nav.bottom, inInclusiveRange(18, 28));
+      final label = tester.getCenter(find.text('Tonight').first).dy;
+      expect(label, inExclusiveRange(nav.top, nav.bottom));
+      // Four destinations on one row, each a comfortable target.
+      final items = find.descendant(
+        of: floatingNav,
+        matching: find.byType(NavigationDestination),
+      );
+      expect(items, findsNWidgets(4));
+      final rects = [for (var i = 0; i < 4; i++) tester.getRect(items.at(i))];
+      expect({for (final r in rects) r.top.round()}, hasLength(1));
+      for (final r in rects) {
+        expect(r.height, greaterThanOrEqualTo(48));
+        expect(r.width, greaterThanOrEqualTo(48));
+      }
+    });
+
+    testWidgets('the floating nav is real layout, not a paint-only shift', (
+      tester,
+    ) async {
       sizeWindow(tester, const Size(390, 844), bottomInset: 34, topInset: 47);
+      await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
 
-      final nav = find.byType(NavigationBar);
-      // The bar grows by exactly the inset and still ends at the screen edge.
-      expect(tester.getSize(nav).height, plainHeight + 34);
-      expect(tester.getBottomLeft(nav).dy, 844);
-      final label = tester.getBottomLeft(find.text('Tonight').first).dy;
-      expect(label, lessThanOrEqualTo(844 - 34));
+      // No transform anywhere above it, so what is drawn is what is touched.
+      expect(
+        find.ancestor(of: floatingNav, matching: find.byType(Transform)),
+        findsNothing,
+      );
+      // Tapping the middle of each visible label reaches that destination.
+      for (final label in ['Watchlist', 'History', 'Profile', 'Tonight']) {
+        final target = tester.getCenter(find.text(label).last);
+        await tester.tapAt(target);
+        await tester.pumpAndSettle();
+        final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+        const order = ['Tonight', 'Watchlist', 'History', 'Profile'];
+        expect(nav.selectedIndex, order.indexOf(label), reason: label);
+      }
+      // The page above ends where the nav begins; nothing hides beneath it.
+      final body = tester.getRect(find.byType(Scaffold).first);
+      expect(body.bottom, 844);
     });
+
+    testWidgets('small phone and 200% text keep one row and clear the edge', (
+      tester,
+    ) async {
+      sizeWindow(tester, const Size(320, 568), bottomInset: 0);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(webApp());
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final nav = tester.getRect(floatingNav);
+      expect(nav.left, 28);
+      expect(nav.right, 320 - 28);
+      expect(nav.bottom, 568 - 20);
+      final items = find.descendant(
+        of: floatingNav,
+        matching: find.byType(NavigationDestination),
+      );
+      final tops = {
+        for (var i = 0; i < 4; i++) tester.getRect(items.at(i)).top.round(),
+      };
+      expect(tops, hasLength(1), reason: 'still one row');
+    });
+
     testWidgets('page headers start below the status bar / notch', (
       tester,
     ) async {

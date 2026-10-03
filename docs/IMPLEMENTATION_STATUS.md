@@ -20,7 +20,7 @@ Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/
 
 ### What exists
 
-- Flutter web target and PWA shell (manifest, Cinemé icons generated from the app's own palette and Jost, iOS standalone metadata, safe-area viewport, charcoal splash); a centred 480 px canvas on wide windows; browser session storage on web; `API_BASE_URL=same-origin`.
+- Flutter web target and PWA shell (manifest, Cinemé icons generated from the app's own palette and Jost, iOS standalone metadata, a viewport tag identical to the engine's, charcoal splash); a centred 480 px canvas on wide windows; browser session storage on web; `API_BASE_URL=same-origin`.
 - Backend: serverless/pooler engine mode, TLS required for production database URLs, Vercel entrypoint, explicit `scripts/migrate_hosted.py`; CI builds the web bundle and scans it for server-side secrets (`infra/check_web_bundle.py`).
 - Hosted: one Vercel project (Hobby) + Neon (Free), Supabase Auth, TMDB. Hosted database at migration head `0004`.
 - UI refinement: Tonight startup (“Tonight’s the night.”), compact selectors on the first Tonight screen and Edit tonight, Skip, just pick something (explicit Surprise me); Search rows without runtime placeholder and with a 76x114 anchoring poster; Watchlist Sort (server-side `sort` on `GET /api/v1/watchlist`).
@@ -53,6 +53,11 @@ Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/
 
 - **Provider investigation (before any change):** cause was **region resolution**. 4 of 5 hosted accounts had no streaming region (UTC profile implies none) so the section was hidden with no explanation. TMDB data, the per-film cache (regions selected at read), serialization (`flatrate` to `streaming`) and rendering were correct; the hosted cache matched live TMDB for IN (Spirited Away: Netflix; The Grand Budapest Hotel: JioHotstar; Paddington 2: rent/buy only; Alien: no IN entry; Inception: Prime Video and JioHotstar). Fix: a quiet “Choose your streaming region” link on the card when the region is unknown; heading renamed “Where to watch”.
 - **Hero:** blurred, dimmed artwork with a sharp 2:3 poster card in front, about 60% of the screen height on a phone (60% on 390x844 with safe areas; smaller on short screens and at large text), details centred below, compact pinned action bar. Flutter: 195 tests pass (format and analyze clean), including hero geometry at iPhone, 360x640, 320 px at 200% text and desktop canvas widths.
+
+### Final UI refinements (2026-10-03)
+
+- **iPhone touch offset:** root cause was the page's viewport tag. `index.html` asked for the full-screen cover fit; Flutter web rewrites the tag at startup (to `width=device-width, initial-scale=1.0, maximum-scale=5.0`, no cover fit) and does not read iOS safe-area insets. On iOS that flipped the viewport geometry after the engine's first measurement without a resize event, so painted and touch positions disagreed until a resize (Search and the keyboard) re-measured. Fix: declare exactly the engine's tag from the start; a build check keeps it that way. Evidence: the mutation log in Chrome showed the tag changing four events into startup; browser-level sweeps show Flutter laying out with zero insets (so forcing the cover fit would have put the nav under the home indicator). **Not verified on a physical iPhone or in the installed PWA** (no device here); Chrome mobile emulation cannot reproduce iOS viewport behaviour.
+- **Floating nav:** 28 px side inset, 20 px above the bottom edge, rounded pill with hairline and shadow, real layout (no transforms); sheets now open over it (root navigator). Tonight reasons removed from the card (Why sheet only); JustWatch attribution behind an info icon; hero capped at 530 px on tall desktop windows; hero ends on a whole pixel (a fractional edge painted a faint line of the blurred artwork).
 
 ### Not verified / open
 

@@ -76,9 +76,13 @@ Environment variables exist for Production only, so a preview deployment of the 
 1. Open https://cineme-theta.vercel.app in **Safari**.
 2. Tap **Share**.
 3. Tap **Add to Home Screen**, then **Add**.
-4. Open **Cinemé** from the Home Screen. It launches standalone (no Safari bars) with a safe-area-aware bottom navigation.
+4. Open **Cinemé** from the Home Screen. It launches standalone (no Safari bars). iOS lays the page out inside its safe area, clear of the notch and home indicator, and the floating navigation sits 20 px above the page's bottom edge.
 
 On Android Chrome: menu > **Install app**. The PWA needs a connection (sign-in, search and picks are online); there is no offline mode and API responses are never cached.
+
+## Viewport and touch coordinates (iOS)
+
+`frontend/web/index.html` declares the viewport as exactly `width=device-width, initial-scale=1.0, maximum-scale=5.0`. Flutter's web engine rewrites that tag at startup and never uses the full-screen "cover" fit (it does not read the iOS safe-area insets, so `MediaQuery.padding` is 0 on web). An earlier version of the page asked for the cover fit; on iOS the engine's rewrite then changed the viewport geometry *after* the engine had measured it, with no resize event, so the painted layer and the touch coordinates disagreed (touches landed visibly off) until a resize (opening Search and the on-screen keyboard) made the engine measure again. Declaring what the engine will use removes the startup change. `infra/check_web_bundle.py` fails the build if the meta tag drifts or the cover fit returns. Do not add Y offsets, bigger hit boxes or transforms to compensate.
 
 ## Known limits
 

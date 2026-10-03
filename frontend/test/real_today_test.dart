@@ -492,10 +492,18 @@ void main() {
       await pickExciting(tester, time: 'Up to 90 min');
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.text('Run Lola Run'), findsOneWidget);
+      // The card stays clean: reasons live behind Why this film?.
+      expect(
+        find.text('81 minutes, within your 90-minute limit.'),
+        findsNothing,
+      );
+      await tapText(tester, 'Why this film?');
       expect(
         find.text('81 minutes, within your 90-minute limit.'),
         findsOneWidget,
       );
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
+      await tester.pumpAndSettle();
       expect(find.text('Arrival'), findsNothing, reason: 'no runners-up');
       expect(find.text('Watch Tonight'), findsOneWidget);
       expect(find.text('Not feeling it'), findsOneWidget);
@@ -804,7 +812,23 @@ void main() {
       expect(find.text('Netflix'), findsOneWidget);
       expect(find.text('JioHotstar'), findsOneWidget);
       expect(find.text('Also to rent or buy on Apple TV'), findsOneWidget);
-      expect(find.text('Streaming data: JustWatch · IN'), findsOneWidget);
+      // Attribution is one tap away, not permanent card text.
+      expect(find.text('Streaming data: JustWatch · IN'), findsNothing);
+      expect(find.textContaining('JustWatch'), findsNothing);
+      expect(find.byKey(const ValueKey('availability-info')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('availability-info')));
+      await tester.pumpAndSettle();
+      expect(find.text('Streaming data'), findsOneWidget);
+      expect(
+        find.text(
+          'Streaming availability data provided by JustWatch. '
+          'Availability may vary by region.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('IN catalogue'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10)); // dismiss
+      await tester.pumpAndSettle();
       expect(find.text('Prime Video'), findsNothing);
     });
 

@@ -22,6 +22,13 @@ FORBIDDEN = {
 }
 SKIP_SUFFIXES = {".wasm", ".png", ".ttf", ".otf", ".symbols"}
 
+# index.html must declare the viewport the Flutter engine will set for itself.
+# Flutter web rewrites the tag at startup and never uses viewport-fit=cover (it
+# does not read the iOS safe-area insets); declaring cover makes iOS change the
+# viewport geometry after the engine measured it, so painted position and touch
+# position disagree until a resize (see web/index.html).
+VIEWPORT = "width=device-width, initial-scale=1.0, maximum-scale=5.0"
+
 
 def main(root: Path) -> int:
     if not root.is_dir():
@@ -39,6 +46,15 @@ def main(root: Path) -> int:
             for label, pattern in FORBIDDEN.items()
             if pattern.search(data)
         ]
+    index = root / "index.html"
+    if not index.is_file():
+        problems.append("index.html: missing")
+    else:
+        text = index.read_text(encoding="utf-8")
+        if f'content="{VIEWPORT}"' not in text:
+            problems.append(f"index.html: viewport meta must be exactly {VIEWPORT!r}")
+        if "viewport-fit" in text:
+            problems.append("index.html: viewport-fit must not be declared (see check_web_bundle.py)")
     print(f"scanned {scanned} files under {root}")
     if problems:
         print("\n".join(problems), file=sys.stderr)

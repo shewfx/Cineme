@@ -76,6 +76,7 @@ Future<(T?,)?> showOptionSheet<T>(
   required T? selected,
 }) => showModalBottomSheet<(T?,)>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: AppColors.surface,
   showDragHandle: true,

@@ -1,6 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:cineme/core/widgets/movie_poster.dart';
+import 'package:cineme/features/today/presentation/recommendation_view.dart'
+    show desktopHeroMaxHeight;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -178,6 +180,48 @@ void main() {
       expect(c.center.dx, closeTo(720, 0.5));
       expect(c.width, lessThanOrEqualTo(480 * 0.6 + 0.5));
       expect(h.height / 900, inInclusiveRange(0.5, 0.65));
+    });
+
+    testWidgets('the hero ends on a whole pixel, so no seam line shows', (
+      tester,
+    ) async {
+      // 60% of 932 is 559.2: a fractional edge would paint a faint line.
+      window(tester, const Size(430, 932), top: 59, bottom: 34, dpr: 3);
+      await openPick(tester);
+
+      final h = rect(tester, hero);
+      expect(h.height, h.height.floorToDouble());
+      expect(h.bottom, h.bottom.floorToDouble());
+      expect(h.height / 932, inInclusiveRange(0.55, 0.61));
+    });
+
+    testWidgets('a very tall desktop window caps the hero', (tester) async {
+      window(tester, const Size(1440, 1600));
+      await tester.pumpWidget(TodayRig().app(canvas: true));
+      await tester.pumpAndSettle();
+      await pickExciting(tester);
+
+      final h = rect(tester, hero);
+      expect(h.width, 480);
+      expect(
+        h.height,
+        desktopHeroMaxHeight,
+        reason: '60% of 1600 would be 960',
+      );
+      final c = rect(tester, card);
+      expect(h.contains(c.topLeft) && h.contains(c.bottomRight), isTrue);
+      expect(c.height / c.width, closeTo(1.5, 0.001));
+    });
+
+    testWidgets('a tall phone keeps the 60% hero; only desktop is capped', (
+      tester,
+    ) async {
+      window(tester, const Size(430, 1000), top: 47, bottom: 34);
+      await openPick(tester);
+
+      final h = rect(tester, hero);
+      expect(h.height, greaterThan(desktopHeroMaxHeight));
+      expect(h.height / 1000, inInclusiveRange(0.55, 0.61));
     });
 
     testWidgets('accepted plans keep the same hero and a single action', (

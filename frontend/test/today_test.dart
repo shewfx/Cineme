@@ -46,6 +46,8 @@ Future<void> choose(WidgetTester tester, String current, String option) async {
       scrollable: find.byType(Scrollable).last,
     );
   }
+  await tester.ensureVisible(find.text(option).last);
+  await tester.pumpAndSettle();
   await tester.tap(find.text(option).last);
   await tester.pumpAndSettle();
 }
@@ -226,6 +228,17 @@ void main() {
         find.text('1998  ·  81 min  ·  Action, Drama, Thriller'),
         findsOneWidget,
       );
+      // The card stays clean: the explanation is on demand.
+      expect(
+        find.text('Its thriller genre fits “Keep me hooked”.'),
+        findsNothing,
+      );
+      expect(
+        find.text('At 81 minutes, it fits your 90-minute limit.'),
+        findsNothing,
+      );
+      await tapText(tester, 'Why this film?');
+      await tester.pumpAndSettle();
       expect(
         find.text('Its thriller genre fits “Keep me hooked”.'),
         findsOneWidget,
@@ -234,6 +247,8 @@ void main() {
         find.text('At 81 minutes, it fits your 90-minute limit.'),
         findsOneWidget,
       );
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
+      await tester.pumpAndSettle();
       // Intent and mood are shown separately.
       expect(
         find.text('Keep me hooked  ·  up to 90 min  ·  feeling tired'),

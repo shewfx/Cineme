@@ -52,9 +52,26 @@ class AvailabilitySection extends ConsumerWidget {
             ? CrossAxisAlignment.center
             : CrossAxisAlignment.start,
         children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Where to watch', style: muted),
+              // Required attribution lives here, one tap away, instead of
+              // taking permanent space on the card.
+              IconButton(
+                key: const ValueKey('availability-info'),
+                tooltip: 'About streaming data',
+                visualDensity: VisualDensity.compact,
+                iconSize: 18,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 36),
+                padding: EdgeInsets.zero,
+                color: AppColors.textMuted,
+                icon: const Icon(Icons.info_outline),
+                onPressed: () => showAvailabilityInfo(context, a.region!),
+              ),
+            ],
+          ),
           if (watchNow.isNotEmpty) ...[
-            Text('Where to watch', style: muted),
-            const SizedBox(height: 6),
             Wrap(
               alignment: centered ? WrapAlignment.center : WrapAlignment.start,
               spacing: 8,
@@ -77,18 +94,50 @@ class AvailabilitySection extends ConsumerWidget {
               style: muted,
             ),
           ],
-          const SizedBox(height: 4),
-          // JustWatch attribution, required for TMDB watch-provider data.
-          Text(
-            'Streaming data: JustWatch · ${a.region}',
-            textAlign: centered ? TextAlign.center : TextAlign.start,
-            style: muted,
-          ),
         ],
       ),
     );
   }
 }
+
+/// The JustWatch/TMDB attribution, shown on demand.
+Future<void> showAvailabilityInfo(BuildContext context, String region) =>
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (sheet) {
+        final text = Theme.of(sheet).textTheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text('Streaming data', style: text.titleLarge),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Streaming availability data provided by JustWatch. '
+                  'Availability may vary by region.',
+                  style: text.bodyLarge?.copyWith(color: AppColors.textSoft),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Showing the $region catalogue. You can change your '
+                  'streaming region in Profile.',
+                  style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
 
 class _ProviderChip extends StatelessWidget {
   const _ProviderChip({required this.offer, required this.free});

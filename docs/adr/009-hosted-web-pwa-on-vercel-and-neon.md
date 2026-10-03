@@ -29,3 +29,7 @@ ARCHITECTURE "Configuration and secrets" and "Deployment"; docs/DEPLOYMENT.md; d
 ## Validation
 
 Backend tests for production TLS, pool modes, the serverless engine against real PostgreSQL and the Vercel entrypoint; Flutter tests for same-origin configuration, the centred canvas and iPhone safe areas; CI builds the web bundle and scans it for secrets; live checks of `/healthz`, `/readyz`, sign-in, persistence across reload and restart, search, add/remove, and the full Tonight flow against the hosted database.
+
+## Amendment: viewport meta matches the engine (2026-10-03)
+
+The page's viewport tag no longer asks for the full-screen cover fit. Flutter web rewrites the tag at startup and does not read iOS safe-area insets; a mismatch made iOS change the viewport after the first measurement and left touch coordinates offset until a resize. See docs/DEPLOYMENT.md "Viewport and touch coordinates".

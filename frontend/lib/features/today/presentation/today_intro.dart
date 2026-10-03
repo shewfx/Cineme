@@ -36,46 +36,51 @@ class TonightIntro extends StatelessWidget {
     final t = progress ?? const AlwaysStoppedAnimation(1.0);
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: AnimatedBuilder(
-              animation: t,
-              builder: (context, _) {
-                final fade = Curves.easeOut.transform(
-                  (t.value / 0.2).clamp(0.0, 1.0),
-                );
-                final rule = Curves.easeInOut.transform(
-                  ((t.value - 0.1) / 0.5).clamp(0.0, 1.0),
-                );
-                return Semantics(
-                  liveRegion: true,
-                  label: 'Tonight’s the night. Loading.',
-                  child: ExcludeSemantics(
-                    child: Opacity(
-                      opacity: fade,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Wordmark(),
-                          const SizedBox(height: 28),
-                          Text(
-                            'Tonight’s the night.',
-                            textAlign: TextAlign.center,
-                            style: text.headlineMedium,
-                          ),
-                          const SizedBox(height: 20),
-                          Container(
-                            width: 56 * rule,
-                            height: 2,
-                            color: AppColors.accent,
-                          ),
-                        ],
+        // Decorative and non-interactive: text is capped at 1.3x and the block
+        // scrolls rather than overflowing on very small screens.
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: AnimatedBuilder(
+                animation: t,
+                builder: (context, _) {
+                  final fade = Curves.easeOut.transform(
+                    (t.value / 0.2).clamp(0.0, 1.0),
+                  );
+                  final rule = Curves.easeInOut.transform(
+                    ((t.value - 0.1) / 0.5).clamp(0.0, 1.0),
+                  );
+                  return Semantics(
+                    liveRegion: true,
+                    label: 'Tonight’s the night. Loading.',
+                    child: ExcludeSemantics(
+                      child: Opacity(
+                        opacity: fade,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Wordmark(),
+                            const SizedBox(height: 28),
+                            Text(
+                              'Tonight’s the night.',
+                              textAlign: TextAlign.center,
+                              style: text.headlineMedium,
+                            ),
+                            const SizedBox(height: 20),
+                            Container(
+                              width: 56 * rule,
+                              height: 2,
+                              color: AppColors.accent,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),

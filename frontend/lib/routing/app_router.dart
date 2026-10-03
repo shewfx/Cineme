@@ -86,35 +86,76 @@ class _AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A floating pill, positioned with real layout (padding and the safe area),
+    // never a paint-only translation: what you see is what you touch.
+    final base = Theme.of(context).navigationBarTheme;
     return Scaffold(
       body: shell,
-      bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: NavigationBar(
-          selectedIndex: shell.currentIndex,
-          // Re-tapping the current tab returns it to its first page.
-          onDestinationSelected: (i) =>
-              shell.goBranch(i, initialLocation: i == shell.currentIndex),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.movie_outlined),
-              selectedIcon: Icon(Icons.movie),
-              label: 'Tonight',
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 6, 28, 20),
+          child: DecoratedBox(
+            key: const ValueKey('floating-nav'),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: AppColors.border),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 8),
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.bookmark_border),
-              selectedIcon: Icon(Icons.bookmark),
-              label: 'Watchlist',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(32),
+              // The pill is already inside the safe area; the bar must not add
+              // the insets a second time.
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                removeBottom: true,
+                child: NavigationBarTheme(
+                  data: base.copyWith(
+                    backgroundColor: Colors.transparent,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 0,
+                  ),
+                  child: NavigationBar(
+                    selectedIndex: shell.currentIndex,
+                    // Re-tapping the current tab returns it to its first page.
+                    onDestinationSelected: (i) => shell.goBranch(
+                      i,
+                      initialLocation: i == shell.currentIndex,
+                    ),
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.movie_outlined),
+                        selectedIcon: Icon(Icons.movie),
+                        label: 'Tonight',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.bookmark_border),
+                        selectedIcon: Icon(Icons.bookmark),
+                        label: 'Watchlist',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.history),
+                        label: 'History',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: 'Profile',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            NavigationDestination(icon: Icon(Icons.history), label: 'History'),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
+          ),
         ),
       ),
     );
