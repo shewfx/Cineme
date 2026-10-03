@@ -186,7 +186,10 @@ List<String> titlesOf(Iterable<WatchlistEntry> entries) => [
 ];
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  // Posters are the default; these screens are exercised as a list.
+  setUp(
+    () => SharedPreferences.setMockInitialValues({'watchlist_layout': 'list'}),
+  );
 
   group('Preview store sort follows the server rules', () {
     for (final sort in WatchlistSort.values) {

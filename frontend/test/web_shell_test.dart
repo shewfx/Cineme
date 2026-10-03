@@ -238,8 +238,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(navTab('Watchlist'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Show as posters'));
-      await tester.pumpAndSettle();
 
       final posters = find.byType(MoviePoster);
       expect(posters, findsWidgets);

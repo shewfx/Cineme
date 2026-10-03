@@ -113,7 +113,10 @@ class _SlowSearch implements MovieSearchRepository {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  // Posters are the default; these screens are exercised as a list.
+  setUp(
+    () => SharedPreferences.setMockInitialValues({'watchlist_layout': 'list'}),
+  );
 
   group('Preview store keeps the documented inventory rules', () {
     test('watchlist pages 20 at a time, newest first, then ends', () async {
@@ -454,6 +457,23 @@ void main() {
       expect(find.text('Run Lola Run'), findsNothing);
       expect(find.text('Removed “Run Lola Run”.'), findsOneWidget);
       semantics.dispose();
+    });
+
+    testWidgets('posters are the default layout and titles are centred', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      expect(find.byType(SliverGrid), findsOneWidget);
+      expect(find.byTooltip('Show as list'), findsOneWidget);
+      final title = tester.widget<Text>(find.text('Run Lola Run'));
+      expect(title.textAlign, TextAlign.center);
+      // Centred under its own poster.
+      final poster = tester.getRect(find.byType(AspectRatio).first);
+      final text = tester.getRect(find.text('Run Lola Run'));
+      expect(text.center.dx, closeTo(poster.center.dx, 0.5));
     });
 
     testWidgets('list/poster toggle switches layout and is remembered', (

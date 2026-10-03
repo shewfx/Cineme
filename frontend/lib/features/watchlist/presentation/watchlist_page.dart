@@ -273,6 +273,7 @@ class _PosterTile extends ConsumerWidget {
           const SizedBox(height: _titleGap),
           Text(
             movie.title,
+            textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: _titleStyle(context),

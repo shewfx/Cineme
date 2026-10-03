@@ -90,7 +90,7 @@ class WatchlistLayoutController extends Notifier<WatchlistLayout> {
   @override
   WatchlistLayout build() {
     _restore();
-    return WatchlistLayout.list;
+    return WatchlistLayout.posters;
   }
 
   Future<void> _restore() async {
