@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'nav_finders.dart';
+
 Widget webApp({bool centredCanvas = true}) => ProviderScope(
   retry: noAutomaticRetry,
   overrides: previewOverrides(PreviewStore(latency: Duration.zero)),
@@ -94,7 +96,7 @@ void main() {
       expect(tester.getSize(nav).width, 480 - 56, reason: '28 px each side');
       expect(tester.getCenter(nav).dx, 720);
       // Width-based decisions inside the app see the canvas, not the window.
-      final inner = tester.element(find.text('Tonight').first);
+      final inner = tester.element(navTab('Tonight'));
       expect(MediaQuery.sizeOf(inner).width, 480);
     });
 
@@ -103,7 +105,7 @@ void main() {
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Profile'));
+      await tester.tap(navTab('Profile'));
       await tester.pumpAndSettle();
       expect(tester.getSize(floatingNav).width, 480 - 56);
       expect(tester.getSize(find.byType(Scaffold).first).width, 480);
@@ -147,13 +149,10 @@ void main() {
       // 20 px of air above the 34 px home-indicator region, not touching it.
       expect(nav.bottom, 844 - 34 - 20);
       expect(844 - 34 - nav.bottom, inInclusiveRange(18, 28));
-      final label = tester.getCenter(find.text('Tonight').first).dy;
+      final label = tester.getCenter(navTab('Tonight')).dy;
       expect(label, inExclusiveRange(nav.top, nav.bottom));
       // Four destinations on one row, each a comfortable target.
-      final items = find.descendant(
-        of: floatingNav,
-        matching: find.byType(NavigationDestination),
-      );
+      final items = find.descendant(of: floatingNav, matching: navItems);
       expect(items, findsNWidgets(4));
       final rects = [for (var i = 0; i < 4; i++) tester.getRect(items.at(i))];
       expect({for (final r in rects) r.top.round()}, hasLength(1));
@@ -177,10 +176,10 @@ void main() {
       );
       // Tapping the middle of each visible label reaches that destination.
       for (final label in ['Watchlist', 'History', 'Profile', 'Tonight']) {
-        final target = tester.getCenter(find.text(label).last);
+        final target = tester.getCenter(navTab(label));
         await tester.tapAt(target);
         await tester.pumpAndSettle();
-        final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+        final nav = tester.widget<FloatingNavBar>(find.byType(FloatingNavBar));
         const order = ['Tonight', 'Watchlist', 'History', 'Profile'];
         expect(nav.selectedIndex, order.indexOf(label), reason: label);
       }
@@ -203,10 +202,7 @@ void main() {
       expect(nav.left, 28);
       expect(nav.right, 320 - 28);
       expect(nav.bottom, 568 - 20);
-      final items = find.descendant(
-        of: floatingNav,
-        matching: find.byType(NavigationDestination),
-      );
+      final items = find.descendant(of: floatingNav, matching: navItems);
       final tops = {
         for (var i = 0; i < 4; i++) tester.getRect(items.at(i)).top.round(),
       };
@@ -219,7 +215,7 @@ void main() {
       sizeWindow(tester, const Size(390, 844), bottomInset: 34, topInset: 47);
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Watchlist'));
+      await tester.tap(navTab('Watchlist'));
       await tester.pumpAndSettle();
 
       final title = find.descendant(
@@ -235,7 +231,7 @@ void main() {
       sizeWindow(tester, const Size(390, 844), bottomInset: 34, topInset: 47);
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Watchlist'));
+      await tester.tap(navTab('Watchlist'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Show as posters'));
       await tester.pumpAndSettle();

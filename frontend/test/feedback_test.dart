@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'nav_finders.dart';
+
 PreviewStore store({List<Movie> watchlist = previewWatchlist}) =>
     PreviewStore(watchlist: watchlist, latency: Duration.zero);
 
@@ -661,12 +663,7 @@ void main() {
     ) async {
       await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Profile'),
-        ),
-      );
+      await tester.tap(navTab('Profile'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Editing is coming later'), findsWidgets);
       await tester.scrollUntilVisible(

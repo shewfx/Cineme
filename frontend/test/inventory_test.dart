@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'nav_finders.dart';
+
 PreviewStore store({List<Movie> watchlist = previewWatchlist}) =>
     PreviewStore(watchlist: watchlist, latency: Duration.zero);
 
@@ -37,9 +39,7 @@ Widget app(PreviewStore s) => ProviderScope(
 );
 
 Future<void> goTab(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
-  );
+  await tester.tap(navTab(label));
   await tester.pumpAndSettle();
 }
 
@@ -69,7 +69,7 @@ Future<void> expectClearsNav(WidgetTester tester, String lastTitle) async {
   );
   await tester.pumpAndSettle();
   final last = tester.getRect(find.text(lastTitle));
-  final nav = tester.getRect(find.byType(NavigationBar));
+  final nav = tester.getRect(find.byType(FloatingNavBar));
   expect(last.bottom, lessThanOrEqualTo(nav.top), reason: lastTitle);
 }
 
@@ -841,7 +841,7 @@ void main() {
       await tester.pumpAndSettle();
       // No tabs at all without configuration, so no fake inventory either.
       expect(find.text('This build is not configured'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
       expect(find.text('Run Lola Run'), findsNothing);
     });
   });

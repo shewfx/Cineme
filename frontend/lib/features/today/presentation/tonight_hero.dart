@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/config/preview.dart';
 import '../../../core/widgets/movie_poster.dart';
 import '../../../shared/models/movie.dart';
+import 'poster_tilt.dart';
 
 /// The Tonight hero: the film's artwork blurred and dimmed into an
 /// atmosphere, with the full poster as a sharp card in front, fading into the
@@ -92,38 +93,41 @@ class TonightHero extends StatelessWidget {
             right: 0,
             bottom: _bottomGap,
             child: Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x99000000),
-                      blurRadius: 32,
-                      offset: Offset(0, 16),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: SizedBox(
-                    key: const ValueKey('tonight-poster-card'),
-                    width: cardWidth,
-                    height: cardWidth * 1.5,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        MoviePoster(
-                          key: const ValueKey('tonight-poster'),
-                          movie: movie,
-                        ),
-                        // A hairline keeps dark artwork from melting away.
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.border),
+              child: PosterTilt(
+                key: const ValueKey('tonight-poster-tilt'),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x99000000),
+                        blurRadius: 32,
+                        offset: Offset(0, 16),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      key: const ValueKey('tonight-poster-card'),
+                      width: cardWidth,
+                      height: cardWidth * 1.5,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          MoviePoster(
+                            key: const ValueKey('tonight-poster'),
+                            movie: movie,
                           ),
-                        ),
-                      ],
+                          // A hairline keeps dark artwork from melting away.
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

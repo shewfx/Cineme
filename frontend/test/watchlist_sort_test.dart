@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'real_inventory_test.dart' show Rig;
+import 'nav_finders.dart';
 
 Movie film(int id, String title, int? year, int? runtime) => Movie(
   tmdbId: id,
@@ -121,12 +122,7 @@ Future<void> openWatchlist(
   if (tall) tallWindow(tester);
   await tester.pumpWidget(app(s));
   await tester.pumpAndSettle();
-  await tester.tap(
-    find.descendant(
-      of: find.byType(NavigationBar),
-      matching: find.text('Watchlist'),
-    ),
-  );
+  await tester.tap(navTab('Watchlist'));
   await tester.pumpAndSettle();
 }
 
@@ -473,12 +469,7 @@ void main() {
           .data;
       final before = (await saved(tester, s)).length;
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Watchlist'),
-        ),
-      );
+      await tester.tap(navTab('Watchlist'));
       await tester.pumpAndSettle();
       for (final sort in WatchlistSort.values) {
         await chooseSort(tester, sort);
@@ -486,12 +477,7 @@ void main() {
       expect(find.byType(MovieListTile), findsNWidgets(before));
       expect(await saved(tester, s), hasLength(before));
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Tonight'),
-        ),
-      );
+      await tester.tap(navTab('Tonight'));
       await tester.pumpAndSettle();
       expect(
         tester.widget<Text>(find.byKey(const ValueKey('tonight-title'))).data,

@@ -1,3 +1,5 @@
+import 'nav_finders.dart';
+
 import 'package:cineme/app.dart';
 import 'package:cineme/core/widgets/choice_pill.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
@@ -106,9 +108,9 @@ void main() {
     ) async {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Watchlist'));
+      await tester.tap(navTab('Watchlist'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Tonight'));
+      await tester.tap(navTab('Tonight'));
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text(intro), findsNothing);

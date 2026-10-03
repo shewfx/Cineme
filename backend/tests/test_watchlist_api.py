@@ -76,6 +76,7 @@ def test_search_returns_cinemé_shapes_with_unknowns_null(a: Api) -> None:
         "title": "Run Lola Run",
         "year": 2000,
         "runtime_minutes": None,  # not cached yet: never fetched per result
+        "vote_average": None,  # likewise: search never fetches the rating
         "genre_ids": [28, 18],
         "genres": [{"id": 28, "name": "Action"}, {"id": 18, "name": "Drama"}],
         "poster_url": "https://image.tmdb.org/t/p/w500/p104.jpg",

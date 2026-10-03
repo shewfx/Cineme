@@ -17,6 +17,9 @@ class MovieSummary(BaseModel):
     year: int | None
     # Null on search unless details are already cached; never fabricated.
     runtime_minutes: int | None
+    # TMDB community rating, display-only; null when unknown or not cached
+    # (search never fetches it). Never a recommendation signal.
+    vote_average: float | None = None
     genre_ids: list[int]
     genres: list[GenreOut]
     poster_url: str | None
@@ -41,8 +44,6 @@ class MovieDetails(MovieSummary):
     overview: str | None
     original_title: str | None
     original_language: str | None
-    # TMDB community metadata, display-only; never a recommendation signal.
-    vote_average: float | None
     vote_count: int | None
     metadata_fetched_at: datetime | None
     stale: bool

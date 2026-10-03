@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
+import '../core/widgets/floating_nav_bar.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_pages.dart';
 import '../features/history/presentation/history_page.dart';
@@ -88,7 +89,6 @@ class _AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     // A floating pill, positioned with real layout (padding and the safe area),
     // never a paint-only translation: what you see is what you touch.
-    final base = Theme.of(context).navigationBarTheme;
     return Scaffold(
       body: shell,
       bottomNavigationBar: SafeArea(
@@ -109,51 +109,29 @@ class _AppShell extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(32),
-              // The pill is already inside the safe area; the bar must not add
-              // the insets a second time.
-              child: MediaQuery.removePadding(
-                context: context,
-                removeTop: true,
-                removeBottom: true,
-                child: NavigationBarTheme(
-                  data: base.copyWith(
-                    backgroundColor: Colors.transparent,
-                    surfaceTintColor: Colors.transparent,
-                    elevation: 0,
-                  ),
-                  child: NavigationBar(
-                    selectedIndex: shell.currentIndex,
-                    // Re-tapping the current tab returns it to its first page.
-                    onDestinationSelected: (i) => shell.goBranch(
-                      i,
-                      initialLocation: i == shell.currentIndex,
-                    ),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.movie_outlined),
-                        selectedIcon: Icon(Icons.movie),
-                        label: 'Tonight',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.bookmark_border),
-                        selectedIcon: Icon(Icons.bookmark),
-                        label: 'Watchlist',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.history),
-                        label: 'History',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.person_outline),
-                        selectedIcon: Icon(Icons.person),
-                        label: 'Profile',
-                      ),
-                    ],
-                  ),
+            child: FloatingNavBar(
+              selectedIndex: shell.currentIndex,
+              // Re-tapping the current tab returns it to its first page.
+              onSelected: (i) =>
+                  shell.goBranch(i, initialLocation: i == shell.currentIndex),
+              tabs: const [
+                NavTab(
+                  label: 'Tonight',
+                  icon: Icons.movie_outlined,
+                  selectedIcon: Icons.movie,
                 ),
-              ),
+                NavTab(
+                  label: 'Watchlist',
+                  icon: Icons.bookmark_border,
+                  selectedIcon: Icons.bookmark,
+                ),
+                NavTab(label: 'History', icon: Icons.history),
+                NavTab(
+                  label: 'Profile',
+                  icon: Icons.person_outline,
+                  selectedIcon: Icons.person,
+                ),
+              ],
             ),
           ),
         ),

@@ -14,6 +14,7 @@ import '../application/today_controller.dart';
 import 'availability_section.dart';
 import 'feedback_sheets.dart';
 import 'tonight_hero.dart';
+import 'tonight_meta.dart';
 import 'today_widgets.dart';
 import 'why_sheet.dart';
 
@@ -308,18 +309,10 @@ class RecommendationView extends ConsumerWidget {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
-                              [
-                                if (movie.year != null) '${movie.year}',
-                                movie.runtimeMinutes != null
-                                    ? '${movie.runtimeMinutes} min'
-                                    : 'Runtime unavailable',
-                                if (movie.genres.isNotEmpty)
-                                  movie.genres.map((g) => g.name).join(', '),
-                              ].join('  ·  '),
-                              key: const ValueKey('tonight-meta'),
-                              textAlign: TextAlign.center,
+                            TonightMeta(
+                              movie: movie,
                               style: centred,
+                              key: const ValueKey('tonight-meta'),
                             ),
                             const SizedBox(height: 14),
                             if (state != TodayStatus.completed)

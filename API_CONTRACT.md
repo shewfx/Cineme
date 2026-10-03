@@ -42,6 +42,7 @@ Major common errors: 401 `AUTH_REQUIRED`/`TOKEN_INVALID`; 404 `NOT_FOUND` for no
   "title": "Run Lola Run",
   "year": 1998,
   "runtime_minutes": 81,
+  "vote_average": 7.4,
   "genre_ids": [
     28,
     18,
@@ -67,7 +68,7 @@ Major common errors: 401 `AUTH_REQUIRED`/`TOKEN_INVALID`; 404 `NOT_FOUND` for no
 }
 ```
 
-MovieDetails extends summary with `release_date`, `overview`, `original_title` (null when equal to title), `original_language`, `vote_average`/`vote_count` (TMDB metadata, display-only, never ranking input; ADR 004), `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` only for adult or unavailable items; upcoming and unknown-date films can be saved (ADR 005). `released` is true only when `release_date` is known and on or before the user's local date; Tonight eligibility requires it (engine `movie_unavailable`). Add revalidates. Title/year/source test fixtures are not copied live vote data.
+MovieSummary carries nullable `vote_average` (TMDB community rating, display-only; null when unknown or not cached, so search results leave it null). MovieDetails extends summary with `release_date`, `overview`, `original_title` (null when equal to title), `original_language`, `vote_count` (TMDB metadata, display-only, never ranking input; ADR 004), `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` only for adult or unavailable items; upcoming and unknown-date films can be saved (ADR 005). `released` is true only when `release_date` is known and on or before the user's local date; Tonight eligibility requires it (engine `movie_unavailable`). Add revalidates. Title/year/source test fixtures are not copied live vote data.
 
 ### SessionContext (complete accepted context, no text)
 

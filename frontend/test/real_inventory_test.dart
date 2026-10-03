@@ -20,6 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'nav_finders.dart';
+
 /// In-memory stand-in for the Cinemé API (not TMDB): per-user watchlists keyed
 /// by the bearer token, documented error envelopes, scriptable failures.
 class FakeCinemeApi implements HttpClientAdapter {
@@ -245,9 +247,7 @@ class Rig {
 }
 
 Future<void> goTab(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
-  );
+  await tester.tap(navTab(label));
   await tester.pumpAndSettle();
 }
 

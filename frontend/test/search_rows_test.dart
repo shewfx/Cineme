@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'nav_finders.dart';
+
 Future<void> openSearch(WidgetTester tester, String q) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -18,12 +20,7 @@ Future<void> openSearch(WidgetTester tester, String q) async {
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(
-    find.descendant(
-      of: find.byType(NavigationBar),
-      matching: find.text('Watchlist'),
-    ),
-  );
+  await tester.tap(navTab('Watchlist'));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Add movies'));
   await tester.pumpAndSettle();

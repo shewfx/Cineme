@@ -48,6 +48,7 @@ List<Object?> asList(Object? value) {
       runtimeMinutes: _opt<int>(json, 'runtime_minutes'),
       genres: genres,
       posterUrl: _opt<String>(json, 'poster_url'),
+      voteAverage: _opt<num>(json, 'vote_average')?.toDouble(),
       released: _req<bool>(json, 'released'),
     ),
     _req<bool>(json, 'can_add'),
