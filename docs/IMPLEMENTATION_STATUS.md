@@ -49,6 +49,11 @@ Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/
 | New UI on the live bundle | opening, Edit tonight selectors, sort sheet, poster grid and Search rows shown as designed; bundle contains the new strings and not “Runtime unknown until added” |
 | Layout | 390 px phone view matches the Android app; 1440 px desktop is a centred canvas; 320 px renders cleanly |
 
+### Tonight hero and provider investigation (2026-10-03)
+
+- **Provider investigation (before any change):** cause was **region resolution**. 4 of 5 hosted accounts had no streaming region (UTC profile implies none) so the section was hidden with no explanation. TMDB data, the per-film cache (regions selected at read), serialization (`flatrate` to `streaming`) and rendering were correct; the hosted cache matched live TMDB for IN (Spirited Away: Netflix; The Grand Budapest Hotel: JioHotstar; Paddington 2: rent/buy only; Alien: no IN entry; Inception: Prime Video and JioHotstar). Fix: a quiet “Choose your streaming region” link on the card when the region is unknown; heading renamed “Where to watch”.
+- **Hero:** blurred, dimmed artwork with a sharp 2:3 poster card in front, about 60% of the screen height on a phone (60% on 390x844 with safe areas; smaller on short screens and at large text), details centred below, compact pinned action bar. Flutter: 195 tests pass (format and analyze clean), including hero geometry at iPhone, 360x640, 320 px at 200% text and desktop canvas widths.
+
 ### Not verified / open
 
 - **Physical iPhone** Add to Home Screen was not tested (no device here). Steps are in DEPLOYMENT.md.

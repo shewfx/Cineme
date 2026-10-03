@@ -363,7 +363,7 @@ class TodayRig {
   final auth = FakeAuth(alice);
   late final ApiClient api;
 
-  Widget app() => ProviderScope(
+  Widget app({bool canvas = false}) => ProviderScope(
     retry: noAutomaticRetry,
     overrides: [
       appConfigProvider.overrideWithValue(
@@ -383,7 +383,7 @@ class TodayRig {
         ApiAvailabilityRepository(api),
       ),
     ],
-    child: const CinemeApp(),
+    child: CinemeApp(centredCanvas: canvas),
   );
 }
 
@@ -779,7 +779,7 @@ void main() {
       expect(rig.server.commands('/today/choose'), hasLength(1));
     });
 
-    testWidgets('Available on shows only the providers TMDB returned', (
+    testWidgets('Where to watch shows only the providers TMDB returned', (
       tester,
     ) async {
       final rig = TodayRig();
@@ -800,12 +800,103 @@ void main() {
       };
       await start(tester, rig);
       await pickExciting(tester);
-      expect(find.text('Available on'), findsOneWidget);
+      expect(find.text('Where to watch'), findsOneWidget);
       expect(find.text('Netflix'), findsOneWidget);
       expect(find.text('JioHotstar'), findsOneWidget);
       expect(find.text('Also to rent or buy on Apple TV'), findsOneWidget);
       expect(find.text('Streaming data: JustWatch · IN'), findsOneWidget);
       expect(find.text('Prime Video'), findsNothing);
+    });
+
+    testWidgets('no streaming region: a quiet hint, never invented providers', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': null,
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(
+        find.text('Choose your streaming region to see where to watch'),
+        findsOneWidget,
+      );
+      expect(find.text('Where to watch'), findsNothing);
+      expect(find.textContaining('JustWatch'), findsNothing);
+      expect(find.text('Netflix'), findsNothing);
+      // The pick itself is untouched.
+      expect(find.text('Watch Tonight'), findsOneWidget);
+      expect(find.byType(MoviePoster), findsOneWidget);
+
+      await tapText(
+        tester,
+        'Choose your streaming region to see where to watch',
+      );
+      expect(find.text('Streaming region'), findsOneWidget, reason: 'Profile');
+    });
+
+    testWidgets('a region with no providers shows no hint and no heading', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(find.text('Where to watch'), findsNothing);
+      expect(find.textContaining('Choose your streaming region'), findsNothing);
+    });
+
+    testWidgets('subscription providers lead; rent/buy is a separate line', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': [
+          {'id': 119, 'name': 'Amazon Prime Video', 'logo_url': null},
+          {'id': 122, 'name': 'JioHotstar', 'logo_url': null},
+        ],
+        'free': <Object>[],
+        'rent': [
+          {'id': 2, 'name': 'Apple TV Store', 'logo_url': null},
+        ],
+        'buy': [
+          {'id': 3, 'name': 'Google Play Movies', 'logo_url': null},
+        ],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      final heading = tester.getTopLeft(find.text('Where to watch')).dy;
+      final prime = tester.getTopLeft(find.text('Amazon Prime Video')).dy;
+      final paid = tester
+          .getTopLeft(
+            find.text(
+              'Also to rent or buy on Apple TV Store, Google Play Movies',
+            ),
+          )
+          .dy;
+      expect(heading, lessThan(prime));
+      expect(prime, lessThan(paid), reason: 'rent/buy is secondary, below');
+      expect(find.text('JioHotstar'), findsOneWidget);
     });
 
     testWidgets('no providers, unknown region or a failure show nothing', (
@@ -834,7 +925,7 @@ void main() {
       };
       await start(tester, rig);
       await pickExciting(tester);
-      expect(find.text('Available on'), findsNothing);
+      expect(find.text('Where to watch'), findsNothing);
       expect(find.textContaining('JustWatch'), findsNothing);
       // 329865 has no scripted data: the API fails; the card is unaffected.
       rig.server.films.removeAt(0);
@@ -843,7 +934,7 @@ void main() {
       await tapText(tester, 'Show another');
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.text('Watch Tonight'), findsOneWidget);
-      expect(find.text('Available on'), findsNothing);
+      expect(find.text('Where to watch'), findsNothing);
     });
 
     test(

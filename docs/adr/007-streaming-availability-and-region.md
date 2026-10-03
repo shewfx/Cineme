@@ -30,3 +30,7 @@ API_CONTRACT (availability, regions, `PATCH /me country_code`, `GET /me region`)
 ## Validation
 
 Unit tests for normalization (grouping, priority order, dedupe, invalid entries, logo/link vetting, malformed payload → 502) and the TMDB call shape; PostgreSQL tests for region from timezone vs explicit code, invalid codes, empty data, 24 h cache and refresh, stale fallback and visible failure, one fetch shared across users/regions, and that choosing never calls availability; Flutter tests for provider rendering and the empty/failure states; emulator check with live IN data.
+
+## Amendment: unknown region is explained, not silent (2026-10-03)
+
+On the hosted app 4 of 5 accounts had no streaming region (new accounts have a UTC profile, which implies none), so “Available on” never appeared and nothing said why; the provider data, cache and rendering were correct (checked against live TMDB and the production cache for IN: Netflix, JioHotstar, Prime Video, rent/buy). The Tonight card now shows a quiet link to Profile when the region is unknown, and the section heading reads “Where to watch”. The region is still never inferred silently from the browser locale; that would be a separate decision.

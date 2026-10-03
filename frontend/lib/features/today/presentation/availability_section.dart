@@ -1,25 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../availability/data/availability_repository.dart';
 
-/// "Available on" under the film's details: subscription services first,
-/// then free; rent/buy as one muted line. Shows nothing while loading, on
-/// failure, when the region is unknown or when TMDB lists no providers, so
-/// the recommendation itself is never disturbed.
+/// "Where to watch" under the film's details: subscription services first,
+/// then free; rent/buy as one muted, separately labelled line. Shows nothing
+/// while loading, on failure, or when TMDB lists no providers for the region,
+/// so the recommendation itself is never disturbed. With no streaming region
+/// at all (a new account on a UTC profile) it asks once, quietly, for one
+/// instead of staying silent. Providers are never invented.
 class AvailabilitySection extends ConsumerWidget {
-  const AvailabilitySection({super.key, required this.tmdbId});
+  const AvailabilitySection({
+    super.key,
+    required this.tmdbId,
+    this.centered = false,
+  });
 
   final int tmdbId;
+  final bool centered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final a = ref.watch(movieAvailabilityProvider(tmdbId)).value;
-    if (a == null || a.region == null || a.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (a == null) return const SizedBox.shrink();
     final text = Theme.of(context).textTheme;
+    if (a.region == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: TextButton(
+          key: const ValueKey('choose-region'),
+          onPressed: () => context.go('/profile'),
+          child: const Text(
+            'Choose your streaming region to see where to watch',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (a.isEmpty) return const SizedBox.shrink();
     final muted = text.labelMedium?.copyWith(color: AppColors.textMuted);
     final watchNow = [...a.streaming, ...a.free];
     final paid = {
@@ -28,12 +48,15 @@ class AvailabilitySection extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: centered
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           if (watchNow.isNotEmpty) ...[
-            Text('Available on', style: muted),
+            Text('Where to watch', style: muted),
             const SizedBox(height: 6),
             Wrap(
+              alignment: centered ? WrapAlignment.center : WrapAlignment.start,
               spacing: 8,
               runSpacing: 6,
               children: [
@@ -50,12 +73,17 @@ class AvailabilitySection extends ConsumerWidget {
             Text(
               '${watchNow.isEmpty ? 'Rent or buy on' : 'Also to rent or buy on'} '
               '${paid.take(3).join(', ')}',
+              textAlign: centered ? TextAlign.center : TextAlign.start,
               style: muted,
             ),
           ],
           const SizedBox(height: 4),
           // JustWatch attribution, required for TMDB watch-provider data.
-          Text('Streaming data: JustWatch · ${a.region}', style: muted),
+          Text(
+            'Streaming data: JustWatch · ${a.region}',
+            textAlign: centered ? TextAlign.center : TextAlign.start,
+            style: muted,
+          ),
         ],
       ),
     );
