@@ -220,10 +220,13 @@ class _ResultRow extends ConsumerWidget {
         : null;
     final footer = [if (stacked) action, ?alreadyWatched];
 
+    // Search results often have no runtime yet; that is simply left out.
+    final yearLine = yearAndRuntime(movie, unknownRuntime: null);
     return MovieListTile(
       movie: movie,
+      large: true,
       lines: [
-        yearAndRuntime(movie, unknownRuntime: 'Runtime unknown until added'),
+        if (yearLine.isNotEmpty) yearLine,
         if (movie.genres.isNotEmpty) movie.genres.map((g) => g.name).join(', '),
         // Saveable, but never picked for Tonight until it's out.
         if (!movie.released) 'Not released yet',

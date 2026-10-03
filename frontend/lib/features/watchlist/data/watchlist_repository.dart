@@ -6,8 +6,12 @@ import '../../../core/network/movie_dto.dart';
 import '../../../shared/models/inventory.dart';
 
 abstract interface class WatchlistRepository {
-  /// GET /watchlist: active entries, newest first, [pageSize] per page.
-  Future<Paged<WatchlistEntry>> list({String? cursor});
+  /// GET /watchlist: active entries in [sort] order (default newest first),
+  /// [pageSize] per page. A cursor belongs to the sort that produced it.
+  Future<Paged<WatchlistEntry>> list({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+  });
 
   /// POST /watchlist. A duplicate succeeds with `alreadyPresent`; conflicts
   /// throw [InventoryConflict].
@@ -35,10 +39,13 @@ class ApiWatchlistRepository implements WatchlistRepository {
   final _keys = RetryKeys();
 
   @override
-  Future<Paged<WatchlistEntry>> list({String? cursor}) async {
+  Future<Paged<WatchlistEntry>> list({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+  }) async {
     final body = await _api.get(
       '/api/v1/watchlist',
-      query: {'limit': pageSize, 'cursor': ?cursor},
+      query: {'limit': pageSize, 'sort': sort.apiValue, 'cursor': ?cursor},
     );
     return Paged([
       for (final e in asList(body['items'])) watchlistEntryFromJson(asMap(e)),

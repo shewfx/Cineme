@@ -310,9 +310,10 @@ void main() {
 
         // Tonight still exposes one film, however many are in the watchlist.
         await goTab(tester, 'Tonight');
-        await tester.ensureVisible(find.text('Exciting'));
-        await tester.tap(find.text('Exciting'));
-        await tester.pump();
+        await tester.tap(find.text('Choose one'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Exciting').last);
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Pick my movie'));
         await tester.pumpAndSettle();
         expect(find.byType(MoviePoster), findsOneWidget);
@@ -792,9 +793,10 @@ void main() {
     ) async {
       await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Exciting'));
-      await tester.tap(find.text('Exciting'));
-      await tester.pump();
+      await tester.tap(find.text('Choose one'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exciting').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Pick my movie'));
       await tester.pumpAndSettle();
       expect(find.text('Run Lola Run'), findsOneWidget);

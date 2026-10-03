@@ -8,6 +8,25 @@ class Paged<T> {
   final String? nextCursor;
 }
 
+/// Watchlist ordering (API `sort`). Default is recently added. Unknown year
+/// or runtime always sorts last; the server owns the order so pagination
+/// stays correct.
+enum WatchlistSort {
+  addedDesc('added_desc', 'Recently added'),
+  addedAsc('added_asc', 'Oldest added'),
+  titleAsc('title_asc', 'Title A–Z'),
+  titleDesc('title_desc', 'Title Z–A'),
+  yearDesc('year_desc', 'Release year — newest first'),
+  yearAsc('year_asc', 'Release year — oldest first'),
+  runtimeAsc('runtime_asc', 'Runtime — shortest first'),
+  runtimeDesc('runtime_desc', 'Runtime — longest first');
+
+  const WatchlistSort(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+}
+
 /// Active watchlist entry. Inventory, never a ranked feed.
 class WatchlistEntry {
   const WatchlistEntry({

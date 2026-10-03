@@ -395,6 +395,14 @@ Future<TodayRig> start(WidgetTester tester, [TodayRig? rig]) async {
 }
 
 Future<void> tapText(WidgetTester tester, String text) async {
+  // A long option sheet at large text builds lazily: scroll it like a user.
+  if (find.text(text).evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      find.text(text),
+      80,
+      scrollable: find.byType(Scrollable).last,
+    );
+  }
   await tester.ensureVisible(find.text(text).last);
   await tester.pumpAndSettle();
   await tester.tap(find.text(text).last);
@@ -402,8 +410,13 @@ Future<void> tapText(WidgetTester tester, String text) async {
 }
 
 Future<void> pickExciting(WidgetTester tester, {String? time}) async {
+  // Three compact selectors: open the field, then choose from its sheet.
+  await tapText(tester, 'Choose one');
   await tapText(tester, 'Exciting');
-  if (time != null) await tapText(tester, time);
+  if (time != null) {
+    await tapText(tester, 'Any length');
+    await tapText(tester, time);
+  }
   await tapText(tester, 'Pick my movie');
 }
 
@@ -631,6 +644,47 @@ void main() {
       expect(find.text('Your watchlist is empty'), findsOneWidget);
       expect(find.text('Add movies'), findsOneWidget);
       expect(find.text('Retry'), findsNothing);
+    });
+
+    testWidgets(
+      'Skip sends only the explicit Surprise me intent and returns one film',
+      (tester) async {
+        final rig = await start(tester);
+        // Half-selected values are ignored by Skip.
+        await tapText(tester, 'Any length');
+        await tapText(tester, 'Up to 90 min');
+        await tapText(tester, 'Skip, just pick something');
+
+        final chooses = [
+          for (final r in rig.server.requests)
+            if (r.method == 'POST' && r.path == '/api/v1/today/choose') r,
+        ];
+        expect(chooses, hasLength(1));
+        final sent = (chooses.single.data as Map)['context'] as Map;
+        expect(sent['desired_experience'], 'surprise');
+        expect(sent['current_mood'], isNull);
+        expect(sent['max_runtime_minutes'], isNull);
+        expect(sent['prefer_genre_ids'] ?? [], isEmpty);
+        expect(sent['avoid_genre_ids'] ?? [], isEmpty);
+        expect(chooses.single.headers['Idempotency-Key'], isNotNull);
+        expect(find.byType(MoviePoster), findsOneWidget);
+        expect(find.text('Watch Tonight'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a failed Skip keeps the setup and can be retried', (
+      tester,
+    ) async {
+      final rig = await start(tester);
+      rig.server.failStatus = 503;
+      await tapText(tester, 'Skip, just pick something');
+      expect(find.textContaining("Couldn't reach Cinemé"), findsOneWidget);
+      expect(find.byType(MoviePoster), findsNothing);
+      expect(find.text('Skip, just pick something'), findsOneWidget);
+
+      rig.server.failStatus = null;
+      await tapText(tester, 'Skip, just pick something');
+      expect(find.byType(MoviePoster), findsOneWidget);
     });
 
     testWidgets('a backend failure keeps the context and says so', (

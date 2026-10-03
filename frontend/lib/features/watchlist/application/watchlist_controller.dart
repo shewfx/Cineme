@@ -12,17 +12,23 @@ import '../data/watchlist_repository.dart';
 class WatchlistController extends PagedListNotifier<WatchlistEntry> {
   WatchlistRepository get _repo => ref.read(watchlistRepositoryProvider)!;
 
+  WatchlistSort _sort = WatchlistSort.addedDesc;
+
   @override
-  Future<PagedState<WatchlistEntry>> build() {
+  Future<PagedState<WatchlistEntry>> build() async {
     ref.watch(inventoryRevisionProvider);
     // Per signed-in user: sign-out or an account switch reloads, never leaks.
     ref.watch(currentUserIdProvider);
+    // A new sort reloads from the first page: the server owns the order, so
+    // paging stays correct however many films there are. Until the saved
+    // preference is read (a local lookup) the default order is requested.
+    _sort = ref.watch(watchlistSortProvider);
     return super.build();
   }
 
   @override
   Future<Paged<WatchlistEntry>> fetch(String? cursor) =>
-      _repo.list(cursor: cursor);
+      _repo.list(cursor: cursor, sort: _sort);
 
   final _removing = <String>{};
 
@@ -57,7 +63,12 @@ class WatchlistController extends PagedListNotifier<WatchlistEntry> {
     if (!ref.mounted) return;
     final s = state.value;
     if (s != null && !s.items.any((e) => e.id == result.entry.id)) {
-      state = AsyncData(PagedState([result.entry, ...s.items], s.nextCursor));
+      if (_sort == WatchlistSort.addedDesc) {
+        state = AsyncData(PagedState([result.entry, ...s.items], s.nextCursor));
+      } else {
+        // Its place depends on the sort; let the server say where it goes.
+        ref.invalidateSelf();
+      }
     }
     _invalidateToday();
   }
@@ -105,6 +116,51 @@ class WatchlistLayoutController extends Notifier<WatchlistLayout> {
     }
   }
 }
+
+/// Sort preference only, kept on this device. Layout changes never touch it.
+/// Starts at the default order and switches once the saved choice is read; a
+/// saved default changes nothing, so the usual case loads the list once.
+class WatchlistSortController extends Notifier<WatchlistSort> {
+  static const _key = 'watchlist_sort';
+  bool _chosen = false;
+
+  @override
+  WatchlistSort build() {
+    _restore();
+    return WatchlistSort.addedDesc;
+  }
+
+  Future<void> _restore() async {
+    try {
+      final saved = (await SharedPreferences.getInstance()).getString(_key);
+      if (!ref.mounted || _chosen) return;
+      state = WatchlistSort.values.firstWhere(
+        (s) => s.apiValue == saved,
+        orElse: () => state,
+      );
+    } catch (_) {
+      // Unreadable storage just means the default order.
+    }
+  }
+
+  Future<void> set(WatchlistSort sort) async {
+    _chosen = true;
+    state = sort;
+    try {
+      await (await SharedPreferences.getInstance()).setString(
+        _key,
+        sort.apiValue,
+      );
+    } catch (_) {
+      // Still applied for this session.
+    }
+  }
+}
+
+final watchlistSortProvider =
+    NotifierProvider<WatchlistSortController, WatchlistSort>(
+      WatchlistSortController.new,
+    );
 
 final watchlistLayoutProvider =
     NotifierProvider<WatchlistLayoutController, WatchlistLayout>(

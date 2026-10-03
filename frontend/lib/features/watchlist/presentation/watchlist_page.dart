@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/movie_poster.dart';
 import '../../../core/widgets/paged_list_view.dart';
+import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../shared/models/inventory.dart';
@@ -32,6 +33,23 @@ class WatchlistPage extends ConsumerWidget {
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            tooltip: 'Sort watchlist',
+            icon: const Icon(Icons.swap_vert_rounded),
+            onPressed: () async {
+              final current = ref.read(watchlistSortProvider);
+              final picked = await showOptionSheet<WatchlistSort>(
+                context,
+                title: 'Sort by',
+                options: [for (final s in WatchlistSort.values) (s, s.label)],
+                selected: current,
+              );
+              final sort = picked?.$1;
+              if (sort != null) {
+                await ref.read(watchlistSortProvider.notifier).set(sort);
+              }
+            },
+          ),
           IconButton(
             tooltip: posters ? 'Show as list' : 'Show as posters',
             icon: Icon(
