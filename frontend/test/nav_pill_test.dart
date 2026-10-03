@@ -1,4 +1,5 @@
 import 'package:cineme/app.dart';
+import 'package:cineme/core/theme/app_theme.dart';
 import 'package:cineme/preview/preview_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,29 +33,37 @@ Future<void> open(WidgetTester tester, Size size, {double scale = 1}) async {
   await tester.pumpAndSettle();
 }
 
-Finder labelIn(String tab) =>
-    find.descendant(of: navTab(tab), matching: find.text(tab));
-
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('active tab shows icon + label, inactive tabs icon only', (
+  testWidgets('all four tabs are icon-only; the active one is coral', (
     tester,
   ) async {
     await open(tester, const Size(390, 844));
     for (final active in order) {
       await tester.tap(navTab(active));
       await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: floatingNav, matching: find.byType(Text)),
+        findsNothing,
+        reason: 'no visible text in the nav while $active is active',
+      );
       for (final tab in order) {
-        expect(
-          labelIn(tab),
-          tab == active ? findsOneWidget : findsNothing,
-          reason: '$tab while $active is active',
-        );
         expect(
           find.descendant(of: navTab(tab), matching: find.byType(Icon)),
           findsOneWidget,
         );
+        final bg = tester.widget<Material>(navTab(tab)).color;
+        final icon = tester.widget<Icon>(
+          find.descendant(of: navTab(tab), matching: find.byType(Icon)),
+        );
+        if (tab == active) {
+          expect(bg, AppColors.accent.withValues(alpha: 0.16), reason: tab);
+          expect(icon.color, AppColors.accent, reason: tab);
+        } else {
+          expect(bg, Colors.transparent, reason: tab);
+          expect(icon.color, AppColors.textMuted, reason: tab);
+        }
       }
     }
   });
@@ -116,7 +125,8 @@ void main() {
           for (var i = 1; i < 4; i++) {
             expect(rects[i].left, greaterThanOrEqualTo(rects[i - 1].right));
           }
-          expect(tester.getRect(navTab(tab)).width, greaterThan(48));
+          // The selection never widens its tab.
+          expect({for (final r in rects) r.width.round()}, hasLength(1));
         }
       },
     );
@@ -179,18 +189,29 @@ void main() {
       });
     }
 
-    testWidgets('Watchlist fits its fixed slot without overflow', (
-      tester,
-    ) async {
-      await open(tester, const Size(320, 568), scale: 2);
-      await tester.tap(navTab('Watchlist'));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      final pill = tester.getRect(navTab('Watchlist'));
-      final label = tester.getRect(labelIn('Watchlist'));
-      expect(label.left, greaterThanOrEqualTo(pill.left));
-      expect(label.right, lessThanOrEqualTo(pill.right));
-    });
+    for (final (name, size) in [
+      ('iPhone', const Size(390, 844)),
+      ('small phone', const Size(320, 568)),
+      ('very narrow', const Size(280, 560)),
+      ('desktop canvas', const Size(1440, 900)),
+    ]) {
+      testWidgets('$name: icons are evenly and compactly spaced', (
+        tester,
+      ) async {
+        await open(tester, size);
+        final shell = tester.getRect(floatingNav);
+        final r = [for (var i = 0; i < 4; i++) tester.getRect(navItems.at(i))];
+        final gaps = [
+          r.first.left - shell.left - 8,
+          for (var i = 1; i < 4; i++) r[i].left - r[i - 1].right,
+          shell.right - 8 - r.last.right,
+        ];
+        for (final g in gaps) {
+          expect(g, closeTo(gaps.first, 0.5), reason: 'even gaps $gaps');
+        }
+        expect(gaps.first, lessThanOrEqualTo(16), reason: 'compact $gaps');
+      });
+    }
 
     testWidgets('every tab still routes after the resize', (tester) async {
       await open(tester, const Size(390, 844));

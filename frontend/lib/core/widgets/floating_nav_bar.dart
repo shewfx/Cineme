@@ -12,10 +12,11 @@ class NavTab {
   final IconData? selectedIcon;
 }
 
-/// The floating pill: inactive tabs are icon-only, the active tab carries its
-/// label inside a coral pill. Sizing is plain layout (no transforms), so what
-/// is drawn is what is touched. Every tab keeps its semantic label, a tooltip
-/// and a 48 px target even when its text is hidden.
+/// The floating capsule: four icon-only tabs, evenly spaced, the selected one
+/// in a coral pill around its icon. No visible text and no expansion, so the
+/// capsule never changes with the selection. Sizing is plain layout (no
+/// transforms), so what is drawn is what is touched. Every tab keeps its
+/// semantic label, a tooltip and a target of at least 48 px.
 class FloatingNavBar extends StatelessWidget {
   const FloatingNavBar({
     super.key,
@@ -29,12 +30,12 @@ class FloatingNavBar extends StatelessWidget {
   final ValueChanged<int> onSelected;
 
   static const double itemHeight = 48;
-  static const double _maxLabelScale = 1.3;
 
   /// The capsule is a compact control, not a full-width bar: at most this
   /// wide on every screen, shrinking only on very narrow phones.
   static const double maxWidth = 316;
   static const double _padding = 8;
+  static const double _slotWidth = 60;
 
   @override
   Widget build(BuildContext context) {
@@ -42,17 +43,18 @@ class FloatingNavBar extends StatelessWidget {
       padding: const EdgeInsets.all(_padding),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // Fixed slots: every inactive tab 48 px, and the active tab gets
-          // everything else, so the shell never changes with the selection.
-          final active = math.max(
+          // Equal slots with equal gaps (ends included); slots only shrink
+          // when a very narrow screen leaves less room, never below 48 px.
+          final slot = math.max(
             itemHeight,
-            constraints.maxWidth - itemHeight * (tabs.length - 1),
+            math.min(_slotWidth, constraints.maxWidth / tabs.length),
           );
           return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               for (var i = 0; i < tabs.length; i++)
                 SizedBox(
-                  width: i == selectedIndex ? active : itemHeight,
+                  width: slot,
                   child: _NavItem(
                     tab: tabs[i],
                     selected: i == selectedIndex,
@@ -80,17 +82,6 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.accent : AppColors.textMuted;
-    final icon = Icon(
-      selected ? (tab.selectedIcon ?? tab.icon) : tab.icon,
-      color: color,
-      size: 24,
-    );
-    final labelStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
-      fontSize: 13,
-      fontWeight: FontWeight.w600,
-      color: AppColors.text,
-    );
     return Semantics(
       button: true,
       selected: selected,
@@ -100,61 +91,23 @@ class _NavItem extends StatelessWidget {
       child: Tooltip(
         message: tab.label,
         excludeFromSemantics: true,
-        // A fixed row height: Center would otherwise fill an unbounded slot.
-        child: SizedBox(
-          height: FloatingNavBar.itemHeight,
-          child: Center(
-            child: Material(
-              key: ValueKey('nav-${tab.label}'),
-              color: selected
-                  ? AppColors.accent.withValues(alpha: 0.16)
-                  : Colors.transparent,
-              shape: const StadiumBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onTap,
-                customBorder: const StadiumBorder(),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: FloatingNavBar.itemHeight,
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: selected ? 14 : 0,
-                    ),
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOut,
-                      alignment: Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          icon,
-                          if (selected) ...[
-                            const SizedBox(width: 8),
-                            Flexible(
-                              // Large text shrinks the label to fit the pill
-                              // rather than overflowing it.
-                              child: MediaQuery.withClampedTextScaling(
-                                maxScaleFactor: FloatingNavBar._maxLabelScale,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    tab.label,
-                                    maxLines: 1,
-                                    softWrap: false,
-                                    style: labelStyle,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
+        child: Material(
+          key: ValueKey('nav-${tab.label}'),
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.16)
+              : Colors.transparent,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const StadiumBorder(),
+            child: SizedBox(
+              height: FloatingNavBar.itemHeight,
+              child: Center(
+                child: Icon(
+                  selected ? (tab.selectedIcon ?? tab.icon) : tab.icon,
+                  color: selected ? AppColors.accent : AppColors.textMuted,
+                  size: 24,
                 ),
               ),
             ),
