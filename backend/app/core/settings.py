@@ -1,6 +1,7 @@
 import os
 from collections.abc import Mapping
 from typing import Literal, Self
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, HttpUrl, model_validator
 
@@ -20,6 +21,9 @@ class Settings(BaseModel):
     database_url: str
     # Migrations may use a separate role; defaults to database_url.
     database_migration_url: str | None = None
+    # "serverless": database_url is a transaction-mode pooler (Neon `-pooler`)
+    # used from short-lived functions; see app.core.db.make_engine.
+    database_pool_mode: Literal["local", "serverless"] = "local"
 
     supabase_url: HttpUrl
     supabase_publishable_key: str
@@ -35,6 +39,10 @@ class Settings(BaseModel):
             raise ValueError(f"supabase_jwt_issuer must be {expected}")
         if not self.database_url.startswith("postgresql+psycopg://"):
             raise ValueError("database_url must use the postgresql+psycopg driver")
+        if self.environment == "production":
+            _require_tls(self.database_url, "database_url")
+            if self.database_migration_url:
+                _require_tls(self.database_migration_url, "database_migration_url")
         return self
 
     @property
@@ -45,6 +53,16 @@ class Settings(BaseModel):
     def jwks_url(self) -> str:
         """Derived from the allowlisted project URL, never from a token."""
         return f"{self.supabase_base}/auth/v1/.well-known/jwks.json"
+
+
+def _require_tls(url: str, name: str) -> None:
+    """Hosted PostgreSQL (Neon) is reached over the internet: refuse a
+    production URL that would fall back to an unencrypted connection."""
+    mode = parse_qs(urlsplit(url).query).get("sslmode", [""])[0]
+    if mode not in ("require", "verify-ca", "verify-full"):
+        raise ValueError(
+            f"{name} must set sslmode=require (or verify-ca/verify-full) in production"
+        )
 
 
 def load_settings(env: Mapping[str, str] = os.environ) -> Settings:

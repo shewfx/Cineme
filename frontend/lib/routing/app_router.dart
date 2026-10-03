@@ -23,6 +23,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: '/today',
     refreshListenable: refresh,
+    // Browser URLs we do not own (for example a Supabase email-confirmation
+    // redirect carrying `#access_token=...`) land on the app root, which also
+    // replaces that address-bar fragment. Tokens in it are never used.
+    onException: (context, state, router) => router.go('/today'),
     redirect: (context, state) =>
         authRedirect(ref.read(authGateProvider), state.matchedLocation),
     routes: [
