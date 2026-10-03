@@ -186,6 +186,115 @@ def test_list_is_newest_first_and_paginates(a: Api) -> None:
     assert a.entries(cursor="not-a-cursor").status_code == 422
 
 
+# --- sorting ---------------------------------------------------------------------
+
+SORT_FILMS = [
+    # id, title, release year (None = unknown), runtime (None = unknown)
+    (901, "Bravo", 1999, 120),
+    (902, "alpha", 2010, 90),
+    (903, "Charlie", None, None),
+    (904, "delta", 2010, None),
+    (905, "Echo", 1985, 150),
+    (906, "Foxtrot", 2024, 90),
+]
+
+EXPECTED_ORDER = {
+    "added_asc": ["Bravo", "alpha", "Charlie", "delta", "Echo", "Foxtrot"],
+    "added_desc": ["Foxtrot", "Echo", "delta", "Charlie", "alpha", "Bravo"],
+    "title_asc": ["alpha", "Bravo", "Charlie", "delta", "Echo", "Foxtrot"],
+    "title_desc": ["Foxtrot", "Echo", "delta", "Charlie", "Bravo", "alpha"],
+    # Unknown year/runtime always last; ties by title A-Z.
+    "year_desc": ["Foxtrot", "alpha", "delta", "Bravo", "Echo", "Charlie"],
+    "year_asc": ["Echo", "Bravo", "alpha", "delta", "Foxtrot", "Charlie"],
+    "runtime_asc": ["alpha", "Foxtrot", "Bravo", "Echo", "Charlie", "delta"],
+    "runtime_desc": ["Echo", "Bravo", "alpha", "Foxtrot", "Charlie", "delta"],
+}
+
+
+@pytest.fixture
+def sortable(a: Api, movies: FakeMovieProvider) -> Api:
+    for tmdb_id, title, year, runtime in SORT_FILMS:
+        movies.films[tmdb_id] = film(
+            tmdb_id,
+            title,
+            release_date=date(year, 6, 1) if year else None,
+            runtime_minutes=runtime,
+        )
+        assert a.add(tmdb_id).status_code == 201
+    return a
+
+
+def titles_of(response: Any) -> list[str]:
+    assert response.status_code == 200, response.text
+    return [i["movie"]["title"] for i in response.json()["items"]]
+
+
+def all_pages(a: Api, limit: int, **params: Any) -> list[str]:
+    seen: list[str] = []
+    cursor = None
+    for _ in range(20):
+        body = a.entries(limit=limit, **params, **({"cursor": cursor} if cursor else {})).json()
+        seen += [i["movie"]["title"] for i in body["items"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            return seen
+    raise AssertionError("pagination did not terminate")
+
+
+@pytest.mark.parametrize("sort", sorted(EXPECTED_ORDER))
+def test_each_sort_orders_the_whole_list(sortable: Api, sort: str) -> None:
+    assert titles_of(sortable.entries(sort=sort)) == EXPECTED_ORDER[sort]
+
+
+def test_default_sort_is_recently_added(sortable: Api) -> None:
+    assert titles_of(sortable.entries()) == EXPECTED_ORDER["added_desc"]
+
+
+@pytest.mark.parametrize("sort", sorted(EXPECTED_ORDER))
+@pytest.mark.parametrize("limit", [1, 2, 4])
+def test_pagination_under_every_sort_is_complete_and_stable(
+    sortable: Api, sort: str, limit: int
+) -> None:
+    """No film repeats or goes missing across page boundaries, including the
+    boundary between known and unknown year/runtime."""
+    assert all_pages(sortable, limit, sort=sort) == EXPECTED_ORDER[sort]
+
+
+def test_sort_combines_with_title_search(sortable: Api) -> None:
+    assert titles_of(sortable.entries(q="a", sort="title_desc")) == [
+        "delta",
+        "Charlie",
+        "Bravo",
+        "alpha",
+    ]
+    assert all_pages(sortable, 2, q="a", sort="runtime_asc") == [
+        "alpha",
+        "Bravo",
+        "Charlie",
+        "delta",
+    ]
+
+
+def test_sorting_never_changes_membership_or_other_users(
+    sortable: Api, b: Api, movies: FakeMovieProvider, engine: Engine
+) -> None:
+    b.add(104)
+    before = scalar(engine, "SELECT count(*) FROM cineme.watchlist_entries")
+    for sort in EXPECTED_ORDER:
+        sortable.entries(sort=sort)
+    assert scalar(engine, "SELECT count(*) FROM cineme.watchlist_entries") == before
+    assert all_pages(sortable, 50, sort="title_asc") == EXPECTED_ORDER["title_asc"]
+    assert b.titles() == ["Run Lola Run"]
+
+
+def test_unknown_sort_and_foreign_cursor_are_rejected(sortable: Api) -> None:
+    assert sortable.entries(sort="random").status_code == 422
+    cursor = sortable.entries(limit=2, sort="title_asc").json()["next_cursor"]
+    assert sortable.entries(cursor=cursor, sort="year_asc").status_code == 422
+    assert sortable.entries(cursor=cursor).status_code == 422, "default sort is its own sort"
+    assert sortable.entries(cursor=cursor, sort="title_asc").status_code == 200
+
+
 def test_remove_archives_and_restore_resets_age(a: Api, engine: Engine) -> None:
     entry = a.add(104).json()["entry"]
     removed = a.remove(entry["id"]).json()

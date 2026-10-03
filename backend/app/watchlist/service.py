@@ -3,11 +3,13 @@ nothing here touches preferences or learning."""
 
 import base64
 import binascii
+import json
 import uuid
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import ColumnElement, and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core import idempotency
@@ -25,20 +27,83 @@ from .schemas import AddResponse, WatchlistItem, WatchlistPage
 ACTIVE_LIMIT = 500
 
 
-def _encode_cursor(added_at: datetime, entry_id: uuid.UUID) -> str:
-    raw = f"{added_at.isoformat()}|{entry_id}".encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+WatchlistSort = Literal[
+    "added_desc",
+    "added_asc",
+    "title_asc",
+    "title_desc",
+    "year_desc",
+    "year_asc",
+    "runtime_asc",
+    "runtime_desc",
+]
+DEFAULT_SORT: WatchlistSort = "added_desc"
+
+# One sort key: a SQL expression, its direction and how to read it back from a
+# cursor. Unknown year/runtime sort LAST in both directions through a leading
+# "is unknown" flag, so ordering is total and deterministic; the entry id is
+# always the final tie-breaker.
+_Key = tuple[ColumnElement[Any], bool, Callable[[Any], Any]]
+
+_ADDED = WatchlistEntry.added_at.expression
+_ID = WatchlistEntry.id.expression
+_TITLE = func.lower(Movie.title)
+_YEAR_UNKNOWN = case((Movie.release_date.is_(None), 1), else_=0)
+_YEAR = func.coalesce(func.extract("year", Movie.release_date), 0)
+_RUNTIME_UNKNOWN = case((Movie.runtime_minutes.is_(None), 1), else_=0)
+_RUNTIME = func.coalesce(Movie.runtime_minutes, 0)
 
 
-def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+def _key(expr: ColumnElement[Any], asc: bool, parse: Callable[[Any], Any]) -> _Key:
+    return (expr, asc, parse)
+
+
+def _sort_keys(sort: WatchlistSort) -> list[_Key]:
+    asc = sort.endswith("_asc")
+    added = _key(_ADDED, asc, datetime.fromisoformat)
+    ident = _key(_ID, asc, uuid.UUID)
+    title_asc = _key(_TITLE, True, str)
+    ident_asc = _key(_ID, True, uuid.UUID)
+    match sort:
+        case "added_desc" | "added_asc":
+            return [added, ident]
+        case "title_asc" | "title_desc":
+            return [_key(_TITLE, asc, str), ident]
+        case "year_desc" | "year_asc":
+            return [_key(_YEAR_UNKNOWN, True, int), _key(_YEAR, asc, int), title_asc, ident_asc]
+        case _:
+            return [
+                _key(_RUNTIME_UNKNOWN, True, int),
+                _key(_RUNTIME, asc, int),
+                title_asc,
+                ident_asc,
+            ]
+
+
+def _encode_cursor(sort: WatchlistSort, values: list[Any]) -> str:
+    raw = json.dumps({"s": sort, "v": [str(v) if not isinstance(v, int) else v for v in values]})
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str, sort: WatchlistSort, keys: list[_Key]) -> list[Any]:
     try:
-        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode()
-        stamp, entry_id = raw.split("|", 1)
-        return datetime.fromisoformat(stamp), uuid.UUID(entry_id)
-    except (ValueError, binascii.Error, UnicodeDecodeError) as e:
+        raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode())
+        if raw["s"] != sort or len(raw["v"]) != len(keys):
+            raise ValueError("cursor belongs to another sort")
+        return [parse(v) for (_, _, parse), v in zip(keys, raw["v"], strict=True)]
+    except (ValueError, KeyError, TypeError, binascii.Error, UnicodeDecodeError) as e:
         raise AppError(
             422, "VALIDATION_ERROR", "Invalid cursor.", details={"fields": ["cursor"]}
         ) from e
+
+
+def _after(keys: list[_Key], values: list[Any]) -> ColumnElement[bool]:
+    """Keyset predicate: rows strictly after the cursor row in sort order."""
+    branches = []
+    for i, (expr, asc, _) in enumerate(keys):
+        ties = [keys[j][0] == values[j] for j in range(i)]
+        branches.append(and_(*ties, expr > values[i] if asc else expr < values[i]))
+    return or_(*branches)
 
 
 def _escape_like(text: str) -> str:
@@ -63,22 +128,23 @@ def list_entries(
     limit: int,
     cursor: str | None,
     q: str | None,
+    sort: WatchlistSort = DEFAULT_SORT,
 ) -> WatchlistPage:
-    """Active entries, added_at DESC then id DESC. Reads only this user's rows
-    and the local cache: works while TMDB is down."""
+    """Active entries in the requested order (default: added_at DESC, id DESC).
+    Sorting and keyset pagination happen in SQL, so a page boundary never
+    reorders films. Reads only this user's rows and the local cache: works
+    while TMDB is down."""
     local = movies.local_today(session, user_id)
+    keys = _sort_keys(sort)
     stmt = (
-        select(WatchlistEntry, Movie)
+        select(WatchlistEntry, Movie, *(expr.label(f"k{i}") for i, (expr, _, _) in enumerate(keys)))
         .join(Movie, Movie.tmdb_id == WatchlistEntry.movie_id)
         .where(WatchlistEntry.user_id == user_id, WatchlistEntry.status == "active")
-        .order_by(WatchlistEntry.added_at.desc(), WatchlistEntry.id.desc())
+        .order_by(*(expr.asc() if asc else expr.desc() for expr, asc, _ in keys))
         .limit(limit + 1)
     )
     if cursor:
-        added_at, entry_id = _decode_cursor(cursor)
-        stmt = stmt.where(
-            tuple_(WatchlistEntry.added_at, WatchlistEntry.id) < tuple_(added_at, entry_id)
-        )
+        stmt = stmt.where(_after(keys, _decode_cursor(cursor, sort, keys)))
     if q:
         stmt = stmt.where(Movie.title.ilike(f"%{_escape_like(q)}%", escape="\\"))
     rows = session.execute(stmt).all()
@@ -86,11 +152,9 @@ def list_entries(
     names = movies.genre_names(provider)  # cached in process; optional
     base = provider.image_base()
     page = rows[:limit]
-    next_cursor = (
-        _encode_cursor(page[-1][0].added_at, page[-1][0].id) if len(rows) > limit else None
-    )
+    next_cursor = _encode_cursor(sort, list(page[-1][2:])) if len(rows) > limit else None
     return WatchlistPage(
-        items=[_item(e, m, names, base, local) for e, m in page], next_cursor=next_cursor
+        items=[_item(r[0], r[1], names, base, local) for r in page], next_cursor=next_cursor
     )
 
 

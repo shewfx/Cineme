@@ -322,9 +322,11 @@ Explicit shared metadata refresh; `{}` and key required.200 `{movie:MovieDetails
 
 ## Watchlist
 
-### GET `/watchlist?limit=20&cursor=...`
+### GET `/watchlist?limit=20&cursor=...&sort=added_desc`
 
-Active entries sorted added_at DESC,id DESC.200 `{items:[{id:"uuid",movie:MovieSummary,added_at:"...",source_type:"manual"}],next_cursor:null}`. Optional `q` length1..100 searches cached title for this user's list, case-insensitive; no external request.422 invalid cursor/filter.
+Active entries in the requested `sort`; default `added_desc` (added_at DESC,id DESC). `sort` is one of `added_desc`, `added_asc`, `title_asc`, `title_desc` (case-insensitive title), `year_desc`, `year_asc` (release year, then title A-Z) and `runtime_asc`, `runtime_desc` (runtime, then title A-Z). Unknown year or runtime always sorts last in both directions; every order ends in the entry id so it is total. Sorting and keyset pagination are server-side, so page boundaries never reorder films. The opaque cursor is bound to the sort that produced it: a cursor from another sort, or an unknown `sort`, returns 422. Sorting never changes membership or preferences.
+
+Response: 200 `{items:[{id:"uuid",movie:MovieSummary,added_at:"...",source_type:"manual"}],next_cursor:null}`. Optional `q` length1..100 searches cached title for this user's list, case-insensitive; no external request.422 invalid cursor/filter.
 
 ### POST `/watchlist`
 
