@@ -11,7 +11,54 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P2 — Auth, profile bootstrap, persistence foundation | Complete: merged to `main` in PR #5 (CI green incl. PostgreSQL); cross-account movie-data isolation deferred to the P3 two-account test |
 | P3 — TMDB search and persistent watchlist | Complete: merged to `main` in PR #6 (CI green incl. PostgreSQL); two-account isolation passed (project owner) |
 | P4 — Deterministic daily selection (+ ADR 006 rejection/Already watched, ADR 007 availability) | Complete on branch `feat/p4-tonight-recommendations`: all automated gates pass incl. PostgreSQL; emulator flows exercised against the real watchlist; published via PR (see git history). Two-account Tonight isolation on a device not performed (second account's credentials unavailable); covered by automated tests |
+| Web/PWA deployment + Tonight/Search/Watchlist UI refinement (not a roadmap phase; ADR 008, ADR 009) | On branch `feat/web-pwa-deployment`, deployed to https://cineme-theta.vercel.app; automated gates pass; **not merged** (awaiting review). Physical iPhone Add-to-Home-Screen check and a live first-screen Skip run are still open (see the section) |
 | P5–P8 | Not started |
+
+## Web/PWA deployment and UI refinement: 2026-10-03, branch `feat/web-pwa-deployment`
+
+Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/008-tonight-setup-skip-and-watchlist-sort.md), [ADR 009](adr/009-hosted-web-pwa-on-vercel-and-neon.md). Procedure and environment names: [DEPLOYMENT.md](DEPLOYMENT.md).
+
+### What exists
+
+- Flutter web target and PWA shell (manifest, Cinemé icons generated from the app's own palette and Jost, iOS standalone metadata, safe-area viewport, charcoal splash); a centred 480 px canvas on wide windows; browser session storage on web; `API_BASE_URL=same-origin`.
+- Backend: serverless/pooler engine mode, TLS required for production database URLs, Vercel entrypoint, explicit `scripts/migrate_hosted.py`; CI builds the web bundle and scans it for server-side secrets (`infra/check_web_bundle.py`).
+- Hosted: one Vercel project (Hobby) + Neon (Free), Supabase Auth, TMDB. Hosted database at migration head `0004`.
+- UI refinement: Tonight startup (“Tonight’s the night.”), compact selectors on the first Tonight screen and Edit tonight, Skip, just pick something (explicit Surprise me); Search rows without runtime placeholder and with a 76x114 anchoring poster; Watchlist Sort (server-side `sort` on `GET /api/v1/watchlist`).
+
+### Verified (local gates)
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | clean (51 files formatted; 30 source files) |
+| `uv run --env-file .env pytest` (PostgreSQL) | 330 passed |
+| `dart format --output=none --set-exit-if-changed lib test` / `flutter analyze` | exit 0 / no issues |
+| `flutter test` | 184 passed |
+| `flutter build web --release` (same-origin config) + `infra/check_web_bundle.py` | built; no secrets found (22 text files scanned) |
+| `docker compose ... config --quiet` | unchanged definition (CI validates it) |
+
+### Verified live on https://cineme-theta.vercel.app (throwaway account, headless Chrome at 390x844, 320 and 1440 wide)
+
+| Check | Result |
+|---|---|
+| `/healthz`, `/readyz` (DB at head through the pooler), `/api/v1/*` unauthenticated | ok, ready, 401 envelope with `Cache-Control: no-store`; `/docs`, `/openapi.json` 404 |
+| Sign-in, bootstrap, reload, full browser restart | signed in; session survived both; sign-out cleared storage; sign back in worked |
+| Revoked/expired refresh token | the app shows its “Couldn't finish signing in” screen with Retry and Sign out; Sign out recovers |
+| TMDB search, add, remove, posters, availability | real results; real posters in the Flutter build; “Available on” shown for the pick |
+| Tonight: pick, reload (same film), Why, comparison, Not tonight (replacement), Already watched (recorded), third pass pauses, Continue once, Watch Tonight | all behaved as on Android; one film at a time |
+| Watchlist sort on Neon | all 8 modes correct; paging two at a time equals the full list; invalid sort 422; sort and layout choice survive a reload |
+| New UI on the live bundle | opening, Edit tonight selectors, sort sheet, poster grid and Search rows shown as designed; bundle contains the new strings and not “Runtime unknown until added” |
+| Layout | 390 px phone view matches the Android app; 1440 px desktop is a centred canvas; 320 px renders cleanly |
+
+### Not verified / open
+
+- **Physical iPhone** Add to Home Screen was not tested (no device here). Steps are in DEPLOYMENT.md.
+- **Live first-screen Skip**: the throwaway account already had today's pick, and the hosted database holds other users, so its sessions were not reset. Skip is covered by Flutter widget tests, a real-repository request-body test and the preview build; run it on a fresh day or a new account.
+- Android: the debug APK build result is recorded in the final report of this task; a device/emulator run was not repeated.
+- The previous Chrome typing run showed a harmless `null.toString` page error while typing into a field under automation; it was not reproduced by manual input and did not affect sign-in.
+
+### Known limits
+
+Runtime database role is the Neon owner; free-tier compute suspends when idle; function region `iad1` (US) for a Neon database in `us-east-1`; the hosted API has no CORS middleware by design (same-origin only).
 
 ## P4 — 2026-10-02, branch `feat/p4-tonight-recommendations`
 

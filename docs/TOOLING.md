@@ -69,6 +69,17 @@ flutter run --dart-define=CINEME_PREVIEW=true
 
 Preview mode is not labelled on screen; it is identified by this build flag. All preview data lives in memory and resets when the app restarts. Profile → "Simulate connection errors" (preview build only) makes every fake repository fail so error states can be checked. Optional local posters for the preview go in `frontend/preview_posters/<tmdbId>.jpg` (git-ignored, see that folder's README and ADR 002); without them the designed placeholder is shown.
 
+### Web / PWA
+
+```powershell
+cd frontend
+flutter run -d chrome --dart-define-from-file=dart_defines.env    # local web against the local API
+flutter build web --release --dart-define=API_BASE_URL=same-origin --dart-define=SUPABASE_URL=<url> --dart-define=SUPABASE_PUBLISHABLE_KEY=<key>
+python ../infra/check_web_bundle.py build/web                        # fails on any server-side secret
+```
+
+The web build talks to the API on its own origin, so the API has no CORS middleware; running the web build against `localhost:8000` from a different origin is therefore not supported (use Android locally, or the hosted site). Hosted deployment, migrations and Vercel/Neon setup: [DEPLOYMENT.md](DEPLOYMENT.md).
+
 Checks:
 
 ```powershell
