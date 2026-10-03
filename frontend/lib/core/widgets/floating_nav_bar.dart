@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -29,34 +31,37 @@ class FloatingNavBar extends StatelessWidget {
   static const double itemHeight = 48;
   static const double _maxLabelScale = 1.3;
 
+  /// The capsule is a compact control, not a full-width bar: at most this
+  /// wide on every screen, shrinking only on very narrow phones.
+  static const double maxWidth = 316;
+  static const double _padding = 8;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (var i = 0; i < tabs.length; i++)
-            // Inactive tabs keep a fixed 48 px target; the active tab takes
-            // what its label needs and shrinks the label before overflowing.
-            if (i == selectedIndex)
-              Flexible(
-                child: _NavItem(
-                  tab: tabs[i],
-                  selected: true,
-                  onTap: () => onSelected(i),
+      padding: const EdgeInsets.all(_padding),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Fixed slots: every inactive tab 48 px, and the active tab gets
+          // everything else, so the shell never changes with the selection.
+          final active = math.max(
+            itemHeight,
+            constraints.maxWidth - itemHeight * (tabs.length - 1),
+          );
+          return Row(
+            children: [
+              for (var i = 0; i < tabs.length; i++)
+                SizedBox(
+                  width: i == selectedIndex ? active : itemHeight,
+                  child: _NavItem(
+                    tab: tabs[i],
+                    selected: i == selectedIndex,
+                    onTap: () => onSelected(i),
+                  ),
                 ),
-              )
-            else
-              SizedBox(
-                width: 48,
-                child: _NavItem(
-                  tab: tabs[i],
-                  selected: false,
-                  onTap: () => onSelected(i),
-                ),
-              ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

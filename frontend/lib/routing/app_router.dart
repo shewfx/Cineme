@@ -95,43 +95,54 @@ class _AppShell extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 6, 28, 20),
-          child: DecoratedBox(
-            key: const ValueKey('floating-nav'),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: AppColors.border),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x66000000),
-                  blurRadius: 24,
-                  offset: Offset(0, 8),
+          // Compact and constant-width on every screen, centred.
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: FloatingNavBar.maxWidth,
+              ),
+              child: DecoratedBox(
+                key: const ValueKey('floating-nav'),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: FloatingNavBar(
-              selectedIndex: shell.currentIndex,
-              // Re-tapping the current tab returns it to its first page.
-              onSelected: (i) =>
-                  shell.goBranch(i, initialLocation: i == shell.currentIndex),
-              tabs: const [
-                NavTab(
-                  label: 'Tonight',
-                  icon: Icons.movie_outlined,
-                  selectedIcon: Icons.movie,
+                child: FloatingNavBar(
+                  selectedIndex: shell.currentIndex,
+                  // Re-tapping the current tab returns it to its first page.
+                  onSelected: (i) => shell.goBranch(
+                    i,
+                    initialLocation: i == shell.currentIndex,
+                  ),
+                  tabs: const [
+                    NavTab(
+                      label: 'Tonight',
+                      icon: Icons.movie_outlined,
+                      selectedIcon: Icons.movie,
+                    ),
+                    NavTab(
+                      label: 'Watchlist',
+                      icon: Icons.bookmark_border,
+                      selectedIcon: Icons.bookmark,
+                    ),
+                    NavTab(label: 'History', icon: Icons.history),
+                    NavTab(
+                      label: 'Profile',
+                      icon: Icons.person_outline,
+                      selectedIcon: Icons.person,
+                    ),
+                  ],
                 ),
-                NavTab(
-                  label: 'Watchlist',
-                  icon: Icons.bookmark_border,
-                  selectedIcon: Icons.bookmark,
-                ),
-                NavTab(label: 'History', icon: Icons.history),
-                NavTab(
-                  label: 'Profile',
-                  icon: Icons.person_outline,
-                  selectedIcon: Icons.person,
-                ),
-              ],
+              ),
             ),
           ),
         ),

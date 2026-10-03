@@ -93,7 +93,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final nav = floatingNav;
-      expect(tester.getSize(nav).width, 480 - 56, reason: '28 px each side');
+      expect(
+        tester.getSize(nav).width,
+        316,
+        reason: 'compact: not the full 480 px canvas',
+      );
       expect(tester.getCenter(nav).dx, 720);
       // Width-based decisions inside the app see the canvas, not the window.
       final inner = tester.element(navTab('Tonight'));
@@ -107,7 +111,7 @@ void main() {
 
       await tester.tap(navTab('Profile'));
       await tester.pumpAndSettle();
-      expect(tester.getSize(floatingNav).width, 480 - 56);
+      expect(tester.getSize(floatingNav).width, 316);
       expect(tester.getSize(find.byType(Scaffold).first).width, 480);
     });
 
@@ -118,7 +122,7 @@ void main() {
       await tester.pumpWidget(webApp());
       await tester.pumpAndSettle();
 
-      expect(tester.getSize(floatingNav).width, 390 - 56);
+      expect(tester.getSize(floatingNav).width, 316);
       final outside = find.byWidgetPredicate(
         (w) => w is ColoredBox && w.color == const Color(0xFF111111),
       );
@@ -131,7 +135,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(AppCanvas), findsNothing);
-      expect(tester.getSize(floatingNav).width, 1440 - 56);
+      expect(tester.getSize(floatingNav).width, 316);
     });
   });
 
@@ -144,8 +148,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final nav = tester.getRect(floatingNav);
-      expect(nav.left, 28);
-      expect(nav.right, 390 - 28);
+      expect(nav.width, 316);
+      expect(nav.center.dx, 195, reason: 'centred');
+      expect(nav.left, greaterThanOrEqualTo(28));
       // 20 px of air above the 34 px home-indicator region, not touching it.
       expect(nav.bottom, 844 - 34 - 20);
       expect(844 - 34 - nav.bottom, inInclusiveRange(18, 28));

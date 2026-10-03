@@ -131,4 +131,75 @@ void main() {
       findsNothing,
     );
   });
+
+  group('compact constant-width capsule', () {
+    for (final (name, size, scale, expected) in [
+      ('iPhone', const Size(390, 844), 1.0, 316.0),
+      ('Android 360', const Size(360, 800), 1.0, 304.0),
+      ('small phone', const Size(320, 568), 1.0, 264.0),
+      ('very narrow', const Size(280, 560), 1.0, 224.0),
+      ('200% text', const Size(360, 640), 2.0, 304.0),
+      ('desktop 480 canvas', const Size(1440, 900), 1.0, 316.0),
+    ]) {
+      testWidgets('$name: shell is ${expected}px for every active tab', (
+        tester,
+      ) async {
+        await open(tester, size, scale: scale);
+        final shells = <Rect>[];
+        for (final tab in order) {
+          await tester.tap(navTab(tab));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: '$name $tab');
+          shells.add(tester.getRect(floatingNav));
+          // Four destinations, each still tappable at its own centre.
+          for (var i = 0; i < 4; i++) {
+            final r = tester.getRect(navItems.at(i));
+            expect(r.width, greaterThanOrEqualTo(48));
+            expect(r.height, greaterThanOrEqualTo(48));
+          }
+        }
+        for (final r in shells) {
+          expect(r, shells.first, reason: 'shell never moves or resizes');
+        }
+        final shell = shells.first;
+        expect(shell.width, expected);
+        final viewport = name == 'desktop 480 canvas' ? 480.0 : size.width;
+        final left = name == 'desktop 480 canvas'
+            ? (size.width - 480) / 2 + (480 - expected) / 2
+            : (size.width - expected) / 2;
+        expect(shell.left, closeTo(left, 0.5));
+        expect(
+          shell.left - (size.width - viewport) / 2,
+          greaterThanOrEqualTo(28),
+          reason: 'safe side margin',
+        );
+        if (name == 'desktop 480 canvas') {
+          expect(shell.width, lessThan(480 - 56), reason: 'not canvas-wide');
+        }
+      });
+    }
+
+    testWidgets('Watchlist fits its fixed slot without overflow', (
+      tester,
+    ) async {
+      await open(tester, const Size(320, 568), scale: 2);
+      await tester.tap(navTab('Watchlist'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final pill = tester.getRect(navTab('Watchlist'));
+      final label = tester.getRect(labelIn('Watchlist'));
+      expect(label.left, greaterThanOrEqualTo(pill.left));
+      expect(label.right, lessThanOrEqualTo(pill.right));
+    });
+
+    testWidgets('every tab still routes after the resize', (tester) async {
+      await open(tester, const Size(390, 844));
+      for (final tab in [...order.reversed, ...order]) {
+        await tester.tapAt(tester.getCenter(navTab(tab)));
+        await tester.pumpAndSettle();
+        final nav = tester.widget<FloatingNavBar>(find.byType(FloatingNavBar));
+        expect(nav.selectedIndex, order.indexOf(tab), reason: tab);
+      }
+    });
+  });
 }
