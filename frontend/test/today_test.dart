@@ -1,5 +1,4 @@
 import 'package:cineme/app.dart';
-import 'package:cineme/core/widgets/choice_pill.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
 import 'package:cineme/features/today/presentation/today_widgets.dart';
 import 'package:cineme/preview/preview_catalog.dart';
@@ -32,11 +31,29 @@ Future<void> tapText(WidgetTester tester, String label) async {
   await tester.pump();
 }
 
-/// True if any pill with this label is selected (labels can repeat, e.g.
-/// the feeling-down follow-up "Surprise me").
-bool isSelected(WidgetTester tester, String label) => tester
-    .widgetList<ChoicePill>(find.widgetWithText(ChoicePill, label))
-    .any((p) => p.selected);
+/// Opens the Tonight selector showing [current] and chooses [option] from
+/// its bottom sheet, like a user would.
+Future<void> choose(WidgetTester tester, String current, String option) async {
+  await tester.ensureVisible(find.text(current).last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(current).last);
+  await tester.pumpAndSettle();
+  // The sheet builds lazily; scroll to the option like a user.
+  if (find.text(option).evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      find.text(option),
+      80,
+      scrollable: find.byType(Scrollable).last,
+    );
+  }
+  await tester.ensureVisible(find.text(option).last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(option).last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> chooseIntent(WidgetTester tester, String option) =>
+    choose(tester, 'Choose one', option);
 
 void main() {
   group('FakeTodayRepository', () {
@@ -162,16 +179,17 @@ void main() {
       );
 
       // Feeling down selects no intent, and certainly not comedy.
-      await tapText(tester, 'Down');
-      await tester.pump();
-      expect(isSelected(tester, 'Down'), isTrue);
+      await choose(tester, 'Not set', 'Down');
+      expect(find.text('Down'), findsOneWidget);
+      expect(find.text('Choose one'), findsOneWidget);
       for (final intent in DesiredExperience.values) {
-        expect(isSelected(tester, intent.label), isFalse, reason: intent.label);
+        expect(find.text(intent.label), findsNothing, reason: intent.label);
       }
       expect(button().onPressed, isNull);
 
-      await tapText(tester, 'Comforting');
-      await tester.pump();
+      // Down offers only the documented follow-ups; none was preselected.
+      await chooseIntent(tester, 'Something comforting');
+      expect(find.text('Comforting'), findsOneWidget);
       expect(button().onPressed, isNotNull);
     });
 
@@ -192,10 +210,9 @@ void main() {
       await tester.pumpWidget(previewApp(store(inventory: inventory)));
       await tester.pumpAndSettle();
 
-      await tapText(tester, 'Keep me hooked');
-      await tapText(tester, 'Tired');
-      await tapText(tester, 'Up to 90 min');
-      await tester.pump();
+      await chooseIntent(tester, 'Keep me hooked');
+      await choose(tester, 'Not set', 'Tired');
+      await choose(tester, 'Any length', 'Up to 90 min');
       await tapText(tester, 'Pick my movie');
       await tester.pumpAndSettle();
 
@@ -211,6 +228,17 @@ void main() {
         find.text('1998  ·  81 min  ·  Action, Drama, Thriller'),
         findsOneWidget,
       );
+      // The card stays clean: the explanation is on demand.
+      expect(
+        find.text('Its thriller genre fits “Keep me hooked”.'),
+        findsNothing,
+      );
+      expect(
+        find.text('At 81 minutes, it fits your 90-minute limit.'),
+        findsNothing,
+      );
+      await tapText(tester, 'Why this film?');
+      await tester.pumpAndSettle();
       expect(
         find.text('Its thriller genre fits “Keep me hooked”.'),
         findsOneWidget,
@@ -219,6 +247,8 @@ void main() {
         find.text('At 81 minutes, it fits your 90-minute limit.'),
         findsOneWidget,
       );
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
+      await tester.pumpAndSettle();
       // Intent and mood are shown separately.
       expect(
         find.text('Keep me hooked  ·  up to 90 min  ·  feeling tired'),
@@ -237,8 +267,7 @@ void main() {
     ) async {
       await tester.pumpWidget(previewApp());
       await tester.pumpAndSettle();
-      await tapText(tester, 'Exciting');
-      await tester.pump();
+      await chooseIntent(tester, 'Exciting');
       await tapText(tester, 'Pick my movie');
       await tester.pumpAndSettle();
 
@@ -262,8 +291,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
-      await tapText(tester, 'Let me feel it');
-      await tester.pump();
+      await chooseIntent(tester, 'Let me feel it');
       await tapText(tester, 'Pick my movie');
       await tester.pumpAndSettle();
 

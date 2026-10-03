@@ -11,6 +11,7 @@ class PrimaryAction extends StatelessWidget {
     required this.onPressed,
     this.loading = false,
     this.disabledHint,
+    this.compact = false,
   });
 
   final String label;
@@ -19,6 +20,9 @@ class PrimaryAction extends StatelessWidget {
 
   /// Read by screen readers while disabled, explaining what unlocks it.
   final String? disabledHint;
+
+  /// A slightly shorter button for a pinned action bar.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +35,11 @@ class PrimaryAction extends StatelessWidget {
           foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.surface,
           disabledForegroundColor: AppColors.textMuted,
-          minimumSize: const Size.fromHeight(58),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          minimumSize: Size.fromHeight(compact ? 52 : 58),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 16 : 24,
+            vertical: compact ? 10 : 16,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadii.button),
           ),

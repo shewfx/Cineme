@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/movie_poster.dart';
+import '../../../core/widgets/app_canvas.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
@@ -13,12 +13,18 @@ import '../../history/data/history_repository.dart';
 import '../application/today_controller.dart';
 import 'availability_section.dart';
 import 'feedback_sheets.dart';
+import 'tonight_hero.dart';
+import 'tonight_meta.dart';
 import 'today_widgets.dart';
 import 'why_sheet.dart';
 
+/// Tallest hero on a desktop browser (the phone-width canvas); phones keep
+/// the 60% share.
+const desktopHeroMaxHeight = 530.0;
+
 /// Exactly ONE film, offered, accepted (Watch Tonight) or completed (Mark
-/// watched): artwork fading into charcoal, then a compact text block. No
-/// alternatives, carousel or runners-up are rendered.
+/// watched): a hero of blurred artwork with the sharp poster card in front,
+/// then the details. No alternatives, carousel or runners-up are rendered.
 class RecommendationView extends ConsumerWidget {
   const RecommendationView({super.key, required this.envelope});
 
@@ -151,11 +157,23 @@ class RecommendationView extends ConsumerWidget {
           : Text(label, textAlign: TextAlign.center),
     );
 
+    // Side by side normally; stacked on narrow screens and at large text.
+    final stackActions =
+        MediaQuery.textScalerOf(context).scale(1) > 1.15 || width < 340;
+    final watchTonight = PrimaryAction(
+      compact: true,
+      label: 'Watch Tonight',
+      loading: busy == TodayAction.accept,
+      onPressed: busy == null
+          ? () => guard(() => controller.accept(recommendation))
+          : null,
+    );
+
     final actions = switch (state) {
       TodayStatus.offered => <Widget>[
-        Row(
-          children: [
-            if (historyAvailable) ...[
+        if (historyAvailable) ...[
+          Row(
+            children: [
               Expanded(
                 child: secondary(
                   'Already seen',
@@ -164,24 +182,37 @@ class RecommendationView extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: secondary(
-                'Not feeling it',
-                pickAnother,
-                TodayAction.reject,
+              Expanded(
+                child: secondary(
+                  'Not feeling it',
+                  pickAnother,
+                  TodayAction.reject,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        PrimaryAction(
-          label: 'Watch Tonight',
-          loading: busy == TodayAction.accept,
-          onPressed: busy == null
-              ? () => guard(() => controller.accept(recommendation))
-              : null,
-        ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          watchTonight,
+        ] else if (stackActions) ...[
+          watchTonight,
+          const SizedBox(height: 10),
+          secondary('Not feeling it', pickAnother, TodayAction.reject),
+        ] else
+          // One compact bar keeps the hero tall: Not feeling it | Watch Tonight.
+          Row(
+            children: [
+              Expanded(
+                flex: 5,
+                child: secondary(
+                  'Not feeling it',
+                  pickAnother,
+                  TodayAction.reject,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(flex: 6, child: watchTonight),
+            ],
+          ),
       ],
       TodayStatus.accepted => <Widget>[
         SizedBox(
@@ -209,206 +240,149 @@ class RecommendationView extends ConsumerWidget {
       ],
     };
 
+    final moreActions = state == TodayStatus.offered && historyAvailable
+        ? IconButton(
+            tooltip: 'More actions',
+            icon: const Icon(Icons.more_horiz),
+            onPressed: busy == null
+                ? () => _moreActions(context, neverRecommend)
+                : null,
+          )
+        : null;
+
+    final centred = text.bodyMedium?.copyWith(color: AppColors.textMuted);
     return Scaffold(
       body: Column(
         children: [
           Expanded(
-            // Text sits on the actions; spare height falls into the charcoal
-            // fade. Overflows (small screens, large text) scroll instead.
-            // Art is sized from the space left above the actions, so the
-            // title and reasons stay visible without scrolling.
+            // Hero (about 60% of the screen) then the details. The whole page
+            // scrolls if the details do not fit; the actions stay pinned.
             child: LayoutBuilder(
               builder: (context, box) {
-                final artHeight = math.min(
-                  width * 1.5,
-                  box.maxHeight * (largeText ? 0.4 : 0.58),
-                );
-                return CustomScrollView(
-                  slivers: [
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: artHeight,
-                            width: double.infinity,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                MoviePoster(
-                                  key: const ValueKey('tonight-poster'),
-                                  movie: movie,
+                final screenHeight = MediaQuery.sizeOf(context).height;
+                // About 60% of a phone's height; on a tall desktop window
+                // (held to the phone-width canvas) it stops growing, so the
+                // poster is not lost in a huge blurred field.
+                final share = screenHeight * (largeText ? 0.4 : 0.6);
+                // A whole logical pixel (so a whole device pixel at 1x, 2x and
+                // 3x): a fractional edge paints a faint line of the blurred
+                // artwork on the partial pixel row where the hero ends.
+                final heroHeight = math
+                    .max(
+                      220.0,
+                      math.min(
+                        AppCanvasScope.constrained(context)
+                            ? math.min(share, desktopHeroMaxHeight)
+                            : share,
+                        box.maxHeight - (largeText ? 110 : 130),
+                      ),
+                    )
+                    .floorToDouble();
+                return SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      TonightHero(
+                        movie: movie,
+                        height: heroHeight,
+                        trailing: moreActions,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                        child: Column(
+                          children: [
+                            if (statusLabel != null) ...[
+                              Text(
+                                statusLabel,
+                                style: text.labelMedium?.copyWith(
+                                  color: AppColors.accent,
                                 ),
-                                // Light scrim for the status bar; fade to charcoal.
-                                const DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      stops: [0, 0.16, 0.72, 1],
-                                      colors: [
-                                        Color(0x66000000),
-                                        Color(0x00000000),
-                                        Color(0x001C1C1C),
-                                        AppColors.background,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (state == TodayStatus.offered &&
-                                    historyAvailable)
-                                  SafeArea(
-                                    child: Align(
-                                      alignment: Alignment.topRight,
-                                      child: IconButton(
-                                        tooltip: 'More actions',
-                                        icon: const Icon(Icons.more_horiz),
-                                        onPressed: busy == null
-                                            ? () => _moreActions(
-                                                context,
-                                                neverRecommend,
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            Semantics(
+                              header: true,
+                              child: Text(
+                                movie.title,
+                                key: const ValueKey('tonight-title'),
+                                textAlign: TextAlign.center,
+                                style: text.headlineMedium,
+                              ),
                             ),
-                          ),
-                          const Spacer(),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 6),
+                            TonightMeta(
+                              movie: movie,
+                              style: centred,
+                              key: const ValueKey('tonight-meta'),
+                            ),
+                            const SizedBox(height: 14),
+                            if (state != TodayStatus.completed)
+                              AvailabilitySection(
+                                tmdbId: movie.tmdbId,
+                                centered: true,
+                              ),
+                            // The context line and the two secondary links.
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 4,
                               children: [
-                                // Wraps so "Edit tonight" drops below at large text.
-                                Wrap(
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: 4,
-                                  children: [
-                                    Text(
-                                      contextLine(tonight),
-                                      style: text.labelMedium?.copyWith(
-                                        color: AppColors.textMuted,
-                                      ),
-                                    ),
-                                    if (state != TodayStatus.completed)
-                                      TextButton(
-                                        onPressed: busy == null
-                                            ? () =>
-                                                  context.push('/today/context')
-                                            : null,
-                                        child: const Text('Edit tonight'),
-                                      ),
-                                    // Winner-only explanation; no other films.
-                                    if (state != TodayStatus.completed)
-                                      TextButton(
-                                        onPressed: () => showWhySheet(
-                                          context,
-                                          recommendation,
-                                        ),
-                                        child: const Text('Why this film?'),
-                                      ),
-                                  ],
-                                ),
-                                if (statusLabel != null) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    statusLabel,
-                                    style: text.labelMedium?.copyWith(
-                                      color: AppColors.accent,
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 6),
-                                Semantics(
-                                  header: true,
-                                  child: Text(
-                                    movie.title,
-                                    key: const ValueKey('tonight-title'),
-                                    style: text.headlineMedium,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
                                 Text(
-                                  [
-                                    if (movie.year != null) '${movie.year}',
-                                    movie.runtimeMinutes != null
-                                        ? '${movie.runtimeMinutes} min'
-                                        : 'Runtime unavailable',
-                                    if (movie.genres.isNotEmpty)
-                                      movie.genres
-                                          .map((g) => g.name)
-                                          .join(', '),
-                                  ].join('  ·  '),
-                                  key: const ValueKey('tonight-meta'),
-                                  style: text.bodyMedium?.copyWith(
+                                  contextLine(tonight),
+                                  style: text.labelMedium?.copyWith(
                                     color: AppColors.textMuted,
                                   ),
                                 ),
-                                const SizedBox(height: 16),
                                 if (state != TodayStatus.completed)
-                                  AvailabilitySection(tmdbId: movie.tmdbId),
-                                if (state == TodayStatus.completed &&
-                                    viewing != null) ...[
-                                  Text('How was it?', style: text.titleMedium),
-                                  const SizedBox(height: 10),
-                                  RatingSelector(
-                                    value: viewing.rating,
-                                    onChanged: busy == null
-                                        ? (r) => guard(
-                                            () => controller.rate(viewing, r),
-                                          )
+                                  TextButton(
+                                    onPressed: busy == null
+                                        ? () => context.push('/today/context')
                                         : null,
+                                    child: const Text('Edit tonight'),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Ratings shape future picks. You can change yours any time.',
-                                    style: text.labelMedium?.copyWith(
-                                      color: AppColors.textMuted,
-                                    ),
+                                // Winner-only explanation; no other films.
+                                if (state != TodayStatus.completed)
+                                  TextButton(
+                                    onPressed: () =>
+                                        showWhySheet(context, recommendation),
+                                    child: const Text('Why this film?'),
                                   ),
-                                ] else ...[
-                                  // Up to two reasons plus one uncertainty;
-                                  // the rest lives behind "Why this film?".
-                                  for (final reason in [
-                                    ...recommendation.reasons
-                                        .where((r) => !isUncertain(r))
-                                        .take(2),
-                                    ...recommendation.reasons
-                                        .where(isUncertain)
-                                        .take(1),
-                                  ])
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: Text(
-                                        reasonText(reason),
-                                        style: text.bodyLarge?.copyWith(
-                                          color: isUncertain(reason)
-                                              ? AppColors.textMuted
-                                              : AppColors.textSoft,
-                                        ),
-                                      ),
-                                    ),
-                                ],
                               ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 6),
+                            if (state == TodayStatus.completed &&
+                                viewing != null) ...[
+                              Text('How was it?', style: text.titleMedium),
+                              const SizedBox(height: 10),
+                              RatingSelector(
+                                value: viewing.rating,
+                                onChanged: busy == null
+                                    ? (r) => guard(
+                                        () => controller.rate(viewing, r),
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Ratings shape future picks. You can change yours any time.',
+                                textAlign: TextAlign.center,
+                                style: text.labelMedium?.copyWith(
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
-              child: Column(mainAxisSize: MainAxisSize.min, children: actions),
-            ),
+          // The navigation bar below already clears the home indicator.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+            child: Column(mainAxisSize: MainAxisSize.min, children: actions),
           ),
         ],
       ),
@@ -445,6 +419,7 @@ Future<bool> _confirm(
 Future<void> _moreActions(BuildContext context, VoidCallback neverRecommend) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.surface,
       showDragHandle: true,
       builder: (sheet) => SafeArea(

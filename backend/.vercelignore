@@ -1,0 +1,11 @@
+# Files the Vercel upload must not carry. public/ (the Flutter web build) is
+# deliberately NOT listed: it is produced locally or in CI and uploaded here.
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/

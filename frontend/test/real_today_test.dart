@@ -363,7 +363,7 @@ class TodayRig {
   final auth = FakeAuth(alice);
   late final ApiClient api;
 
-  Widget app() => ProviderScope(
+  Widget app({bool canvas = false}) => ProviderScope(
     retry: noAutomaticRetry,
     overrides: [
       appConfigProvider.overrideWithValue(
@@ -383,7 +383,7 @@ class TodayRig {
         ApiAvailabilityRepository(api),
       ),
     ],
-    child: const CinemeApp(),
+    child: CinemeApp(centredCanvas: canvas),
   );
 }
 
@@ -395,6 +395,14 @@ Future<TodayRig> start(WidgetTester tester, [TodayRig? rig]) async {
 }
 
 Future<void> tapText(WidgetTester tester, String text) async {
+  // A long option sheet at large text builds lazily: scroll it like a user.
+  if (find.text(text).evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      find.text(text),
+      80,
+      scrollable: find.byType(Scrollable).last,
+    );
+  }
   await tester.ensureVisible(find.text(text).last);
   await tester.pumpAndSettle();
   await tester.tap(find.text(text).last);
@@ -402,8 +410,13 @@ Future<void> tapText(WidgetTester tester, String text) async {
 }
 
 Future<void> pickExciting(WidgetTester tester, {String? time}) async {
+  // Three compact selectors: open the field, then choose from its sheet.
+  await tapText(tester, 'Choose one');
   await tapText(tester, 'Exciting');
-  if (time != null) await tapText(tester, time);
+  if (time != null) {
+    await tapText(tester, 'Any length');
+    await tapText(tester, time);
+  }
   await tapText(tester, 'Pick my movie');
 }
 
@@ -479,10 +492,18 @@ void main() {
       await pickExciting(tester, time: 'Up to 90 min');
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.text('Run Lola Run'), findsOneWidget);
+      // The card stays clean: reasons live behind Why this film?.
+      expect(
+        find.text('81 minutes, within your 90-minute limit.'),
+        findsNothing,
+      );
+      await tapText(tester, 'Why this film?');
       expect(
         find.text('81 minutes, within your 90-minute limit.'),
         findsOneWidget,
       );
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
+      await tester.pumpAndSettle();
       expect(find.text('Arrival'), findsNothing, reason: 'no runners-up');
       expect(find.text('Watch Tonight'), findsOneWidget);
       expect(find.text('Not feeling it'), findsOneWidget);
@@ -633,6 +654,47 @@ void main() {
       expect(find.text('Retry'), findsNothing);
     });
 
+    testWidgets(
+      'Skip sends only the explicit Surprise me intent and returns one film',
+      (tester) async {
+        final rig = await start(tester);
+        // Half-selected values are ignored by Skip.
+        await tapText(tester, 'Any length');
+        await tapText(tester, 'Up to 90 min');
+        await tapText(tester, 'Skip, just pick something');
+
+        final chooses = [
+          for (final r in rig.server.requests)
+            if (r.method == 'POST' && r.path == '/api/v1/today/choose') r,
+        ];
+        expect(chooses, hasLength(1));
+        final sent = (chooses.single.data as Map)['context'] as Map;
+        expect(sent['desired_experience'], 'surprise');
+        expect(sent['current_mood'], isNull);
+        expect(sent['max_runtime_minutes'], isNull);
+        expect(sent['prefer_genre_ids'] ?? [], isEmpty);
+        expect(sent['avoid_genre_ids'] ?? [], isEmpty);
+        expect(chooses.single.headers['Idempotency-Key'], isNotNull);
+        expect(find.byType(MoviePoster), findsOneWidget);
+        expect(find.text('Watch Tonight'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a failed Skip keeps the setup and can be retried', (
+      tester,
+    ) async {
+      final rig = await start(tester);
+      rig.server.failStatus = 503;
+      await tapText(tester, 'Skip, just pick something');
+      expect(find.textContaining("Couldn't reach Cinemé"), findsOneWidget);
+      expect(find.byType(MoviePoster), findsNothing);
+      expect(find.text('Skip, just pick something'), findsOneWidget);
+
+      rig.server.failStatus = null;
+      await tapText(tester, 'Skip, just pick something');
+      expect(find.byType(MoviePoster), findsOneWidget);
+    });
+
     testWidgets('a backend failure keeps the context and says so', (
       tester,
     ) async {
@@ -725,7 +787,7 @@ void main() {
       expect(rig.server.commands('/today/choose'), hasLength(1));
     });
 
-    testWidgets('Available on shows only the providers TMDB returned', (
+    testWidgets('Where to watch shows only the providers TMDB returned', (
       tester,
     ) async {
       final rig = TodayRig();
@@ -746,12 +808,119 @@ void main() {
       };
       await start(tester, rig);
       await pickExciting(tester);
-      expect(find.text('Available on'), findsOneWidget);
+      expect(find.text('Where to watch'), findsOneWidget);
       expect(find.text('Netflix'), findsOneWidget);
       expect(find.text('JioHotstar'), findsOneWidget);
       expect(find.text('Also to rent or buy on Apple TV'), findsOneWidget);
-      expect(find.text('Streaming data: JustWatch · IN'), findsOneWidget);
+      // Attribution is one tap away, not permanent card text.
+      expect(find.text('Streaming data: JustWatch · IN'), findsNothing);
+      expect(find.textContaining('JustWatch'), findsNothing);
+      expect(find.byKey(const ValueKey('availability-info')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('availability-info')));
+      await tester.pumpAndSettle();
+      expect(find.text('Streaming data'), findsOneWidget);
+      expect(
+        find.text(
+          'Streaming availability data provided by JustWatch. '
+          'Availability may vary by region.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('IN catalogue'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10)); // dismiss
+      await tester.pumpAndSettle();
       expect(find.text('Prime Video'), findsNothing);
+    });
+
+    testWidgets('no streaming region: a quiet hint, never invented providers', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': null,
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(
+        find.text('Choose your streaming region to see where to watch'),
+        findsOneWidget,
+      );
+      expect(find.text('Where to watch'), findsNothing);
+      expect(find.textContaining('JustWatch'), findsNothing);
+      expect(find.text('Netflix'), findsNothing);
+      // The pick itself is untouched.
+      expect(find.text('Watch Tonight'), findsOneWidget);
+      expect(find.byType(MoviePoster), findsOneWidget);
+
+      await tapText(
+        tester,
+        'Choose your streaming region to see where to watch',
+      );
+      expect(find.text('Streaming region'), findsOneWidget, reason: 'Profile');
+    });
+
+    testWidgets('a region with no providers shows no hint and no heading', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': <Object>[],
+        'free': <Object>[],
+        'rent': <Object>[],
+        'buy': <Object>[],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      expect(find.text('Where to watch'), findsNothing);
+      expect(find.textContaining('Choose your streaming region'), findsNothing);
+    });
+
+    testWidgets('subscription providers lead; rent/buy is a separate line', (
+      tester,
+    ) async {
+      final rig = TodayRig();
+      rig.server.availability[104] = {
+        'region': 'IN',
+        'link': null,
+        'streaming': [
+          {'id': 119, 'name': 'Amazon Prime Video', 'logo_url': null},
+          {'id': 122, 'name': 'JioHotstar', 'logo_url': null},
+        ],
+        'free': <Object>[],
+        'rent': [
+          {'id': 2, 'name': 'Apple TV Store', 'logo_url': null},
+        ],
+        'buy': [
+          {'id': 3, 'name': 'Google Play Movies', 'logo_url': null},
+        ],
+        'fetched_at': null,
+        'stale': false,
+      };
+      await start(tester, rig);
+      await pickExciting(tester);
+      final heading = tester.getTopLeft(find.text('Where to watch')).dy;
+      final prime = tester.getTopLeft(find.text('Amazon Prime Video')).dy;
+      final paid = tester
+          .getTopLeft(
+            find.text(
+              'Also to rent or buy on Apple TV Store, Google Play Movies',
+            ),
+          )
+          .dy;
+      expect(heading, lessThan(prime));
+      expect(prime, lessThan(paid), reason: 'rent/buy is secondary, below');
+      expect(find.text('JioHotstar'), findsOneWidget);
     });
 
     testWidgets('no providers, unknown region or a failure show nothing', (
@@ -780,7 +949,7 @@ void main() {
       };
       await start(tester, rig);
       await pickExciting(tester);
-      expect(find.text('Available on'), findsNothing);
+      expect(find.text('Where to watch'), findsNothing);
       expect(find.textContaining('JustWatch'), findsNothing);
       // 329865 has no scripted data: the API fails; the card is unaffected.
       rig.server.films.removeAt(0);
@@ -789,7 +958,7 @@ void main() {
       await tapText(tester, 'Show another');
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.text('Watch Tonight'), findsOneWidget);
-      expect(find.text('Available on'), findsNothing);
+      expect(find.text('Where to watch'), findsNothing);
     });
 
     test(

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/selector_field.dart';
 import '../../../shared/models/session_context.dart';
@@ -37,6 +36,9 @@ class ContextView extends ConsumerStatefulWidget {
 
 class _ContextViewState extends ConsumerState<ContextView> {
   String? _notice;
+
+  /// Skip is in flight (as opposed to the main Pick action).
+  bool _skipping = false;
 
   /// Set once Save or Pick succeeds; leaving otherwise discards the edit.
   bool _committed = false;
@@ -104,6 +106,25 @@ class _ContextViewState extends ConsumerState<ContextView> {
     }
   }
 
+  /// Skip: a pick right now with no selections. Only offered before the first
+  /// pick of the day, so it never replaces saved context or a plan.
+  Future<void> _skip() async {
+    setState(() {
+      _skipping = true;
+      _notice = null;
+    });
+    final ok = await ref
+        .read(todayControllerProvider.notifier)
+        .pickWithoutContext();
+    if (!mounted) return;
+    setState(() {
+      _skipping = false;
+      if (!ok) {
+        _notice = 'Change what you want from tonight to pick again, or go back and choose Continue once.';
+      }
+    });
+  }
+
   Future<void> _save() async {
     if (!await _confirmReplacingPlan()) return;
     await ref.read(todayControllerProvider.notifier).saveContext();
@@ -120,14 +141,12 @@ class _ContextViewState extends ConsumerState<ContextView> {
     final text = Theme.of(context).textTheme;
     final pick = state.pick;
     final edit = widget.mode == ContextMode.edit;
-
-    Widget choices(List<Widget> children) =>
-        Wrap(spacing: 8, runSpacing: 8, children: children);
+    final initial = widget.mode == ContextMode.initial;
 
     final (heading, subtitle) = switch (widget.mode) {
       ContextMode.initial => (
-        'What do you want from tonight?',
-        'Choose the feeling. We pick one film from your watchlist.',
+        'Set up tonight',
+        'Choose what you’re after, or skip and we’ll just pick one film from your watchlist.',
       ),
       ContextMode.ready => (
         'Ready for another pick?',
@@ -149,109 +168,65 @@ class _ContextViewState extends ConsumerState<ContextView> {
         style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
       ),
       const SizedBox(height: 24),
-      if (edit) ...[
-        // Edit tonight: three compact fields instead of every option at once.
-        SelectorField(
-          label: 'What do you want?',
-          value: state.desiredExperience?.label ?? 'Choose',
-          onTap: () async {
-            final picked = await showOptionSheet<DesiredExperience>(
-              context,
-              title: 'What do you want?',
-              options: [for (final i in DesiredExperience.values) (i, i.label)],
-              selected: state.desiredExperience,
-            );
-            final intent = picked?.$1;
-            if (intent != null) controller.selectDesiredExperience(intent);
-          },
-        ),
-        const SizedBox(height: 24),
-        SelectorField(
-          label: 'How are you feeling?',
-          note: 'Optional · never decides the pick',
-          value: state.currentMood?.label ?? 'Not set',
-          onTap: () async {
-            final picked = await showOptionSheet<CurrentMood>(
-              context,
-              title: 'How are you feeling?',
-              options: [
-                (null, 'Not set'),
-                for (final m in CurrentMood.values) (m, m.label),
-              ],
-              selected: state.currentMood,
-            );
-            if (picked != null) controller.setMood(picked.$1);
-          },
-        ),
-        const SizedBox(height: 24),
-        SelectorField(
-          label: 'How much time?',
-          note: 'Optional',
-          value: runtimeCapLabel(state.maxRuntimeMinutes),
-          onTap: () async {
-            final picked = await showOptionSheet<int>(
-              context,
-              title: 'How much time?',
-              options: runtimeOptions,
-              selected: state.maxRuntimeMinutes,
-            );
-            if (picked != null) controller.selectMaxRuntime(picked.$1);
-          },
-        ),
-        const SizedBox(height: 20),
-      ] else ...[
-        choices([
-          for (final intent in DesiredExperience.values)
-            ChoicePill(
-              label: intent.label,
-              selected: state.desiredExperience == intent,
-              onTap: () => controller.selectDesiredExperience(intent),
-            ),
-        ]),
-        const SizedBox(height: 32),
-        const SectionLabel(
-          'How are you feeling?',
-          note: 'Optional · never decides the pick',
-        ),
-        const SizedBox(height: 12),
-        choices([
-          for (final mood in CurrentMood.values)
-            ChoicePill(
-              label: mood.label,
-              selected: state.currentMood == mood,
-              onTap: () => controller.toggleMood(mood),
-            ),
-        ]),
-        // Feeling down offers the documented follow-ups; none is preselected.
-        if (state.currentMood == CurrentMood.down &&
-            state.desiredExperience == null) ...[
-          const SizedBox(height: 20),
-          Text(
-            'What would help tonight?',
-            style: text.bodyMedium?.copyWith(color: AppColors.textSoft),
-          ),
-          const SizedBox(height: 10),
-          choices([
-            for (final (label, intent) in downFollowUps)
-              ChoicePill(
-                label: label,
-                selected: false,
-                onTap: () => controller.selectDesiredExperience(intent),
-              ),
-          ]),
-        ],
-        const SizedBox(height: 28),
-        const SectionLabel('How much time?', note: 'Optional'),
-        const SizedBox(height: 12),
-        choices([
-          for (final (minutes, label) in runtimeOptions)
-            ChoicePill(
-              label: label,
-              selected: state.maxRuntimeMinutes == minutes,
-              onTap: () => controller.selectMaxRuntime(minutes),
-            ),
-        ]),
-      ],
+      // The same three compact fields on every Tonight setup screen; each
+      // opens a bottom sheet instead of showing every option at once.
+      SelectorField(
+        label: 'What do you want from tonight?',
+        value: state.desiredExperience?.label ?? 'Choose one',
+        onTap: () async {
+          // Feeling down offers the four documented follow-ups; none is
+          // preselected and comedy is never implied.
+          final followUps =
+              state.currentMood == CurrentMood.down &&
+              state.desiredExperience == null;
+          final picked = await showOptionSheet<DesiredExperience>(
+            context,
+            title: followUps
+                ? 'What would help tonight?'
+                : 'What do you want from tonight?',
+            options: followUps
+                ? [for (final (label, intent) in downFollowUps) (intent, label)]
+                : [for (final i in DesiredExperience.values) (i, i.label)],
+            selected: state.desiredExperience,
+          );
+          final intent = picked?.$1;
+          if (intent != null) controller.selectDesiredExperience(intent);
+        },
+      ),
+      const SizedBox(height: 24),
+      SelectorField(
+        label: 'How are you feeling?',
+        note: 'Optional · never decides the pick',
+        value: state.currentMood?.label ?? 'Not set',
+        onTap: () async {
+          final picked = await showOptionSheet<CurrentMood>(
+            context,
+            title: 'How are you feeling?',
+            options: [
+              (null, 'Not set'),
+              for (final m in CurrentMood.values) (m, m.label),
+            ],
+            selected: state.currentMood,
+          );
+          if (picked != null) controller.setMood(picked.$1);
+        },
+      ),
+      const SizedBox(height: 24),
+      SelectorField(
+        label: 'How much time?',
+        note: 'Optional',
+        value: runtimeCapLabel(state.maxRuntimeMinutes),
+        onTap: () async {
+          final picked = await showOptionSheet<int>(
+            context,
+            title: 'How much time?',
+            options: runtimeOptions,
+            selected: state.maxRuntimeMinutes,
+          );
+          if (picked != null) controller.selectMaxRuntime(picked.$1);
+        },
+      ),
+      const SizedBox(height: 20),
       if (avoided.isNotEmpty) ...[
         const SizedBox(height: 20),
         Text(
@@ -300,9 +275,29 @@ class _ContextViewState extends ConsumerState<ContextView> {
           PrimaryAction(
             label: edit ? 'Pick with this context' : 'Pick my movie',
             disabledHint: 'Choose what you want from tonight first',
-            loading: state.busy == TodayAction.pick,
+            loading: state.busy == TodayAction.pick && !_skipping,
             onPressed: state.canPick ? _pick : null,
           ),
+          if (initial) ...[
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: state.busy == null ? _skip : null,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSoft,
+                minimumSize: const Size.fromHeight(48),
+                textStyle: text.titleSmall,
+              ),
+              child: _skipping
+                  ? Semantics(
+                      label: 'Picking',
+                      child: const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                    )
+                  : const Text('Skip, just pick something'),
+            ),
+          ],
         ],
       ),
     );

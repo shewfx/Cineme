@@ -4,10 +4,13 @@ import '../../shared/models/movie.dart';
 import '../theme/app_theme.dart';
 import 'movie_poster.dart';
 
-const _posterHeight = 72.0;
+const _posterWidth = 48.0;
 
 /// Stable inventory/history row: small poster, title, muted detail lines and
 /// an optional trailing action. Not a recommendation card.
+///
+/// [large] is Search's composition: a 2:3 poster that anchors the row, the
+/// details centred beside it and the action centred on its right edge.
 class MovieListTile extends StatelessWidget {
   const MovieListTile({
     super.key,
@@ -15,11 +18,13 @@ class MovieListTile extends StatelessWidget {
     required this.lines,
     this.trailing,
     this.footer,
+    this.large = false,
   });
 
   final Movie movie;
   final List<String> lines;
   final Widget? trailing;
+  final bool large;
 
   /// Optional actions under the text (Search's separate Add/Watched).
   final Widget? footer;
@@ -27,16 +32,22 @@ class MovieListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final posterWidth = large ? 76.0 : _posterWidth;
+    final posterHeight = posterWidth * 1.5;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: large ? 12 : 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Centred on the poster beside a trailing action; top-aligned when
+        // the action is stacked under the details (large text).
+        crossAxisAlignment: large && trailing != null
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(large ? 10 : 8),
             child: SizedBox(
-              width: 48,
-              height: _posterHeight,
+              width: posterWidth,
+              height: posterHeight,
               child: MoviePoster(movie: movie),
             ),
           ),
@@ -44,6 +55,9 @@ class MovieListTile extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: large && trailing != null
+                  ? MainAxisAlignment.center
+                  : MainAxisAlignment.start,
               children: [
                 Text(movie.title, style: text.titleMedium),
                 for (final line in lines) ...[
@@ -62,10 +76,13 @@ class MovieListTile extends StatelessWidget {
           if (trailing != null) ...[
             const SizedBox(width: 12),
             // Centred on the poster, whatever the text column's height.
-            SizedBox(
-              height: _posterHeight,
-              child: Center(child: trailing),
-            ),
+            if (large)
+              trailing!
+            else
+              SizedBox(
+                height: posterHeight,
+                child: Center(child: trailing),
+              ),
           ],
         ],
       ),
@@ -74,7 +91,12 @@ class MovieListTile extends StatelessWidget {
 }
 
 /// "1998 · 81 min" with honest gaps: unknown runtime is never zero.
-String yearAndRuntime(Movie m, {String unknownRuntime = 'Runtime unknown'}) => [
-  if (m.year != null) '${m.year}',
-  m.runtimeMinutes != null ? '${m.runtimeMinutes} min' : unknownRuntime,
-].join('  ·  ');
+/// Pass a null [unknownRuntime] to leave the runtime out entirely.
+String yearAndRuntime(Movie m, {String? unknownRuntime = 'Runtime unknown'}) =>
+    [
+      if (m.year != null) '${m.year}',
+      if (m.runtimeMinutes != null)
+        '${m.runtimeMinutes} min'
+      else
+        ?unknownRuntime,
+    ].join('  ·  ');

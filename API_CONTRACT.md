@@ -42,6 +42,7 @@ Major common errors: 401 `AUTH_REQUIRED`/`TOKEN_INVALID`; 404 `NOT_FOUND` for no
   "title": "Run Lola Run",
   "year": 1998,
   "runtime_minutes": 81,
+  "vote_average": 7.4,
   "genre_ids": [
     28,
     18,
@@ -67,7 +68,7 @@ Major common errors: 401 `AUTH_REQUIRED`/`TOKEN_INVALID`; 404 `NOT_FOUND` for no
 }
 ```
 
-MovieDetails extends summary with `release_date`, `overview`, `original_title` (null when equal to title), `original_language`, `vote_average`/`vote_count` (TMDB metadata, display-only, never ranking input; ADR 004), `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` only for adult or unavailable items; upcoming and unknown-date films can be saved (ADR 005). `released` is true only when `release_date` is known and on or before the user's local date; Tonight eligibility requires it (engine `movie_unavailable`). Add revalidates. Title/year/source test fixtures are not copied live vote data.
+MovieSummary carries nullable `vote_average` (TMDB community rating, display-only; null when unknown or not cached, so search results leave it null). MovieDetails extends summary with `release_date`, `overview`, `original_title` (null when equal to title), `original_language`, `vote_count` (TMDB metadata, display-only, never ranking input; ADR 004), `metadata_fetched_at`, `stale`, `traits:{pace:null|number,complexity:null|number,heaviness:null|number,source:null|"curated_v1"}`. Runtime is null on TMDB search unless genuinely known from cache; do not make N detail requests per search page. `can_add=false` only for adult or unavailable items; upcoming and unknown-date films can be saved (ADR 005). `released` is true only when `release_date` is known and on or before the user's local date; Tonight eligibility requires it (engine `movie_unavailable`). Add revalidates. Title/year/source test fixtures are not copied live vote data.
 
 ### SessionContext (complete accepted context, no text)
 
@@ -322,9 +323,11 @@ Explicit shared metadata refresh; `{}` and key required.200 `{movie:MovieDetails
 
 ## Watchlist
 
-### GET `/watchlist?limit=20&cursor=...`
+### GET `/watchlist?limit=20&cursor=...&sort=added_desc`
 
-Active entries sorted added_at DESC,id DESC.200 `{items:[{id:"uuid",movie:MovieSummary,added_at:"...",source_type:"manual"}],next_cursor:null}`. Optional `q` length1..100 searches cached title for this user's list, case-insensitive; no external request.422 invalid cursor/filter.
+Active entries in the requested `sort`; default `added_desc` (added_at DESC,id DESC). `sort` is one of `added_desc`, `added_asc`, `title_asc`, `title_desc` (case-insensitive title), `year_desc`, `year_asc` (release year, then title A-Z) and `runtime_asc`, `runtime_desc` (runtime, then title A-Z). Unknown year or runtime always sorts last in both directions; every order ends in the entry id so it is total. Sorting and keyset pagination are server-side, so page boundaries never reorder films. The opaque cursor is bound to the sort that produced it: a cursor from another sort, or an unknown `sort`, returns 422. Sorting never changes membership or preferences.
+
+Response: 200 `{items:[{id:"uuid",movie:MovieSummary,added_at:"...",source_type:"manual"}],next_cursor:null}`. Optional `q` length1..100 searches cached title for this user's list, case-insensitive; no external request.422 invalid cursor/filter.
 
 ### POST `/watchlist`
 

@@ -127,6 +127,8 @@ def test_first_pick_is_one_watchlist_film_and_reload_keeps_it(
     rec = env["recommendation"]
     assert rec["movie"]["tmdb_id"] in {LOLA, PRIMER, 501, 502, 503}
     assert rec["movie"]["runtime_minutes"] <= 100
+    # The TMDB community rating rides on the pick for display only.
+    assert rec["movie"]["vote_average"] == 7.0
     assert rec["engine_version"] == "weighted_v1"
     assert rec["reasons"][0]["code"] == "fits_runtime"
     assert all(r["text"] for r in rec["reasons"])

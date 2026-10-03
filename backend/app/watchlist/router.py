@@ -28,8 +28,9 @@ def list_watchlist(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
     q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    sort: service.WatchlistSort = service.DEFAULT_SORT,
 ) -> WatchlistPage:
-    return service.list_entries(session, provider, identity.user_id, limit, cursor, q)
+    return service.list_entries(session, provider, identity.user_id, limit, cursor, q, sort)
 
 
 @router.post(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -37,13 +38,18 @@ Future<List<Override>> realOverrides(AppConfig config) async {
   await Supabase.initialize(
     url: config.supabaseUrl,
     publishableKey: config.supabasePublishableKey,
-    authOptions: const FlutterAuthClientOptions(
-      localStorage: SecureSessionStorage(),
+    authOptions: FlutterAuthClientOptions(
+      // Android Keystore on device; the browser has no equivalent, so web
+      // keeps the SDK's default browser storage (localStorage).
+      localStorage: kIsWeb ? null : const SecureSessionStorage(),
       detectSessionInUri: false, // no deep links until recovery is added
     ),
   );
   final auth = SupabaseAuthRepository(Supabase.instance.client.auth);
-  final api = ApiClient.create(config.apiBaseUrl, auth.accessToken);
+  final api = ApiClient.create(
+    config.resolveApiBaseUrl(Uri.base),
+    auth.accessToken,
+  );
   final account = ApiAccountRepository(api);
   return [
     authRepositoryProvider.overrideWithValue(auth),

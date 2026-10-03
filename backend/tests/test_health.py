@@ -23,7 +23,10 @@ def test_readyz_is_503_when_the_database_is_unreachable() -> None:
 
 
 def test_production_hides_api_docs() -> None:
-    c = client(environment="production")
+    c = client(
+        environment="production",
+        database_url="postgresql+psycopg://nobody:none@127.0.0.1:1/none?sslmode=require",
+    )
 
     assert c.get("/docs").status_code == 404
     assert c.get("/openapi.json").status_code == 404

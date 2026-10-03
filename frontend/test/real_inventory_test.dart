@@ -19,6 +19,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'nav_finders.dart';
 
 /// In-memory stand-in for the Cinemé API (not TMDB): per-user watchlists keyed
 /// by the bearer token, documented error envelopes, scriptable failures.
@@ -245,9 +248,7 @@ class Rig {
 }
 
 Future<void> goTab(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
-  );
+  await tester.tap(navTab(label));
   await tester.pumpAndSettle();
 }
 
@@ -361,6 +362,8 @@ void main() {
     testWidgets(
       'posters: network image when present, placeholder when missing',
       (tester) async {
+        // Posters are the default layout; this checks the list rows' artwork.
+        SharedPreferences.setMockInitialValues({'watchlist_layout': 'list'});
         final rig = Rig();
         // Seed through the real client outside the fake test clock.
         await tester.runAsync(

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Replaced by `flutter build web --base-href`; the app is served from the site root. -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <!-- Exactly the viewport Flutter's web engine sets for itself. The engine
+       rewrites this tag at startup, and Flutter web does not read the iOS
+       safe-area insets, so it never uses the full-screen "cover" fit: iOS lays the page
+       out inside the safe area (clear of the notch, status bar and home
+       indicator). Declaring anything else here (this file once asked for the
+       cover fit) makes iOS change the viewport geometry *after* the
+       engine has measured it, with no resize event, so what is painted and
+       where touches land disagree until a resize (opening Search and the
+       keyboard) forces a re-measure. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="description" content="Cinemé: one movie from your watchlist, tonight.">
+  <meta name="theme-color" content="#1C1C1C">
+  <meta name="color-scheme" content="dark">
+
+  <!-- iOS: Add to Home Screen opens the app standalone, without Safari chrome. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cinemé">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <title>Cinemé</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Same charcoal as AppColors.background so there is no white flash while
+       the engine loads, and no rubber-band white on iOS overscroll. */
+    html, body { margin: 0; height: 100%; background: #1C1C1C; overscroll-behavior: none; }
+  </style>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

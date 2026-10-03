@@ -53,7 +53,7 @@ def create_app(
         redoc_url=None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
-    engine = engine or make_engine(settings.database_url)
+    engine = engine or make_engine(settings.database_url, settings.database_pool_mode)
     app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
     app.state.verifier = verifier or TokenVerifier(
         settings.supabase_jwt_issuer, jwks_key_resolver(settings.jwks_url)

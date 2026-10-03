@@ -103,6 +103,21 @@ class TodayController extends Notifier<TodayViewState> {
   Future<bool> pickMyMovie() async {
     final context = state.context;
     if (context == null || !state.canPick) return true;
+    return _choose(context);
+  }
+
+  /// Skip: one pick with no extra context. It is the explicit "Surprise me"
+  /// intent (PROJECT_SPEC): no mood, no time, nothing inferred. The server
+  /// still applies hard eligibility and profile limits, scores the user's
+  /// watchlist with the normal engine and returns exactly one film.
+  Future<bool> pickWithoutContext() {
+    if (state.busy != null) return Future.value(true);
+    return _choose(
+      const SessionContext(desiredExperience: DesiredExperience.surprise),
+    );
+  }
+
+  Future<bool> _choose(SessionContext context) async {
     var ok = true;
     await _run(TodayAction.pick, () async {
       try {
