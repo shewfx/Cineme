@@ -63,6 +63,10 @@ Application: Vercel keeps earlier deployments; `npx vercel rollback` (or Promote
 
 Email-confirmation links open the site. The app does not read tokens from the address bar, so after confirming you sign in normally. For a custom domain later, add its URL here and attach the domain in Vercel; the build needs no change (`same-origin`).
 
+## Git integration
+
+The Vercel project is **not** connected to the GitHub repository: `vercel link` connects it by default, and a Git-triggered build runs from the repository root (no FastAPI entrypoint there), so pushes and pull requests would show a failing Vercel check and a merge could attempt an unintended production build. It was disconnected with `npx vercel git disconnect`. Deploys are the explicit CLI steps above; do not reconnect it unless the project's Root Directory and a Flutter build step are set up first.
+
 ## Previews
 
 Environment variables exist for Production only, so a preview deployment of the API has no database or TMDB credentials and fails closed (`/readyz` not ready). Previews never run migrations or reach production data. If preview databases are wanted later, use a Neon branch per preview with Preview-scoped variables.

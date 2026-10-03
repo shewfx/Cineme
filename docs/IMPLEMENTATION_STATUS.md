@@ -53,7 +53,7 @@ Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/
 
 - **Physical iPhone** Add to Home Screen was not tested (no device here). Steps are in DEPLOYMENT.md.
 - **Live first-screen Skip**: the throwaway account already had today's pick, and the hosted database holds other users, so its sessions were not reset. Skip is covered by Flutter widget tests, a real-repository request-body test and the preview build; run it on a fresh day or a new account.
-- Android: the debug APK build result is recorded in the final report of this task; a device/emulator run was not repeated.
+- Android: `flutter build apk --debug` succeeds (after the Kotlin workaround in TOOLING.md for this machine's split-drive caches). An emulator/device run was not repeated for this task; Android-specific code paths are unchanged apart from `kIsWeb` branches.
 - The previous Chrome typing run showed a harmless `null.toString` page error while typing into a field under automation; it was not reproduced by manual input and did not affect sign-in.
 
 ### Known limits

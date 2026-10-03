@@ -103,6 +103,15 @@ docker compose --env-file infra/.env -f infra/compose.yaml down
 
 The port binds to `127.0.0.1` only. P0 creates no tables; schema arrives through Alembic at P2a.
 
+## Android build fails in `compileDebugKotlin` ("Could not close incremental caches")
+
+When the Flutter pub cache is on `C:` and the project on `D:`, Kotlin's incremental compiler cannot relate the two roots. For the current PowerShell session (no repository file changes):
+
+```powershell
+$env:GRADLE_OPTS = '-Dorg.gradle.project.kotlin.incremental=false'
+flutter build apk --debug
+```
+
 ## Low disk space on C:
 
 If `flutter pub get` or Gradle fails with "not enough space on the disk", or `flutter test` hangs with no output (it writes temporary files to `%TEMP%`), redirect caches for the current PowerShell session:
