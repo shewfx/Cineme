@@ -7,11 +7,13 @@ import '../core/widgets/floating_nav_bar.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_pages.dart';
 import '../features/history/presentation/history_page.dart';
+import '../features/movies/presentation/movie_details_page.dart';
 import '../features/preferences/presentation/profile_page.dart';
 import '../features/search/presentation/search_page.dart';
 import '../features/today/presentation/context_view.dart';
 import '../features/today/presentation/today_page.dart';
 import '../features/watchlist/presentation/watchlist_page.dart';
+import '../shared/models/inventory.dart' show WatchlistEntry;
 
 /// Four tabs (stateful, so each keeps its scroll position). Search is a
 /// nested full-screen destination, not a fifth tab.
@@ -43,15 +45,45 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => _AppShell(shell: shell),
         branches: [
-          for (final (path, page) in [
-            ('/today', const TodayPage()),
-            ('/watchlist', const WatchlistPage()),
-            ('/history', const HistoryPage()),
-            ('/profile', const ProfilePage()),
-          ])
-            StatefulShellBranch(
-              routes: [GoRoute(path: path, builder: (context, state) => page)],
-            ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/today', builder: (_, _) => const TodayPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/watchlist',
+                builder: (_, _) => const WatchlistPage(),
+              ),
+              GoRoute(
+                path: '/movies/:tmdbId',
+                builder: (context, state) {
+                  final tmdbId = int.tryParse(
+                    state.pathParameters['tmdbId'] ?? '',
+                  );
+                  if (tmdbId == null || tmdbId <= 0 || tmdbId > 2147483647) {
+                    return const InvalidMovieDetailsPage();
+                  }
+                  final extra = state.extra;
+                  return MovieDetailsPage(
+                    tmdbId: tmdbId,
+                    entry: extra is WatchlistEntry ? extra : null,
+                  );
+                },
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/history', builder: (_, _) => const HistoryPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/profile', builder: (_, _) => const ProfilePage()),
+            ],
+          ),
         ],
       ),
       GoRoute(

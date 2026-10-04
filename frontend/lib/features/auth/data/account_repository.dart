@@ -20,6 +20,8 @@ abstract interface class AccountRepository {
   Future<List<(String, String)>> regions();
 
   Future<void> unblock(int tmdbId);
+
+  Future<void> block(int tmdbId);
 }
 
 /// Null in the UI-preview build.
@@ -82,6 +84,15 @@ class ApiAccountRepository implements AccountRepository {
     await _keys.send(
       commandFingerprint('DELETE', path, null),
       (key) => _api.delete(path, idempotencyKey: key),
+    );
+  }
+
+  @override
+  Future<void> block(int tmdbId) async {
+    final path = '/api/v1/me/blocks/$tmdbId';
+    await _keys.send(
+      commandFingerprint('POST', path, null),
+      (key) => _api.post(path, idempotencyKey: key),
     );
   }
 }

@@ -428,7 +428,6 @@ class FakeTodayRepository implements TodayRepository {
       _s._archive(movie.tmdbId, supersede: false);
     } else if (reason == RejectReason.neverRecommend) {
       _s._blocked.add(movie.tmdbId);
-      _s._archive(movie.tmdbId, supersede: false);
     }
     _s
       .._context = ctx
@@ -736,6 +735,12 @@ class FakeProfileRepository implements ProfileRepository {
   Future<void> unblock(int tmdbId) async {
     await _s._io();
     _s._blocked.remove(tmdbId);
+  }
+
+  @override
+  Future<void> block(int tmdbId) async {
+    await _s._io();
+    _s._blocked.add(tmdbId);
   }
 }
 

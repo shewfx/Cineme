@@ -1,5 +1,6 @@
 import 'package:cineme/app.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
+import 'package:cineme/core/widgets/scroll_depth_hint.dart';
 import 'package:cineme/features/today/presentation/today_widgets.dart';
 import 'package:cineme/preview/preview_catalog.dart';
 import 'package:cineme/preview/preview_store.dart';
@@ -216,6 +217,15 @@ void main() {
       await tapText(tester, 'Pick my movie');
       await tester.pumpAndSettle();
 
+      expect(find.byType(ScrollDepthHint), findsOneWidget);
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('scroll-depth-hint')),
+            )
+            .opacity,
+        greaterThan(0),
+      );
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.byKey(const ValueKey('tonight-title')), findsOneWidget);
       expect(

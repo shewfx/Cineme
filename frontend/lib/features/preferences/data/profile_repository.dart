@@ -10,6 +10,9 @@ abstract interface class ProfileRepository {
   /// DELETE /me/blocks/{tmdb_id}: reverses Never recommend. Does not re-add
   /// the film to the watchlist.
   Future<void> unblock(int tmdbId);
+
+  /// POST /me/blocks/{tmdb_id}: lasting, reversible Never recommend action.
+  Future<void> block(int tmdbId);
 }
 
 /// Null until auth and profiles exist (P2); preview overrides it.
@@ -27,4 +30,7 @@ class AccountProfileRepository implements ProfileRepository {
 
   @override
   Future<void> unblock(int tmdbId) => _account.unblock(tmdbId);
+
+  @override
+  Future<void> block(int tmdbId) => _account.block(tmdbId);
 }

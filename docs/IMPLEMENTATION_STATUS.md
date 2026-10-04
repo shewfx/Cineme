@@ -12,7 +12,7 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P3 — TMDB search and persistent watchlist | Complete: merged to `main` in PR #6 (CI green incl. PostgreSQL); two-account isolation passed (project owner) |
 | P4 — Deterministic daily selection (+ ADR 006 rejection/Already watched, ADR 007 availability) | Complete on branch `feat/p4-tonight-recommendations`: all automated gates pass incl. PostgreSQL; emulator flows exercised against the real watchlist; published via PR (see git history). Two-account Tonight isolation on a device not performed (second account's credentials unavailable); covered by automated tests |
 | Web/PWA deployment + Tonight/Search/Watchlist UI refinement (not a roadmap phase; ADR 008, ADR 009) | Merged to `main` in PR #8; existing deployment remains live. Physical iPhone Add-to-Home-Screen check and a live first-screen Skip run are still open |
-| P5 — Feedback, history, ratings and conservative learning | Implemented on `feat/p5-history-ratings`; PR pending. Local PostgreSQL and Flutter suites pass. Migration 0005 is not applied to the hosted database |
+| P5 — Feedback, history, ratings and conservative learning | Complete; merged to `main` in PR #9. Migration 0005 is not applied to the hosted database |
 | P6–P8 | Not started |
 
 ## Web/PWA deployment and UI refinement: 2026-10-03, merged in PR #8
@@ -72,9 +72,27 @@ Platform task, not a roadmap phase. At the time it was completed P5 had not star
 
 Runtime database role is the Neon owner; free-tier compute suspends when idle; function region `iad1` (US) for a Neon database in `us-east-1`; the hosted API has no CORS middleware by design (same-origin only).
 
+## Watchlist movie details and scroll-depth hint — 2026-10-04
+
+### Delivered
+
+- Watchlist poster and row taps open `/movies/:tmdbId` inside the Watchlist shell. Details load on demand through the existing authenticated `GET /api/v1/movies/{tmdb_id}` endpoint; no backend or database changes were required.
+- The detail screen shows available title, release, runtime, genre, TMDB rating, overview and regional availability facts. It reuses Tonight's `AvailabilitySection`, including provider priority, three visible providers, expansion, region, attribution and the separate rent/buy line.
+- Remove uses Watchlist removal with Undo. Mark watched uses the existing manual viewing endpoint and updates History/Watchlist/Today state. Never recommend uses the existing reversible per-user block endpoint and leaves Watchlist membership unchanged.
+- `ScrollDepthHint` is shared by Movie Details and Tonight. It tracks remaining vertical extent, fades near the end, hides when content fits or reaches the end, ignores pointer input, and disables its fade under reduced motion.
+
+### Verification
+
+- Full Flutter suite: 259 passed. `flutter analyze` reports no issues; Dart format check changed 0 files. Flutter web release build succeeded and the bundle scan found no server-side secrets (22 text files scanned).
+- Backend was unchanged; no backend tests or hosted database operations were needed.
+
+### Manual checks remaining
+
+- A physical iPhone walkthrough of details/provider expansion, action flows, scroll glow, and Tonight poster tilt/taps remains required. No physical device was available for this pass.
+
 ## P5 — Feedback, history, ratings and conservative learning
 
-Implemented on `feat/p5-history-ratings`, based on merged PR #8. This milestone keeps Today to one recommendation and does not apply migration 0005 or deploy changes.
+Implemented on `feat/p5-history-ratings`, merged in PR #9. This milestone keeps Today to one recommendation and does not apply migration 0005 or deploy changes.
 
 ### Delivered
 

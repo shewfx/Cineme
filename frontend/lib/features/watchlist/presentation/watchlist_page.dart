@@ -250,16 +250,20 @@ class _WatchlistRow extends ConsumerWidget {
         ),
         child: ColoredBox(
           color: AppColors.background,
-          child: MovieListTile(
-            movie: entry.movie,
-            lines: _details(entry),
-            trailing: ref.watch(historyRepositoryProvider) == null
-                ? null
-                : IconButton(
-                    tooltip: 'Mark ${entry.movie.title} watched',
-                    onPressed: () => _markWatched(context, ref),
-                    icon: const Icon(Icons.check_circle_outline),
-                  ),
+          child: InkWell(
+            onTap: () =>
+                context.push('/movies/${entry.movie.tmdbId}', extra: entry),
+            child: MovieListTile(
+              movie: entry.movie,
+              lines: _details(entry),
+              trailing: ref.watch(historyRepositoryProvider) == null
+                  ? null
+                  : IconButton(
+                      tooltip: 'Mark ${entry.movie.title} watched',
+                      onPressed: () => _markWatched(context, ref),
+                      icon: const Icon(Icons.check_circle_outline),
+                    ),
+            ),
           ),
         ),
       ),
@@ -317,6 +321,7 @@ class _PosterTile extends ConsumerWidget {
     final movie = entry.movie;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
+      onTap: () => context.push('/movies/${movie.tmdbId}', extra: entry),
       onLongPress: () => _actions(context, ref),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -242,7 +242,7 @@ void main() {
     );
 
     test(
-      'Never recommend is a lasting, reversible block, not a rating',
+      'Never recommend is reversible and leaves watchlist inventory unchanged',
       () async {
         final r = Rig();
         final first = (await r.today.choose(hooked)).recommendation!;
@@ -255,6 +255,11 @@ void main() {
         expect(
           (await r.profile.profile()).blockedMovies!.map((m) => m.tmdbId),
           [first.movie.tmdbId],
+        );
+        expect(
+          await r.watchlistIds(),
+          contains(first.movie.tmdbId),
+          reason: 'blocking changes eligibility, not inventory membership',
         );
         expect(
           (await r.history.viewings()).items.any(
@@ -276,12 +281,12 @@ void main() {
         await r.profile.unblock(first.movie.tmdbId);
         expect(
           await r.watchlistIds(),
-          isNot(contains(first.movie.tmdbId)),
-          reason: 'unblock does not re-add',
+          contains(first.movie.tmdbId),
+          reason: 'unblock also leaves inventory unchanged',
         );
         expect(
           (await r.watchlist.add(first.movie.tmdbId)).alreadyPresent,
-          isFalse,
+          isTrue,
         );
       },
     );
