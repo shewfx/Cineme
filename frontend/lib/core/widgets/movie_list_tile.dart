@@ -24,11 +24,10 @@ class MovieListTile extends StatelessWidget {
   final Movie movie;
   final List<String> lines;
   final Widget? trailing;
+  final Widget? footer;
   final bool large;
 
   /// Optional actions under the text (Search's separate Add/Watched).
-  final Widget? footer;
-
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -36,53 +35,64 @@ class MovieListTile extends StatelessWidget {
     final posterHeight = posterWidth * 1.5;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 24, vertical: large ? 12 : 10),
-      child: Row(
-        // Centred on the poster beside a trailing action; top-aligned when
-        // the action is stacked under the details (large text).
-        crossAxisAlignment: large && trailing != null
-            ? CrossAxisAlignment.center
-            : CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(large ? 10 : 8),
-            child: SizedBox(
-              width: posterWidth,
-              height: posterHeight,
-              child: MoviePoster(movie: movie),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: large && trailing != null
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                Text(movie.title, style: text.titleMedium),
-                for (final line in lines) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    line,
-                    style: text.bodyMedium?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-                if (footer != null) ...[const SizedBox(height: 8), footer!],
-              ],
-            ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            // Centred on the poster, whatever the text column's height.
-            if (large)
-              trailing!
-            else
-              SizedBox(
-                height: posterHeight,
-                child: Center(child: trailing),
+          Row(
+            // Centred on the poster beside a trailing action; top-aligned when
+            // the action is stacked under the details (large text).
+            crossAxisAlignment: large && trailing != null
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(large ? 10 : 8),
+                child: SizedBox(
+                  width: posterWidth,
+                  height: posterHeight,
+                  child: MoviePoster(movie: movie),
+                ),
               ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: large && trailing != null
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.start,
+                  children: [
+                    Text(movie.title, style: text.titleMedium),
+                    for (final line in lines) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        line,
+                        style: text.bodyMedium?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                // Centred on the poster, whatever the text column's height.
+                if (large)
+                  trailing!
+                else
+                  SizedBox(
+                    height: posterHeight,
+                    child: Center(child: trailing),
+                  ),
+              ],
+            ],
+          ),
+          if (footer != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: EdgeInsets.only(left: posterWidth + 16),
+              child: footer,
+            ),
           ],
         ],
       ),

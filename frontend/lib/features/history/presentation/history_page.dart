@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/paged_list_view.dart';
+import '../../../core/widgets/rating_stars.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../shared/models/viewing.dart';
@@ -26,17 +27,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   var _segment = 0;
 
   Future<void> _editRating(BuildContext context, Viewing viewing) async {
-    final result = await showModalBottomSheet<(bool, Rating?)>(
-      context: context,
-      useRootNavigator: true,
-      showDragHandle: true,
-      builder: (sheet) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: RatingSelector(
-          value: viewing.rating,
-          onChanged: (value) => Navigator.pop(sheet, (true, value)),
-        ),
-      ),
+    final result = await showRatingSheet(
+      context,
+      movie: viewing.movie,
+      current: viewing.rating,
     );
     if (result == null || !result.$1 || !context.mounted) return;
     try {
@@ -106,8 +100,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                         v.watchedAt != null
                             ? 'Watched ${shortDate(v.watchedAt!)}'
                             : 'Date unknown  ·  recorded ${shortDate(v.recordedAt)}',
-                        v.rating?.label ?? 'No rating',
                       ],
+                      footer: RatingStars(rating: v.rating, size: 18),
                       trailing: TextButton(
                         onPressed: () => _editRating(context, v),
                         child: Text(v.rating == null ? 'Rate' : 'Edit'),

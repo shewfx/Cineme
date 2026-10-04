@@ -282,9 +282,9 @@ def _affinity(prefs: dict[int, Decimal], viewings: tuple[RatedViewing, ...]) -> 
 
 
 def test_rating_shrinkage_multigenre_allocation_and_edit_replacement() -> None:
-    loved = _affinity({35: D("0.6")}, (RatedViewing((35, 18), "loved"),))
+    loved = _affinity({35: D("0.6")}, (RatedViewing((35, 18), 5),))
     assert six(loved[35]) == "0.680000"  # (1.2 + 0.5) / 2.5
-    disliked = _affinity({35: D("0.6")}, (RatedViewing((35, 18), "disliked"),))
+    disliked = _affinity({35: D("0.6")}, (RatedViewing((35, 18), 1),))
     assert six(disliked[35]) == "0.280000"  # replaced, not accumulated
     assert _affinity({35: D("0.6")}, (RatedViewing((35,), None),)) == {35: D("0.6")}
 

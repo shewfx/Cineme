@@ -80,6 +80,70 @@ def test_empty_db_upgrade_downgrade_upgrade(database_factory: Callable[[], str])
         engine.dispose()
 
 
+def test_integer_rating_migration_preserves_legacy_values(
+    database_factory: Callable[[], str],
+) -> None:
+    url = database_factory()
+    config = alembic_config(url)
+    engine = create_engine(url)
+    uid = uuid.uuid4()
+    try:
+        command.upgrade(config, "0005")
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO cineme.users (id) VALUES (:id)"), {"id": uid})
+            for index, legacy in enumerate(["disliked", "okay", "liked", "loved", None]):
+                movie_id = 900000 + index
+                conn.execute(
+                    text(
+                        "INSERT INTO cineme.movies (tmdb_id, title, adult, fetched_at) "
+                        "VALUES (:id, :title, false, now())"
+                    ),
+                    {"id": movie_id, "title": f"Film {index}"},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO cineme.viewings "
+                        "(id, user_id, movie_id, recorded_at, source, rating) "
+                        "VALUES (:id, :user, :movie, now(), 'manual', :rating)"
+                    ),
+                    {"id": uuid.uuid4(), "user": uid, "movie": movie_id, "rating": legacy},
+                )
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            ratings = (
+                conn.execute(text("SELECT rating FROM cineme.viewings ORDER BY movie_id"))
+                .scalars()
+                .all()
+            )
+        assert ratings == [1, 3, 4, 5, None]
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE cineme.viewings SET rating = 2 WHERE movie_id = 900000"))
+        command.downgrade(config, "0005")
+        with engine.connect() as conn:
+            legacy_ratings = (
+                conn.execute(text("SELECT rating FROM cineme.viewings ORDER BY movie_id"))
+                .scalars()
+                .all()
+            )
+        assert legacy_ratings == [
+            "disliked",
+            "okay",
+            "liked",
+            "loved",
+            None,
+        ]
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            upgraded_again = (
+                conn.execute(text("SELECT rating FROM cineme.viewings ORDER BY movie_id"))
+                .scalars()
+                .all()
+            )
+        assert upgraded_again == [1, 3, 4, 5, None]
+    finally:
+        engine.dispose()
+
+
 def test_public_has_no_access_to_the_app_schema(engine: Engine) -> None:
     with engine.connect() as conn:
         usage = conn.execute(

@@ -4,14 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
 import '../core/widgets/floating_nav_bar.dart';
+import '../core/widgets/tab_swipe_exclusion.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_pages.dart';
 import '../features/history/presentation/history_page.dart';
+import '../features/movies/presentation/movie_details_page.dart';
 import '../features/preferences/presentation/profile_page.dart';
 import '../features/search/presentation/search_page.dart';
 import '../features/today/presentation/context_view.dart';
 import '../features/today/presentation/today_page.dart';
 import '../features/watchlist/presentation/watchlist_page.dart';
+import '../shared/models/inventory.dart' show WatchlistEntry;
 
 /// Four tabs (stateful, so each keeps its scroll position). Search is a
 /// nested full-screen destination, not a fifth tab.
@@ -41,17 +44,55 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/starting', builder: (_, _) => const StartingPage()),
       GoRoute(path: '/config', builder: (_, _) => const ConfigMissingPage()),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, shell) => _AppShell(shell: shell),
+        builder: (context, state, shell) => _AppShell(
+          shell: shell,
+          isRootTab: const {
+            '/today',
+            '/watchlist',
+            '/history',
+            '/profile',
+          }.contains(state.uri.path),
+        ),
         branches: [
-          for (final (path, page) in [
-            ('/today', const TodayPage()),
-            ('/watchlist', const WatchlistPage()),
-            ('/history', const HistoryPage()),
-            ('/profile', const ProfilePage()),
-          ])
-            StatefulShellBranch(
-              routes: [GoRoute(path: path, builder: (context, state) => page)],
-            ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/today', builder: (_, _) => const TodayPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/watchlist',
+                builder: (_, _) => const WatchlistPage(),
+              ),
+              GoRoute(
+                path: '/movies/:tmdbId',
+                builder: (context, state) {
+                  final tmdbId = int.tryParse(
+                    state.pathParameters['tmdbId'] ?? '',
+                  );
+                  if (tmdbId == null || tmdbId <= 0 || tmdbId > 2147483647) {
+                    return const InvalidMovieDetailsPage();
+                  }
+                  final extra = state.extra;
+                  return MovieDetailsPage(
+                    tmdbId: tmdbId,
+                    entry: extra is WatchlistEntry ? extra : null,
+                  );
+                },
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/history', builder: (_, _) => const HistoryPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/profile', builder: (_, _) => const ProfilePage()),
+            ],
+          ),
         ],
       ),
       GoRoute(
@@ -84,17 +125,67 @@ String? authRedirect(AuthGate gate, String location) => switch (gate) {
   AuthGate.ready => _gateRoutes.contains(location) ? '/today' : null,
 };
 
-class _AppShell extends StatelessWidget {
-  const _AppShell({required this.shell});
+class _AppShell extends StatefulWidget {
+  const _AppShell({required this.shell, required this.isRootTab});
 
   final StatefulNavigationShell shell;
+  final bool isRootTab;
+
+  static const _swipeDistance = 72.0;
+
+  @override
+  State<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<_AppShell> {
+  final _tabSwipeTracker = TabSwipeTracker();
+  final _pointerStarts = <int, Offset>{};
+
+  void _onPointerDown(PointerDownEvent event) {
+    _pointerStarts[event.pointer] = event.position;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!widget.isRootTab ||
+        _tabSwipeTracker.excludedPointers.contains(event.pointer)) {
+      return;
+    }
+    final start = _pointerStarts[event.pointer];
+    if (start == null) return;
+    final delta = event.position - start;
+    if (delta.dx.abs() < _AppShell._swipeDistance ||
+        delta.dx.abs() <= delta.dy.abs() * 1.5) {
+      return;
+    }
+    final next = (widget.shell.currentIndex + (delta.dx < 0 ? 1 : -1)).clamp(
+      0,
+      3,
+    );
+    if (next != widget.shell.currentIndex) widget.shell.goBranch(next);
+    _pointerStarts.remove(event.pointer);
+  }
+
+  void _onPointerEnd(PointerEvent event) {
+    _pointerStarts.remove(event.pointer);
+    _tabSwipeTracker.excludedPointers.remove(event.pointer);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final shell = widget.shell;
     // A floating pill, positioned with real layout (padding and the safe area),
     // never a paint-only translation: what you see is what you touch.
     return Scaffold(
-      body: shell,
+      body: TabSwipeScope(
+        tracker: _tabSwipeTracker,
+        child: Listener(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerEnd,
+          onPointerCancel: _onPointerEnd,
+          child: shell,
+        ),
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(

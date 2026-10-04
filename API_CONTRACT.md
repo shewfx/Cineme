@@ -475,7 +475,7 @@ P5 accepts not_tonight/too_long/wrong_genre/too_serious/want_lighter/other, alre
 
 ### POST `/recommendations/{id}/watched`
 
-Request `{expected_session_version:3,rating:"liked"}`; rating optional/null.200 `{viewing:ViewingSummary,today:TodayEnvelope}`. Current offered or accepted today; allow offered because user may have watched without tapping accept. Records server completion time, archives watchlist, marks record watched and session completed atomically. `today.viewing` is also populated for the completed card.409 stale/noncurrent/expired. Rating may be skipped and edited later. Retries cannot create second viewing.
+Request `{expected_session_version:3,rating:4}`; rating is optional or null, otherwise a strict whole integer from 1 through 5.200 `{viewing:ViewingSummary,today:TodayEnvelope}`. Current offered or accepted today; allow offered because user may have watched without tapping accept. Records server completion time, archives watchlist, marks record watched and session completed atomically. `today.viewing` is also populated for the completed card.409 stale/noncurrent/expired. Rating may be skipped and edited later. Retries cannot create second viewing.
 
 ### POST `/recommendations/{id}/follow-up`
 
@@ -547,11 +547,11 @@ Do not include this array in TodayEnvelope or main history list. No actions to c
 
 ### POST `/viewings`
 
-Log known watched film from search/details, even outside watchlist. Request `{tmdb_id:104,watched_at:null,rating:"loved"}`. Nullable date means unknown; future date422.201 `{viewing:ViewingSummary,already_recorded:false,today:TodayEnvelope}`. Existing record returns200 `already_recorded:true`, preserving old rating/date; use explicit PATCH to edit rating. Archive watchlist atomically. If movie is current offered/accepted choice, supersede it and clear pointer because it is now ineligible; do not complete Today. Manual history entry, including a supplied date today, is not the recommendation's Mark watched action. Completed sessions stay complete with their existing card.404/503 metadata;422 ineligible/future date.
+Log known watched film from search/details, even outside watchlist. Request `{tmdb_id:104,watched_at:null,rating:5}`. Rating is null or a strict whole integer 1–5; absent and unrated remain null. Nullable date means unknown; future date422.201 `{viewing:ViewingSummary,already_recorded:false,today:TodayEnvelope}`. Existing record returns200 `already_recorded:true`, preserving old rating/date; use explicit PATCH to edit rating. Archive watchlist atomically. If movie is current offered/accepted choice, supersede it and clear pointer because it is now ineligible; do not complete Today. Manual history entry, including a supplied date today, is not the recommendation's Mark watched action. Completed sessions stay complete with their existing card.404/503 metadata;422 ineligible/future date.
 
 ### PATCH `/viewings/{id}`
 
-Request `{expected_version:1,rating:"disliked"}`; null clears rating.200 ViewingSummary with incremented version if changed. No watch-date edit/delete/rewatch in V1.409 version;404 ownership. Learning uses replacement value exactly once. Does not replace today's current choice.
+Request `{expected_version:1,rating:1}`; null clears rating.200 ViewingSummary with incremented version if changed. No watch-date edit/delete/rewatch in V1.409 version;404 ownership. Learning uses replacement value exactly once. Does not replace today's current choice. Migration 0006 maps legacy Disliked→1, Okay→3, Liked→4, Loved→5; null stays null.
 
 ## Health
 

@@ -336,7 +336,7 @@ def record_viewing(
     now: datetime,
     *,
     source: str = "already_watched",
-    rating: str | None = None,
+    rating: int | None = None,
     recommendation_id: uuid.UUID | None = None,
 ) -> Viewing:
     """Canonical viewing upsert used by manual and recommendation actions.
@@ -798,7 +798,7 @@ def mark_watched(
     user_id: uuid.UUID,
     rec_id: uuid.UUID,
     expected: int,
-    rating: str | None,
+    rating: int | None,
     key: uuid.UUID,
     names: dict[int, str],
     image_base: str,

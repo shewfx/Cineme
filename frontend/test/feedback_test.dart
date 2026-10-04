@@ -1,5 +1,4 @@
 import 'package:cineme/app.dart';
-import 'package:cineme/core/widgets/choice_pill.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
 import 'package:cineme/preview/preview_catalog.dart';
 import 'package:cineme/preview/preview_store.dart';
@@ -105,12 +104,12 @@ void main() {
         final pick = (await r.today.choose(hooked)).recommendation!;
         await r.today.accept(pick.id);
 
-        final done = await r.today.markWatched(pick.id, rating: Rating.liked);
+        final done = await r.today.markWatched(pick.id, rating: Rating.four);
 
         expect(done.state, TodayStatus.completed);
         expect(done.recommendation!.movie.tmdbId, pick.movie.tmdbId);
         expect(done.viewing!.watchedAt, isNotNull);
-        expect(done.viewing!.rating, Rating.liked);
+        expect(done.viewing!.rating, Rating.four);
         expect(await r.watchlistIds(), isNot(contains(pick.movie.tmdbId)));
         await expectLater(r.today.choose(hooked), conflict('TODAY_COMPLETED'));
         await expectLater(
@@ -127,8 +126,8 @@ void main() {
       final done = await r.today.markWatched(pick.id);
       final count = (await r.history.viewings()).items.length;
 
-      await r.history.rateViewing(done.viewing!.id, Rating.loved);
-      await r.history.rateViewing(done.viewing!.id, Rating.disliked);
+      await r.history.rateViewing(done.viewing!.id, Rating.five);
+      await r.history.rateViewing(done.viewing!.id, Rating.one);
 
       final viewings = (await r.history.viewings()).items;
       expect(viewings, hasLength(count));
@@ -137,9 +136,9 @@ void main() {
             .where((v) => v.movie.tmdbId == pick.movie.tmdbId)
             .single
             .rating,
-        Rating.disliked,
+        Rating.one,
       );
-      expect((await r.today.today()).viewing!.rating, Rating.disliked);
+      expect((await r.today.today()).viewing!.rating, Rating.one);
     });
 
     test(
@@ -242,7 +241,7 @@ void main() {
     );
 
     test(
-      'Never recommend is a lasting, reversible block, not a rating',
+      'Never recommend is reversible and leaves watchlist inventory unchanged',
       () async {
         final r = Rig();
         final first = (await r.today.choose(hooked)).recommendation!;
@@ -255,6 +254,11 @@ void main() {
         expect(
           (await r.profile.profile()).blockedMovies!.map((m) => m.tmdbId),
           [first.movie.tmdbId],
+        );
+        expect(
+          await r.watchlistIds(),
+          contains(first.movie.tmdbId),
+          reason: 'blocking changes eligibility, not inventory membership',
         );
         expect(
           (await r.history.viewings()).items.any(
@@ -276,12 +280,12 @@ void main() {
         await r.profile.unblock(first.movie.tmdbId);
         expect(
           await r.watchlistIds(),
-          isNot(contains(first.movie.tmdbId)),
-          reason: 'unblock does not re-add',
+          contains(first.movie.tmdbId),
+          reason: 'unblock also leaves inventory unchanged',
         );
         expect(
           (await r.watchlist.add(first.movie.tmdbId)).alreadyPresent,
-          isFalse,
+          isTrue,
         );
       },
     );
@@ -479,20 +483,18 @@ void main() {
       await tapText(tester, 'Watch Tonight');
       expect(find.text("Tonight's plan"), findsOneWidget);
       await tapText(tester, 'Mark watched');
-      await tapText(tester, 'Loved');
+      await tester.tap(find.byTooltip('5 out of 5'));
+      await tester.pumpAndSettle();
       await tapText(tester, 'Mark watched');
 
       expect(find.text('Watched tonight'), findsOneWidget);
       expect(shownTitle(tester), title, reason: 'completed keeps its one card');
-      final loved = tester.widget<ChoicePill>(
-        find.widgetWithText(ChoicePill, 'Loved'),
-      );
-      expect(loved.selected, isTrue);
+      expect(find.text('5 out of 5'), findsOneWidget);
       expect(find.text('Not feeling it'), findsNothing);
 
       await tapText(tester, 'See history');
       expect(find.text(title), findsOneWidget);
-      expect(find.text('Loved'), findsOneWidget);
+      expect(find.byIcon(Icons.star_rounded), findsWidgets);
     });
 
     testWidgets('no match explains itself and offers no other films', (
@@ -694,7 +696,8 @@ void main() {
       await tapText(tester, 'Watch Tonight');
       expect(tester.takeException(), isNull, reason: 'accepted');
       await tapText(tester, 'Mark watched');
-      await tapText(tester, 'Okay');
+      await tester.tap(find.byTooltip('3 out of 5'));
+      await tester.pumpAndSettle();
       await tapText(tester, 'Mark watched');
       expect(tester.takeException(), isNull, reason: 'completed');
     });

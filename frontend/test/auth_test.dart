@@ -75,6 +75,9 @@ class FakeAccount implements AccountRepository {
   Future<void> unblock(int tmdbId) async {}
 
   @override
+  Future<void> block(int tmdbId) async {}
+
+  @override
   Future<void> setRegion(String? countryCode) async {}
 
   @override

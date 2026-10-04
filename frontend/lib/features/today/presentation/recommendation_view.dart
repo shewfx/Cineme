@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_canvas.dart';
 import '../../../core/widgets/primary_action.dart';
+import '../../../core/widgets/scroll_depth_hint.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../history/data/history_repository.dart';
@@ -278,102 +279,104 @@ class RecommendationView extends ConsumerWidget {
                       ),
                     )
                     .floorToDouble();
-                return SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      TonightHero(
-                        movie: movie,
-                        height: heroHeight,
-                        trailing: moreActions,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
-                        child: Column(
-                          children: [
-                            if (statusLabel != null) ...[
-                              Text(
-                                statusLabel,
-                                style: text.labelMedium?.copyWith(
-                                  color: AppColors.accent,
+                return ScrollDepthHint(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        TonightHero(
+                          movie: movie,
+                          height: heroHeight,
+                          trailing: moreActions,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                          child: Column(
+                            children: [
+                              if (statusLabel != null) ...[
+                                Text(
+                                  statusLabel,
+                                  style: text.labelMedium?.copyWith(
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                              ],
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  movie.title,
+                                  key: const ValueKey('tonight-title'),
+                                  textAlign: TextAlign.center,
+                                  style: text.headlineMedium,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                            ],
-                            Semantics(
-                              header: true,
-                              child: Text(
-                                movie.title,
-                                key: const ValueKey('tonight-title'),
-                                textAlign: TextAlign.center,
-                                style: text.headlineMedium,
+                              const SizedBox(height: 6),
+                              TonightMeta(
+                                movie: movie,
+                                style: centred,
+                                key: const ValueKey('tonight-meta'),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            TonightMeta(
-                              movie: movie,
-                              style: centred,
-                              key: const ValueKey('tonight-meta'),
-                            ),
-                            const SizedBox(height: 14),
-                            if (state != TodayStatus.completed)
-                              AvailabilitySection(
-                                tmdbId: movie.tmdbId,
-                                centered: true,
+                              const SizedBox(height: 14),
+                              if (state != TodayStatus.completed)
+                                AvailabilitySection(
+                                  tmdbId: movie.tmdbId,
+                                  centered: true,
+                                ),
+                              // The context line and the two secondary links.
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 4,
+                                children: [
+                                  Text(
+                                    contextLine(tonight),
+                                    style: text.labelMedium?.copyWith(
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                  if (state != TodayStatus.completed)
+                                    TextButton(
+                                      onPressed: busy == null
+                                          ? () => context.push('/today/context')
+                                          : null,
+                                      child: const Text('Edit tonight'),
+                                    ),
+                                  // Winner-only explanation; no other films.
+                                  if (state != TodayStatus.completed)
+                                    TextButton(
+                                      onPressed: () =>
+                                          showWhySheet(context, recommendation),
+                                      child: const Text('Why this film?'),
+                                    ),
+                                ],
                               ),
-                            // The context line and the two secondary links.
-                            Wrap(
-                              alignment: WrapAlignment.center,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 4,
-                              children: [
+                              const SizedBox(height: 6),
+                              if (state == TodayStatus.completed &&
+                                  viewing != null) ...[
+                                Text('How was it?', style: text.titleMedium),
+                                const SizedBox(height: 10),
+                                RatingSelector(
+                                  value: viewing.rating,
+                                  onChanged: busy == null
+                                      ? (r) => guard(
+                                          () => controller.rate(viewing, r),
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(height: 8),
                                 Text(
-                                  contextLine(tonight),
+                                  'Ratings shape future picks. You can change yours any time.',
+                                  textAlign: TextAlign.center,
                                   style: text.labelMedium?.copyWith(
                                     color: AppColors.textMuted,
                                   ),
                                 ),
-                                if (state != TodayStatus.completed)
-                                  TextButton(
-                                    onPressed: busy == null
-                                        ? () => context.push('/today/context')
-                                        : null,
-                                    child: const Text('Edit tonight'),
-                                  ),
-                                // Winner-only explanation; no other films.
-                                if (state != TodayStatus.completed)
-                                  TextButton(
-                                    onPressed: () =>
-                                        showWhySheet(context, recommendation),
-                                    child: const Text('Why this film?'),
-                                  ),
                               ],
-                            ),
-                            const SizedBox(height: 6),
-                            if (state == TodayStatus.completed &&
-                                viewing != null) ...[
-                              Text('How was it?', style: text.titleMedium),
-                              const SizedBox(height: 10),
-                              RatingSelector(
-                                value: viewing.rating,
-                                onChanged: busy == null
-                                    ? (r) => guard(
-                                        () => controller.rate(viewing, r),
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Ratings shape future picks. You can change yours any time.',
-                                textAlign: TextAlign.center,
-                                style: text.labelMedium?.copyWith(
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },

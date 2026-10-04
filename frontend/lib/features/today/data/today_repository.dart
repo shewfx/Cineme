@@ -190,7 +190,7 @@ class ApiTodayRepository implements TodayRepository {
   }) async {
     final body = await _command('POST', _rec(recommendationId, 'watched'), {
       'expected_session_version': _version,
-      'rating': rating?.name,
+      'rating': rating?.value,
     });
     return _envelope(asMap(body['today']));
   }

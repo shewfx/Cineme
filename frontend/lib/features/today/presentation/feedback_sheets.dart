@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/primary_action.dart';
+import '../../../core/widgets/rating_stars.dart';
 import '../../../shared/models/movie.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
@@ -214,7 +215,7 @@ class _RejectSheetState extends State<_RejectSheet> {
   }
 }
 
-/// Four labelled buttons; tapping the selected one clears it. Not stars.
+/// Shared whole-star selector; clearing remains an explicit sheet action.
 class RatingSelector extends StatelessWidget {
   const RatingSelector({
     super.key,
@@ -226,17 +227,72 @@ class RatingSelector extends StatelessWidget {
   final ValueChanged<Rating?>? onChanged;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      for (final r in Rating.values)
-        ChoicePill(
-          label: r.label,
-          selected: value == r,
-          onTap: () => onChanged?.call(value == r ? null : r),
-        ),
-    ],
+  Widget build(BuildContext context) => FiveStarSelector(
+    value: value,
+    onChanged: (rating) => onChanged?.call(rating),
+  );
+}
+
+Future<(bool, Rating?)?> showRatingSheet(
+  BuildContext context, {
+  required Movie movie,
+  required Rating? current,
+}) => showModalBottomSheet<(bool, Rating?)>(
+  context: context,
+  useRootNavigator: true,
+  isScrollControlled: true,
+  backgroundColor: AppColors.surface,
+  showDragHandle: true,
+  builder: (_) => _EditRatingSheet(movie: movie, current: current),
+);
+
+class _EditRatingSheet extends StatefulWidget {
+  const _EditRatingSheet({required this.movie, required this.current});
+  final Movie movie;
+  final Rating? current;
+
+  @override
+  State<_EditRatingSheet> createState() => _EditRatingSheetState();
+}
+
+class _EditRatingSheetState extends State<_EditRatingSheet> {
+  late Rating? _rating = widget.current;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.movie.title,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 16),
+          RatingSelector(
+            value: _rating,
+            onChanged: (value) => setState(() => _rating = value),
+          ),
+          const SizedBox(height: 20),
+          PrimaryAction(
+            label: 'Save rating',
+            disabledHint: 'Choose a star rating first',
+            onPressed: _rating == null
+                ? null
+                : () => Navigator.pop(context, (true, _rating)),
+          ),
+          if (widget.current != null)
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, (true, null)),
+                child: const Text('Clear rating'),
+              ),
+            ),
+        ],
+      ),
+    ),
   );
 }
 

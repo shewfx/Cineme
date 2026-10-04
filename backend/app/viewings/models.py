@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     Text,
     UniqueConstraint,
     func,
@@ -31,7 +32,7 @@ class Viewing(Base):
             "source IN ('recommendation', 'manual', 'already_watched')", name="source_values"
         ),
         CheckConstraint(
-            "rating IS NULL OR rating IN ('loved', 'liked', 'okay', 'disliked')",
+            "rating IS NULL OR rating BETWEEN 1 AND 5",
             name="rating_values",
         ),
         CheckConstraint("version > 0", name="version_positive"),
@@ -56,7 +57,7 @@ class Viewing(Base):
     watched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     source: Mapped[str] = mapped_column(Text)
-    rating: Mapped[str | None] = mapped_column(Text)
+    rating: Mapped[int | None] = mapped_column(SmallInteger)
     genre_ids_snapshot: Mapped[list[int]] = mapped_column(
         ARRAY(Integer), server_default=text("'{}'::integer[]")
     )

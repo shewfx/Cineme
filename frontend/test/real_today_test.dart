@@ -1066,13 +1066,13 @@ void main() {
         );
         final result = await repo.markWatched(
           picked.recommendation!.id,
-          rating: Rating.liked,
+          rating: Rating.four,
         );
         expect(result.state, TodayStatus.completed);
-        expect(result.viewing?.rating, Rating.liked);
+        expect(result.viewing?.rating, Rating.four);
         expect(result.viewing?.movie.tmdbId, 104);
         final command = rig.server.commands('/watched').single;
-        expect((command.data as Map)['rating'], 'liked');
+        expect((command.data as Map)['rating'], 4);
         expect(rig.server.processed, 2);
       },
     );

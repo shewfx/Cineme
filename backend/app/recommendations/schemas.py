@@ -154,7 +154,7 @@ class FollowUpAction(BaseModel):
 class MarkWatchedRequest(BaseModel):
     model_config = _STRICT
     expected_session_version: int = Field(ge=1)
-    rating: Literal["loved", "liked", "okay", "disliked"] | None = None
+    rating: int | None = Field(default=None, strict=True, ge=1, le=5)
 
 
 class FeedbackOut(BaseModel):
@@ -169,7 +169,7 @@ class ViewingSummary(BaseModel):
     watched_at: datetime | None
     recorded_at: datetime
     source: str
-    rating: str | None
+    rating: int | None
     version: int
     recommendation_id: uuid.UUID | None
 

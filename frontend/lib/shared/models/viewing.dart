@@ -1,16 +1,26 @@
 import 'movie.dart';
 import 'session_context.dart';
 
-/// Post-watch rating; labelled text, never colour or stars alone.
+/// Whole-star post-watch rating. The wire value is an integer from 1 to 5.
 enum Rating {
-  loved('Loved'),
-  liked('Liked'),
-  okay('Okay'),
-  disliked('Disliked');
+  one(1),
+  two(2),
+  three(3),
+  four(4),
+  five(5);
 
-  const Rating(this.label);
+  const Rating(this.value);
 
-  final String label;
+  final int value;
+
+  static Rating? fromValue(Object? value) {
+    if (value == null) return null;
+    if (value is! int) throw const FormatException('Invalid rating');
+    return Rating.values.firstWhere(
+      (rating) => rating.value == value,
+      orElse: () => throw const FormatException('Invalid rating'),
+    );
+  }
 }
 
 /// ViewingSummary. Null watchedAt means the date is unknown.

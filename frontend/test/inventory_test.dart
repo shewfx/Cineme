@@ -1,5 +1,6 @@
 import 'package:cineme/app.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
+import 'package:cineme/core/widgets/rating_stars.dart';
 import 'package:cineme/features/search/application/search_controller.dart';
 import 'package:cineme/features/search/data/search_repository.dart';
 import 'package:cineme/features/watchlist/application/watchlist_controller.dart';
@@ -295,7 +296,13 @@ void main() {
 
         await goTab(tester, 'History');
         expect(find.text('Amélie'), findsOneWidget);
-        expect(find.text('Liked'), findsOneWidget);
+        expect(
+          find
+              .byType(RatingStars)
+              .evaluate()
+              .map((element) => (element.widget as RatingStars).rating),
+          contains(Rating.four),
+        );
         expect(find.textContaining('Date unknown'), findsOneWidget);
         await tester.tap(find.text('Recommendations'));
         await tester.pumpAndSettle();

@@ -135,12 +135,7 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
           ? null
           : DateTime.tryParse(watchedAtRaw as String),
       recordedAt: recordedAt,
-      rating: ratingRaw == null
-          ? null
-          : Rating.values.firstWhere(
-              (value) => value.name == ratingRaw,
-              orElse: () => throw malformedResponse,
-            ),
+      rating: _parseRating(ratingRaw),
       version: viewingJson['version'] as int? ?? 1,
     );
   }
@@ -168,6 +163,14 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
 int sessionVersionOf(Map<String, dynamic> envelope) {
   final session = envelope['session'];
   return session is Map<String, dynamic> ? session['version'] as int : 0;
+}
+
+Rating? _parseRating(Object? value) {
+  try {
+    return Rating.fromValue(value);
+  } on FormatException {
+    throw malformedResponse;
+  }
 }
 
 ReplacementOutcome replacementOutcomeFromJson(Object? raw) => switch (raw) {
