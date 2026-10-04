@@ -5,6 +5,7 @@ import httpx
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -53,6 +54,16 @@ def create_app(
         redoc_url=None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
+    if settings.environment != "production":
+        # Flutter Web uses an ephemeral localhost port during local development.
+        # Production serves the API and app from the same origin and needs no CORS.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        )
     engine = engine or make_engine(settings.database_url, settings.database_pool_mode)
     app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
     app.state.verifier = verifier or TokenVerifier(

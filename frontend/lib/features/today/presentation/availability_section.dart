@@ -42,6 +42,18 @@ class AvailabilitySection extends ConsumerWidget {
     if (a.isEmpty) return const SizedBox.shrink();
     final muted = text.labelMedium?.copyWith(color: AppColors.textMuted);
     final watchNow = [...a.streaming, ...a.free];
+    final visibleOffers = <_ProviderChoice>[];
+    final seenOfferNames = <String>{};
+    for (final offer in a.streaming) {
+      if (seenOfferNames.add(offer.name.toLowerCase())) {
+        visibleOffers.add(_ProviderChoice(offer, false));
+      }
+    }
+    for (final offer in a.free) {
+      if (seenOfferNames.add(offer.name.toLowerCase())) {
+        visibleOffers.add(_ProviderChoice(offer, true));
+      }
+    }
     final paid = {
       for (final o in [...a.rent, ...a.buy]) o.name,
     };
@@ -72,24 +84,17 @@ class AvailabilitySection extends ConsumerWidget {
             ],
           ),
           if (watchNow.isNotEmpty) ...[
-            Wrap(
-              alignment: centered ? WrapAlignment.center : WrapAlignment.start,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final o in watchNow.take(4))
-                  _ProviderChip(
-                    offer: o,
-                    free: a.free.contains(o) && !a.streaming.contains(o),
-                  ),
-              ],
+            _WatchNowProviders(
+              key: ValueKey(tmdbId),
+              offers: visibleOffers,
+              centered: centered,
             ),
           ],
           if (paid.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               '${watchNow.isEmpty ? 'Rent or buy on' : 'Also to rent or buy on'} '
-              '${paid.take(3).join(', ')}',
+              '${paid.join(', ')}',
               textAlign: centered ? TextAlign.center : TextAlign.start,
               style: muted,
             ),
@@ -98,6 +103,80 @@ class AvailabilitySection extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _ProviderChoice {
+  const _ProviderChoice(this.offer, this.free);
+
+  final ProviderOffer offer;
+  final bool free;
+}
+
+class _WatchNowProviders extends StatefulWidget {
+  const _WatchNowProviders({
+    super.key,
+    required this.offers,
+    required this.centered,
+  });
+
+  final List<_ProviderChoice> offers;
+  final bool centered;
+
+  @override
+  State<_WatchNowProviders> createState() => _WatchNowProvidersState();
+}
+
+class _WatchNowProvidersState extends State<_WatchNowProviders> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ordered = widget.offers.asMap().entries.toList()
+      ..sort((a, b) {
+        final priority = _providerPriority(a.value.offer.name)
+            .compareTo(_providerPriority(b.value.offer.name));
+        return priority == 0 ? a.key.compareTo(b.key) : priority;
+      });
+    final shown = _expanded ? ordered : ordered.take(3).toList();
+    final hiddenCount = ordered.length - shown.length;
+
+    return Wrap(
+      alignment: widget.centered ? WrapAlignment.center : WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        for (final entry in shown)
+          _ProviderChip(offer: entry.value.offer, free: entry.value.free),
+        if (hiddenCount > 0)
+          TextButton(
+            key: const ValueKey('availability-more-providers'),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            onPressed: () => setState(() => _expanded = true),
+            child: Text('+$hiddenCount more'),
+          ),
+        if (_expanded && ordered.length > 3)
+          TextButton(
+            onPressed: () => setState(() => _expanded = false),
+            child: const Text('Show less'),
+          ),
+      ],
+    );
+  }
+}
+
+int _providerPriority(String name) {
+  final normalized = name.toLowerCase();
+  if (normalized.contains('netflix')) return 0;
+  if (normalized.contains('prime video')) return 1;
+  if (normalized.contains('jiohotstar') || normalized.contains('hotstar')) {
+    return 2;
+  }
+  if (normalized.contains('apple tv')) return 3;
+  return 4;
 }
 
 /// The JustWatch/TMDB attribution, shown on demand.

@@ -78,7 +78,7 @@ flutter build web --release --dart-define=API_BASE_URL=same-origin --dart-define
 python ../infra/check_web_bundle.py build/web                        # fails on any server-side secret
 ```
 
-The web build talks to the API on its own origin, so the API has no CORS middleware; running the web build against `localhost:8000` from a different origin is therefore not supported (use Android locally, or the hosted site). Hosted deployment, migrations and Vercel/Neon setup: [DEPLOYMENT.md](DEPLOYMENT.md).
+The hosted web build talks to the API on its own origin. In development and tests, the API also permits HTTP requests from `localhost` and `127.0.0.1` on any port, for Flutter Web's dynamic local port. Hosted deployment, migrations and Vercel/Neon setup: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Checks:
 

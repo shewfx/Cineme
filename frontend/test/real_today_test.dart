@@ -832,6 +832,50 @@ void main() {
       expect(find.text('Prime Video'), findsNothing);
     });
 
+    testWidgets(
+      'provider chips use priority and reveal every remaining option',
+      (tester) async {
+        final rig = TodayRig();
+        rig.server.availability[104] = {
+          'region': 'IN',
+          'link': null,
+          'streaming': [
+            {'id': 119, 'name': 'Prime Video', 'logo_url': null},
+            {'id': 900, 'name': 'SomeLowerPriorityProvider', 'logo_url': null},
+            {'id': 122, 'name': 'JioHotstar', 'logo_url': null},
+            {'id': 8, 'name': 'Netflix', 'logo_url': null},
+          ],
+          'free': <Object>[],
+          'rent': <Object>[],
+          'buy': <Object>[],
+          'fetched_at': null,
+          'stale': false,
+        };
+        await start(tester, rig);
+        await pickExciting(tester);
+
+        expect(find.text('Netflix'), findsOneWidget);
+        expect(find.text('Prime Video'), findsOneWidget);
+        expect(find.text('JioHotstar'), findsOneWidget);
+        expect(find.text('SomeLowerPriorityProvider'), findsNothing);
+        expect(find.text('+1 more'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Netflix')).dx,
+          lessThan(tester.getTopLeft(find.text('Prime Video')).dx),
+        );
+
+        final moreProviders = find.byKey(
+          const ValueKey('availability-more-providers'),
+        );
+        await tester.ensureVisible(moreProviders);
+        await tester.pumpAndSettle();
+        await tester.tap(moreProviders);
+        await tester.pumpAndSettle();
+        expect(find.text('SomeLowerPriorityProvider'), findsOneWidget);
+        expect(find.text('Show less'), findsOneWidget);
+      },
+    );
+
     testWidgets('no streaming region: a quiet hint, never invented providers', (
       tester,
     ) async {
