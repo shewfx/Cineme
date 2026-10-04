@@ -26,6 +26,5 @@ class AccountProfileRepository implements ProfileRepository {
   Future<Profile> profile() => _account.me();
 
   @override
-  Future<void> unblock(int tmdbId) =>
-      throw UnsupportedError('Blocks are not available before P5.');
+  Future<void> unblock(int tmdbId) => _account.unblock(tmdbId);
 }

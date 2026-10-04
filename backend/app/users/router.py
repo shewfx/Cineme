@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -8,10 +8,11 @@ from app.core import idempotency
 from app.core.auth import Identity, IdentityProvider, current_identity
 from app.core.db import get_session
 from app.core.errors import AppError
+from app.movies.router import Provider
 from app.recommendations import service as today
 from app.users.models import UserPreferences
 
-from . import service
+from . import blocks_service, service
 from .schemas import (
     BootstrapResponse,
     MePatch,
@@ -114,3 +115,39 @@ def patch_preferences(
         }
         idempotency.store(session, user.id, key, operation, digest, 200, body)
     return JSONResponse(body, status_code=200)
+
+
+@router.get("/blocks")
+def get_blocks(
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    cursor: Annotated[str | None, Query(max_length=200)] = None,
+) -> dict[str, Any]:
+    return blocks_service.list_blocks(session, provider, identity.user_id, limit, cursor)
+
+
+@router.post("/blocks/{tmdb_id}")
+def post_block(
+    tmdb_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> JSONResponse:
+    key = idempotency.parse_key(idempotency_key)
+    status, body = blocks_service.block(session, provider, identity.user_id, tmdb_id, key)
+    return JSONResponse(body, status_code=status)
+
+
+@router.delete("/blocks/{tmdb_id}")
+def delete_block(
+    tmdb_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
+    identity: CallerIdentity,
+    session: DbSession,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> JSONResponse:
+    key = idempotency.parse_key(idempotency_key)
+    status, body = blocks_service.unblock(session, identity.user_id, tmdb_id, key)
+    return JSONResponse(body, status_code=status)

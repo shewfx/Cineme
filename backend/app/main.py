@@ -24,6 +24,7 @@ from app.movies.provider import MovieMetadataProvider, TmdbProvider
 from app.movies.router import router as movies_router
 from app.recommendations.router import router as recommendations_router
 from app.users.router import router as users_router
+from app.viewings.router import router as viewings_router
 from app.watchlist.router import router as watchlist_router
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -95,6 +96,7 @@ def create_app(
         return {"status": "ready"}
 
     app.include_router(users_router)
+    app.include_router(viewings_router)
     app.include_router(movies_router)
     app.include_router(watchlist_router)
     app.include_router(recommendations_router)

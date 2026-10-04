@@ -74,6 +74,7 @@ RejectReason = Literal[
     "too_serious",
     "want_lighter",
     "already_watched",
+    "never_recommend",
     "other",
 ]
 
@@ -127,6 +128,12 @@ class SessionOut(BaseModel):
     completed_at: datetime | None
 
 
+class FollowUpOut(BaseModel):
+    recommendation_id: uuid.UUID
+    accepted_local_date: date
+    movie: MovieSummary
+
+
 TodayState = Literal[
     "not_started",
     "ready",
@@ -139,11 +146,15 @@ TodayState = Literal[
 ]
 
 
-class TodayEnvelope(BaseModel):
-    state: TodayState
-    local_date: date
-    session: SessionOut | None
-    recommendation: RecommendationSummary | None
+class FollowUpAction(BaseModel):
+    model_config = _STRICT
+    action: Literal["yes", "no", "not_yet"]
+
+
+class MarkWatchedRequest(BaseModel):
+    model_config = _STRICT
+    expected_session_version: int = Field(ge=1)
+    rating: Literal["loved", "liked", "okay", "disliked"] | None = None
 
 
 class FeedbackOut(BaseModel):
@@ -163,6 +174,15 @@ class ViewingSummary(BaseModel):
     recommendation_id: uuid.UUID | None
 
 
+class TodayEnvelope(BaseModel):
+    state: TodayState
+    local_date: date
+    session: SessionOut | None
+    recommendation: RecommendationSummary | None
+    viewing: ViewingSummary | None = None
+    follow_up: FollowUpOut | None = None
+
+
 class RejectResponse(BaseModel):
     feedback: FeedbackOut
     viewing: ViewingSummary | None
@@ -173,6 +193,7 @@ class RejectResponse(BaseModel):
 class HistoryItem(RecommendationSummary):
     local_date: date
     timezone: str
+    desired_experience: DesiredExperience
 
 
 class HistoryPage(BaseModel):

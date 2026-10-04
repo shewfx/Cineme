@@ -25,6 +25,7 @@ from app.core import idempotency
 from app.core.errors import AppError
 from app.movies import service as movies
 from app.movies.models import Movie
+from app.users.blocks import MovieBlock
 from app.users.models import User, UserPreferences
 from app.users.service import lock_user
 from app.viewings.models import Viewing
@@ -224,11 +225,55 @@ def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, 
             "completed_at": _iso(s.completed_at) if s.completed_at else None,
         }
     show = current is not None and current.status in ("offered", "accepted", "watched", "no_match")
+    viewing_out = None
+    if current is not None and current.status == "watched":
+        viewing = db.scalar(
+            select(Viewing).where(
+                Viewing.user_id == user.id,
+                Viewing.recommendation_id == current.id,
+            )
+        )
+        if viewing is not None and current.winner_snapshot is not None:
+            viewing_out = {
+                "id": str(viewing.id),
+                "movie": current.winner_snapshot["movie"],
+                "watched_at": _iso(viewing.watched_at) if viewing.watched_at else None,
+                "recorded_at": _iso(viewing.recorded_at),
+                "source": viewing.source,
+                "rating": viewing.rating,
+                "version": viewing.version,
+                "recommendation_id": str(viewing.recommendation_id),
+            }
+    prior = db.execute(
+        select(Recommendation, RecommendationSession)
+        .join(RecommendationSession, RecommendationSession.id == Recommendation.session_id)
+        .where(
+            RecommendationSession.user_id == user.id,
+            RecommendationSession.local_date < local,
+            Recommendation.status == "accepted",
+            Recommendation.follow_up_resolved.is_(False),
+            (
+                Recommendation.follow_up_prompted_on.is_(None)
+                | (Recommendation.follow_up_prompted_on < local)
+            ),
+        )
+        .order_by(Recommendation.accepted_at.desc(), Recommendation.id.desc())
+        .limit(1)
+    ).first()
+    follow_up = None
+    if prior is not None and prior[0].winner_snapshot is not None:
+        follow_up = {
+            "recommendation_id": str(prior[0].id),
+            "accepted_local_date": prior[1].local_date.isoformat(),
+            "movie": prior[0].winner_snapshot["movie"],
+        }
     return {
         "state": state,
         "local_date": local.isoformat(),
         "session": session_out,
         "recommendation": summary(current) if show and current is not None else None,
+        "viewing": viewing_out,
+        "follow_up": follow_up,
     }
 
 
@@ -265,26 +310,38 @@ def _offer_history(
 
 def _viewing_history(
     db: Session, user_id: uuid.UUID
-) -> tuple[set[int], tuple[tuple[int, ...], ...]]:
-    """Every known-watched film (excluded), and the genre snapshots of the
-    three most recent viewings for the diversity component. Ratings stay
-    out until P5, so learning is unchanged."""
-    watched = set(db.scalars(select(Viewing.movie_id).where(Viewing.user_id == user_id)).all())
+) -> tuple[set[int], tuple[tuple[int, ...], ...], tuple[engine.RatedViewing, ...]]:
+    """Known-watched exclusions, recent diversity snapshots and current ratings."""
+    viewings = db.scalars(select(Viewing).where(Viewing.user_id == user_id)).all()
+    watched = {v.movie_id for v in viewings}
     rows = db.scalars(
         select(Viewing.genre_ids_snapshot)
         .where(Viewing.user_id == user_id, func.cardinality(Viewing.genre_ids_snapshot) > 0)
         .order_by(func.coalesce(Viewing.watched_at, Viewing.recorded_at).desc(), Viewing.id.desc())
         .limit(3)
     ).all()
-    return watched, tuple(tuple(g) for g in rows)
+    rated = tuple(
+        engine.RatedViewing(tuple(v.genre_ids_snapshot), v.rating)
+        for v in viewings
+        if v.rating is not None
+    )
+    return watched, tuple(tuple(g) for g in rows), rated
 
 
-def record_already_watched(
-    db: Session, user: User, movie: Movie, watched_at: datetime | None, now: datetime
+def record_viewing(
+    db: Session,
+    user: User,
+    movie: Movie,
+    watched_at: datetime | None,
+    now: datetime,
+    *,
+    source: str = "already_watched",
+    rating: str | None = None,
+    recommendation_id: uuid.UUID | None = None,
 ) -> Viewing:
-    """A known past viewing: never tonight's completion, never a rating.
-    Reuses an existing record (one viewing per film in V1) and archives the
-    active watchlist entry in the same transaction."""
+    """Canonical viewing upsert used by manual and recommendation actions.
+    Reuses the one user/movie record and archives any active inventory row in
+    the same transaction. The caller supplies the truthful date and source."""
     viewing = db.scalar(
         select(Viewing).where(Viewing.user_id == user.id, Viewing.movie_id == movie.tmdb_id)
     )
@@ -295,10 +352,10 @@ def record_already_watched(
             movie_id=movie.tmdb_id,
             watched_at=watched_at,
             recorded_at=now,
-            source="already_watched",
-            rating=None,
+            source=source,
+            rating=rating,
             genre_ids_snapshot=list(movie.genre_ids),
-            recommendation_id=None,
+            recommendation_id=recommendation_id,
             version=1,
             updated_at=now,
         )
@@ -378,7 +435,10 @@ def select_one(
     eff, _ = effective_context(s.context, prefs)
     rows = _candidates(db, user.id)
     last_offer, tonight = _offer_history(db, user.id, s)
-    watched, recent = _viewing_history(db, user.id)
+    watched, recent, rated_viewings = _viewing_history(db, user.id)
+    blocked = set(
+        db.scalars(select(MovieBlock.movie_id).where(MovieBlock.user_id == user.id)).all()
+    )
     by_id = {m.tmdb_id: m for _, m in rows}
     candidates = tuple(
         engine.Candidate(
@@ -394,7 +454,7 @@ def select_one(
             last_offered_at=last_offer.get(m.tmdb_id),
             offered_this_session=m.tmdb_id in tonight,
             watched=m.tmdb_id in watched,
-            # Movie blocks arrive in P5 (DATA_MODEL schedule).
+            blocked=m.tmdb_id in blocked,
         )
         for e, m in rows
     )
@@ -417,6 +477,7 @@ def select_one(
             local_date=local,
             evaluation_time=now,
             genre_preferences=preferences,
+            rated_viewings=rated_viewings,
             recent_genre_sets=recent,
         ),
         CONFIG,
@@ -686,6 +747,93 @@ def accept(
     return _mutation(db, user_id, key, f"POST /api/v1/recommendations/{rec_id}/accept", body, run)
 
 
+def follow_up_action(
+    db: Session,
+    user_id: uuid.UUID,
+    rec_id: uuid.UUID,
+    action: str,
+    key: uuid.UUID,
+) -> tuple[int, dict[str, Any]]:
+    """Resolve or defer the most recent accepted pick using the caller's date."""
+    operation = f"POST /api/v1/recommendations/{rec_id}/follow-up"
+
+    def run(user: User, now: datetime) -> tuple[int, dict[str, Any]]:
+        local = local_date_for(user, now)
+        row = db.execute(
+            select(Recommendation, RecommendationSession)
+            .join(RecommendationSession, RecommendationSession.id == Recommendation.session_id)
+            .where(Recommendation.id == rec_id, RecommendationSession.user_id == user.id)
+            .with_for_update(of=Recommendation)
+        ).first()
+        if row is None:
+            raise AppError(404, "NOT_FOUND", "That recommendation was not found.")
+        rec, session = row
+        if rec.status != "accepted" or rec.follow_up_resolved or session.local_date >= local:
+            raise AppError(409, "INVALID_TRANSITION", "That follow-up is no longer available.")
+        if action == "not_yet":
+            rec.follow_up_prompted_on = local
+        elif action == "no":
+            rec.follow_up_resolved = True
+        elif action == "yes":
+            movie = db.get(Movie, rec.movie_id)
+            if movie is None:
+                raise AppError(404, "NOT_FOUND", "That film was not found.")
+            record_viewing(
+                db, user, movie, now, now, source="recommendation", recommendation_id=rec.id
+            )
+            rec.status = "watched"
+            rec.resolved_at = now
+            rec.follow_up_resolved = True
+            session.completed_at = now
+            on_watchlist_removed(db, user, movie.tmdb_id, now)
+        else:
+            raise AppError(422, "VALIDATION_ERROR", "Choose yes, no or not yet.")
+        return 200, envelope(db, user, now)
+
+    return _mutation(db, user_id, key, operation, {"action": action}, run)
+
+
+def mark_watched(
+    db: Session,
+    user_id: uuid.UUID,
+    rec_id: uuid.UUID,
+    expected: int,
+    rating: str | None,
+    key: uuid.UUID,
+    names: dict[int, str],
+    image_base: str,
+) -> tuple[int, dict[str, Any]]:
+    operation = f"POST /api/v1/recommendations/{rec_id}/watched"
+
+    def run(user: User, now: datetime) -> tuple[int, dict[str, Any]]:
+        session, rec = _owned_today_pick(db, user, rec_id, now, expected)
+        movie = db.get(Movie, rec.movie_id)
+        if movie is None:
+            raise AppError(404, "NOT_FOUND", "That film was not found.")
+        viewing = record_viewing(
+            db,
+            user,
+            movie,
+            now,
+            now,
+            source="recommendation",
+            rating=rating,
+            recommendation_id=rec.id,
+        )
+        rec.status = "watched"
+        rec.resolved_at = now
+        rec.follow_up_resolved = True
+        session.completed_at = now
+        _bump(session, now)
+        return 200, {
+            "viewing": viewing_summary(viewing, movie, names, image_base),
+            "today": envelope(db, user, now),
+        }
+
+    body = {"expected_session_version": expected, "rating": rating}
+    return _mutation(db, user_id, key, operation, body, run)
+
+
 def _reject_effect(
     req: RejectRequest, ctx: dict[str, Any], eff: dict[str, Any], movie_genres: list[int]
 ) -> dict[str, Any]:
@@ -790,9 +938,26 @@ def reject(
             watched_movie = db.get(Movie, rec.movie_id)
             if watched_movie is None:  # pragma: no cover (FK)
                 raise AppError(404, "NOT_FOUND", "That film was not found.")
-            viewing = record_already_watched(
+            viewing = record_viewing(
                 db, user, watched_movie, _watched_at(req.details.get("watched_at"), now), now
             )
+        if req.reason == "never_recommend":
+            blocked_movie = db.get(Movie, rec.movie_id)
+            if blocked_movie is None:
+                raise AppError(404, "NOT_FOUND", "That film was not found.")
+            if db.get(MovieBlock, (user.id, blocked_movie.tmdb_id)) is None:
+                db.add(MovieBlock(user_id=user.id, movie_id=blocked_movie.tmdb_id))
+            entry = db.scalar(
+                select(WatchlistEntry).where(
+                    WatchlistEntry.user_id == user.id,
+                    WatchlistEntry.movie_id == blocked_movie.tmdb_id,
+                    WatchlistEntry.status == "active",
+                )
+            )
+            if entry is not None:
+                entry.status = "removed"
+                entry.removed_at = now
+                entry.updated_at = now
         rec.status = "rejected"
         rec.resolved_at = now
         feedback = RejectionFeedback(
@@ -869,6 +1034,24 @@ def on_watchlist_added(db: Session, user: User, now: datetime) -> None:
         _bump(s, now)
 
 
+def on_movie_blocked(db: Session, user: User, movie_id: int, now: datetime) -> None:
+    s = _today_session(db, user.id, local_date_for(user, now))
+    if s is None or s.completed_at is not None:
+        return
+    if _clear_pick(db, s, now, movie_id=movie_id):
+        _bump(s, now)
+
+
+def on_movie_unblocked(db: Session, user: User, movie_id: int, now: datetime) -> None:
+    s = _today_session(db, user.id, local_date_for(user, now))
+    if s is None or s.completed_at is not None:
+        return
+    current = _current(db, s)
+    if current is not None and current.status == "no_match":
+        _clear_pick(db, s, now)
+        _bump(s, now)
+
+
 # --- history reads --------------------------------------------------------------------
 
 
@@ -909,7 +1092,12 @@ def history(
     page = rows[:limit]
     return {
         "items": [
-            summary(r) | {"local_date": s.local_date.isoformat(), "timezone": s.timezone_snapshot}
+            summary(r)
+            | {
+                "local_date": s.local_date.isoformat(),
+                "timezone": s.timezone_snapshot,
+                "desired_experience": s.context["desired_experience"],
+            }
             for r, s in page
         ],
         "next_cursor": _encode_cursor(page[-1][0].created_at, page[-1][0].id)

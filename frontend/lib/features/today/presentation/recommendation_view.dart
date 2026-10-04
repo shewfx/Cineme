@@ -104,7 +104,7 @@ class RecommendationView extends ConsumerWidget {
         context,
         title: 'Never recommend “${movie.title}”?',
         body:
-            "It leaves your watchlist and Cinemé won't pick it again. "
+            "It stays in your watchlist, but Cinemé won't pick it again. "
             "This isn't a rating. You can undo it in Profile.",
         confirm: 'Never recommend',
       );

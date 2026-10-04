@@ -180,7 +180,7 @@ class SearchController extends Notifier<SearchState> {
       _act(result, () async {
         final r = await ref
             .read(historyRepositoryProvider)!
-            .recordAlreadyWatched(result.movie.tmdbId);
+            .recordManual(result.movie.tmdbId);
         _mark(result, ResultMark.watched);
         ref
           ..invalidate(viewingHistoryProvider)

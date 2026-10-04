@@ -11,7 +11,8 @@ import '../data/search_repository.dart';
 
 /// Search/Add: separate "Add to watchlist" and "Already watched" actions.
 class SearchPage extends ConsumerWidget {
-  const SearchPage({super.key});
+  const SearchPage({super.key, this.logMode = false});
+  final bool logMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,7 +26,9 @@ class SearchPage extends ConsumerWidget {
     final Widget body = switch (state.results) {
       null => _Hint(
         state.query.isEmpty
-            ? 'Search by title to add films to your watchlist.'
+            ? (logMode
+                  ? 'Search for a film you watched.'
+                  : 'Search by title to add films to your watchlist.')
             : 'Type at least $minQueryLength letters to search.',
       ),
       AsyncLoading() => const SkeletonList(),
@@ -42,7 +45,9 @@ class SearchPage extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: 24),
         itemCount: results.length + (state.hasMore ? 1 : 0),
         itemBuilder: (context, i) {
-          if (i < results.length) return _ResultRow(result: results[i]);
+          if (i < results.length) {
+            return _ResultRow(result: results[i], logMode: logMode);
+          }
           if (state.loadMoreError == null && !state.loadingMore) {
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => controller.loadMore(),
@@ -72,7 +77,9 @@ class SearchPage extends ConsumerWidget {
                       textInputAction: TextInputAction.search,
                       style: text.bodyLarge,
                       decoration: InputDecoration(
-                        hintText: 'Search films',
+                        hintText: logMode
+                            ? 'Find a watched film'
+                            : 'Search films',
                         hintStyle: text.bodyLarge?.copyWith(
                           color: AppColors.textMuted,
                         ),
@@ -117,9 +124,10 @@ class _Hint extends StatelessWidget {
 }
 
 class _ResultRow extends ConsumerWidget {
-  const _ResultRow({required this.result});
+  const _ResultRow({required this.result, required this.logMode});
 
   final SearchResult result;
+  final bool logMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -190,6 +198,17 @@ class _ResultRow extends ConsumerWidget {
         dimension: 20,
         child: CircularProgressIndicator(strokeWidth: 2.5),
       );
+    } else if (logMode) {
+      action = mark == ResultMark.watched
+          ? const _Status(Icons.check, 'Recorded')
+          : _SmallAction(
+              label: 'Log watched',
+              onPressed: () => run(
+                () => ref
+                    .read(searchControllerProvider.notifier)
+                    .recordWatched(result),
+              ),
+            );
     } else if (!result.canAdd || mark == ResultMark.ineligible) {
       action = const _Status(Icons.block, "Can't add");
     } else if (mark == ResultMark.watched) {
@@ -213,7 +232,8 @@ class _ResultRow extends ConsumerWidget {
     final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
     // Logging a past viewing needs viewing history (P5).
     final alreadyWatched =
-        ref.watch(historyRepositoryProvider) != null &&
+        !logMode &&
+            ref.watch(historyRepositoryProvider) != null &&
             mark != ResultMark.watched &&
             result.canAdd
         ? _SmallAction(label: 'Already watched', onPressed: confirmWatched)

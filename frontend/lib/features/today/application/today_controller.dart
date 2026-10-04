@@ -7,6 +7,7 @@ import '../../../shared/models/viewing.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../history/application/history_controllers.dart';
 import '../../history/data/history_repository.dart';
+import '../../watchlist/application/watchlist_controller.dart';
 import '../data/today_repository.dart';
 
 /// Which Today command is in flight; its button shows progress and the
@@ -183,12 +184,22 @@ class TodayController extends Notifier<TodayViewState> {
         ref.read(inventoryRevisionProvider.notifier).bump();
       });
 
+  Future<void> resolveFollowUp(FollowUpPrompt prompt, String action) =>
+      _run(TodayAction.watched, () async {
+        _apply(await _repo.followUp(prompt.recommendationId, action));
+        if (action == 'yes') {
+          ref.read(inventoryRevisionProvider.notifier).bump();
+          ref.invalidate(viewingHistoryProvider);
+          ref.invalidate(watchlistControllerProvider);
+        }
+      });
+
   /// Post-watch rating: long-term taste evidence, replaced on edit.
   Future<void> rate(Viewing viewing, Rating? rating) =>
       _run(TodayAction.rate, () async {
         await ref
             .read(historyRepositoryProvider)!
-            .rateViewing(viewing.id, rating);
+            .rateViewing(viewing.id, rating, expectedVersion: viewing.version);
         ref.invalidate(todayEnvelopeProvider);
         ref.read(inventoryRevisionProvider.notifier).bump();
       });

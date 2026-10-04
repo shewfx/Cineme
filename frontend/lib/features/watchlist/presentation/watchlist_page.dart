@@ -12,6 +12,9 @@ import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../shared/models/inventory.dart';
+import '../../history/application/history_controllers.dart';
+import '../../history/data/history_repository.dart';
+import '../../today/application/today_controller.dart';
 import '../application/watchlist_controller.dart';
 import '../data/watchlist_repository.dart';
 
@@ -172,6 +175,44 @@ class _WatchlistRow extends ConsumerWidget {
 
   final WatchlistEntry entry;
 
+  Future<void> _markWatched(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Mark “${entry.movie.title}” watched?'),
+        content: const Text(
+          'This records a past viewing with an unknown date and archives it from your watchlist.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Mark watched'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref
+          .read(historyRepositoryProvider)!
+          .recordManual(entry.movie.tmdbId);
+      ref
+        ..invalidate(viewingHistoryProvider)
+        ..invalidate(watchlistControllerProvider)
+        ..invalidate(todayEnvelopeProvider);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't mark it watched. Try again.")),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
@@ -209,7 +250,17 @@ class _WatchlistRow extends ConsumerWidget {
         ),
         child: ColoredBox(
           color: AppColors.background,
-          child: MovieListTile(movie: entry.movie, lines: _details(entry)),
+          child: MovieListTile(
+            movie: entry.movie,
+            lines: _details(entry),
+            trailing: ref.watch(historyRepositoryProvider) == null
+                ? null
+                : IconButton(
+                    tooltip: 'Mark ${entry.movie.title} watched',
+                    onPressed: () => _markWatched(context, ref),
+                    icon: const Icon(Icons.check_circle_outline),
+                  ),
+          ),
         ),
       ),
     );
@@ -223,7 +274,7 @@ class _PosterTile extends ConsumerWidget {
   final WatchlistEntry entry;
 
   Future<void> _actions(BuildContext context, WidgetRef ref) async {
-    final remove = await showModalBottomSheet<bool>(
+    final action = await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,
       backgroundColor: AppColors.surface,
@@ -241,16 +292,23 @@ class _PosterTile extends ConsumerWidget {
               ),
             ),
             ListTile(
+              leading: const Icon(Icons.check_circle_outline),
+              title: const Text('Mark watched'),
+              onTap: () => Navigator.pop(sheet, 'watched'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('Remove from watchlist'),
-              onTap: () => Navigator.pop(sheet, true),
+              onTap: () => Navigator.pop(sheet, 'remove'),
             ),
           ],
         ),
       ),
     );
-    if (remove == true && context.mounted) {
+    if (action == 'remove' && context.mounted) {
       await _removeWithUndo(context, ref, entry);
+    } else if (action == 'watched' && context.mounted) {
+      await _WatchlistRow(entry: entry)._markWatched(context, ref);
     }
   }
 

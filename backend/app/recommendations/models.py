@@ -109,6 +109,12 @@ class Recommendation(Base):
             "id",
         ),
         Index("ix_recommendations_movie_id_created_at", "movie_id", text("created_at DESC")),
+        Index(
+            "ix_recommendations_follow_up",
+            "status",
+            "accepted_at",
+            postgresql_where=text("status = 'accepted' AND follow_up_resolved = false"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -135,6 +141,8 @@ class Recommendation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    follow_up_prompted_on: Mapped[date | None] = mapped_column(Date)
+    follow_up_resolved: Mapped[bool] = mapped_column(server_default=text("false"))
 
 
 class RejectionFeedback(Base):

@@ -11,12 +11,13 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P2 — Auth, profile bootstrap, persistence foundation | Complete: merged to `main` in PR #5 (CI green incl. PostgreSQL); cross-account movie-data isolation deferred to the P3 two-account test |
 | P3 — TMDB search and persistent watchlist | Complete: merged to `main` in PR #6 (CI green incl. PostgreSQL); two-account isolation passed (project owner) |
 | P4 — Deterministic daily selection (+ ADR 006 rejection/Already watched, ADR 007 availability) | Complete on branch `feat/p4-tonight-recommendations`: all automated gates pass incl. PostgreSQL; emulator flows exercised against the real watchlist; published via PR (see git history). Two-account Tonight isolation on a device not performed (second account's credentials unavailable); covered by automated tests |
-| Web/PWA deployment + Tonight/Search/Watchlist UI refinement (not a roadmap phase; ADR 008, ADR 009) | On branch `feat/web-pwa-deployment`, deployed to https://cineme-theta.vercel.app; automated gates pass; **not merged** (awaiting review). Physical iPhone Add-to-Home-Screen check and a live first-screen Skip run are still open (see the section) |
-| P5–P8 | Not started |
+| Web/PWA deployment + Tonight/Search/Watchlist UI refinement (not a roadmap phase; ADR 008, ADR 009) | Merged to `main` in PR #8; existing deployment remains live. Physical iPhone Add-to-Home-Screen check and a live first-screen Skip run are still open |
+| P5 — Feedback, history, ratings and conservative learning | Implemented on `feat/p5-history-ratings`; PR pending. Local PostgreSQL and Flutter suites pass. Migration 0005 is not applied to the hosted database |
+| P6–P8 | Not started |
 
-## Web/PWA deployment and UI refinement: 2026-10-03, branch `feat/web-pwa-deployment`
+## Web/PWA deployment and UI refinement: 2026-10-03, merged in PR #8
 
-Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/008-tonight-setup-skip-and-watchlist-sort.md), [ADR 009](adr/009-hosted-web-pwa-on-vercel-and-neon.md). Procedure and environment names: [DEPLOYMENT.md](DEPLOYMENT.md).
+Platform task, not a roadmap phase. At the time it was completed P5 had not started. Decisions: [ADR 008](adr/008-tonight-setup-skip-and-watchlist-sort.md), [ADR 009](adr/009-hosted-web-pwa-on-vercel-and-neon.md). Procedure and environment names: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### What exists
 
@@ -70,6 +71,31 @@ Platform task, not a roadmap phase; P5 is not started. Decisions: [ADR 008](adr/
 ### Known limits
 
 Runtime database role is the Neon owner; free-tier compute suspends when idle; function region `iad1` (US) for a Neon database in `us-east-1`; the hosted API has no CORS middleware by design (same-origin only).
+
+## P5 — Feedback, history, ratings and conservative learning
+
+Implemented on `feat/p5-history-ratings`, based on merged PR #8. This milestone keeps Today to one recommendation and does not apply migration 0005 or deploy changes.
+
+### Delivered
+
+- Durable follow-up state on accepted recommendations. GET Today surfaces only the most recent unresolved accepted pick from an earlier user-local date. `not_yet` suppresses it for that date; `yes` records one viewing and resolves it; `no` resolves without recording a viewing. Missed days do not lose the prompt.
+- One canonical viewing write path for direct Already watched, History logging, recommendation completion and follow-up confirmation. It preserves unknown dates, accepts an optional past date/rating, archives active watchlist inventory, prevents duplicate user/movie history rows, and returns idempotent response bodies.
+- History reads watched records and recommendation history with cursor pagination and user ownership. Ratings use the already-documented `loved`, `liked`, `okay`, `disliked` values; edits are versioned replacements and rated genre evidence feeds the existing deterministic affinity component without changing `weighted_v1` weights.
+- Persistent per-user Never recommend blocks, hard-filter integration, reversible profile management, and block pagination. Temporary rejection, removal and ratings do not create blocks.
+- Flutter real-build repositories and UI for History, search-only manual logging, rating edits, follow-up choices, watchlist Mark watched and blocked-film restoration.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| Backend PostgreSQL suite | 345 passed, including empty upgrade/downgrade/upgrade and P5 ownership, idempotency, rating, follow-up and block checks |
+| `flutter analyze` | No issues found |
+| `flutter test` | 245 passed |
+
+### Not performed
+
+- Migration 0005 was not applied to hosted PostgreSQL; deployed API and web assets were not changed.
+- Physical device checks for the new P5 screens remain open. The web deployment's physical iPhone check also remains open.
 
 ## P4 — 2026-10-02, branch `feat/p4-tonight-recommendations`
 

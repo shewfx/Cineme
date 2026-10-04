@@ -54,7 +54,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ),
         ],
       ),
-      GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
+      GoRoute(
+        path: '/search',
+        builder: (context, state) =>
+            SearchPage(logMode: state.uri.queryParameters['mode'] == 'log'),
+      ),
       GoRoute(
         path: '/today/context',
         builder: (context, state) => const EditTonightPage(),

@@ -24,7 +24,7 @@ def tables(engine: Engine) -> set[str]:
 
 
 # Only the documented tables: P2 (+ ADR 003 ledger), P3 movies/watchlist and
-# P4 sessions/recommendations (+ ADR 006 rejection_feedback and viewings).
+# P4 sessions/recommendations (+ ADR 006) and P5 movie blocks.
 APP_TABLES = {
     "users",
     "user_preferences",
@@ -35,6 +35,7 @@ APP_TABLES = {
     "recommendations",
     "rejection_feedback",
     "viewings",
+    "movie_blocks",
 }
 
 
@@ -50,6 +51,7 @@ def test_p4_downgrade_keeps_p3_data_tables(database_factory: Callable[[], str]) 
             "recommendations",
             "rejection_feedback",
             "viewings",
+            "movie_blocks",
         }
         command.upgrade(config, "head")
         assert tables(engine) == APP_TABLES

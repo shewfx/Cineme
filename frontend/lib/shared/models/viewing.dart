@@ -21,6 +21,7 @@ class Viewing {
     required this.watchedAt,
     required this.recordedAt,
     required this.rating,
+    this.version = 1,
   });
 
   final String id;
@@ -28,6 +29,18 @@ class Viewing {
   final DateTime? watchedAt;
   final DateTime recordedAt;
   final Rating? rating;
+  final int version;
+}
+
+class FollowUpPrompt {
+  const FollowUpPrompt({
+    required this.recommendationId,
+    required this.movie,
+    required this.acceptedLocalDate,
+  });
+  final String recommendationId;
+  final Movie movie;
+  final DateTime acceptedLocalDate;
 }
 
 class RecordWatchedResult {
