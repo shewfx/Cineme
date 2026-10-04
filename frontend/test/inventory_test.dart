@@ -300,9 +300,7 @@ void main() {
           find
               .byType(RatingStars)
               .evaluate()
-              .map(
-                (element) => (element.widget as RatingStars).rating,
-              ),
+              .map((element) => (element.widget as RatingStars).rating),
           contains(Rating.four),
         );
         expect(find.textContaining('Date unknown'), findsOneWidget);
