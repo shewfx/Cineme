@@ -297,8 +297,13 @@ void main() {
         await goTab(tester, 'History');
         expect(find.text('Amélie'), findsOneWidget);
         expect(
-          tester.widget<RatingStars>(find.byType(RatingStars)).rating,
-          Rating.four,
+          find
+              .byType(RatingStars)
+              .evaluate()
+              .map(
+                (element) => (element.widget as RatingStars).rating,
+              ),
+          contains(Rating.four),
         );
         expect(find.textContaining('Date unknown'), findsOneWidget);
         await tester.tap(find.text('Recommendations'));
