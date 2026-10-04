@@ -322,29 +322,31 @@ class _PosterTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final movie = entry.movie;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => context.push('/movies/${movie.tmdbId}', extra: entry),
-      onLongPress: () => _actions(context, ref),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AspectRatio(
-            aspectRatio: 2 / 3,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: MoviePoster(movie: movie),
+    return ExcludeTabSwipe(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => context.push('/movies/${movie.tmdbId}', extra: entry),
+        onLongPress: () => _actions(context, ref),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: MoviePoster(movie: movie),
+              ),
             ),
-          ),
-          const SizedBox(height: _titleGap),
-          Text(
-            movie.title,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: _titleStyle(context),
-          ),
-        ],
+            const SizedBox(height: _titleGap),
+            Text(
+              movie.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: _titleStyle(context),
+            ),
+          ],
+        ),
       ),
     );
   }

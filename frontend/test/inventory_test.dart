@@ -295,7 +295,7 @@ void main() {
 
         await goTab(tester, 'History');
         expect(find.text('Amélie'), findsOneWidget);
-        expect(find.text('Liked'), findsOneWidget);
+        expect(find.bySemanticsLabel('4 out of 5'), findsOneWidget);
         expect(find.textContaining('Date unknown'), findsOneWidget);
         await tester.tap(find.text('Recommendations'));
         await tester.pumpAndSettle();
