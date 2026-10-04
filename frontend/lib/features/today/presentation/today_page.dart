@@ -8,6 +8,7 @@ import '../application/today_controller.dart';
 import '../data/today_repository.dart';
 import 'context_view.dart';
 import 'recommendation_view.dart';
+import 'follow_up_banner.dart';
 import 'today_intro.dart';
 import 'today_states.dart';
 
@@ -82,7 +83,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
             onRetry: () => ref.invalidate(todayEnvelopeProvider),
           ),
         ),
-        data: (envelope) => switch (envelope.state) {
+        data: (envelope) => _withFollowUp(envelope, switch (envelope.state) {
           TodayStatus.offered ||
           TodayStatus.accepted ||
           TodayStatus.completed => RecommendationView(envelope: envelope),
@@ -104,8 +105,24 @@ class _TodayPageState extends ConsumerState<TodayPage>
               ),
             ),
           ),
-        },
+        }),
       ),
+    );
+  }
+
+  Widget _withFollowUp(TodayEnvelope envelope, Widget page) {
+    final prompt = envelope.followUp;
+    if (prompt == null) return page;
+    return Stack(
+      children: [
+        Positioned.fill(child: page),
+        Positioned(
+          top: MediaQuery.paddingOf(context).top + 8,
+          left: 12,
+          right: 12,
+          child: FollowUpBanner(prompt: prompt),
+        ),
+      ],
     );
   }
 }

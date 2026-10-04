@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/idempotency.dart';
+import '../../../core/network/movie_dto.dart';
+import '../../../shared/models/movie.dart';
 import '../../../shared/models/profile.dart';
 
 /// Explicit app-profile setup after sign-in (API_CONTRACT): POST
@@ -16,6 +18,8 @@ abstract interface class AccountRepository {
 
   /// GET /watch/regions: (code, name) pairs TMDB has providers for.
   Future<List<(String, String)>> regions();
+
+  Future<void> unblock(int tmdbId);
 }
 
 /// Null in the UI-preview build.
@@ -34,7 +38,25 @@ class ApiAccountRepository implements AccountRepository {
   }
 
   @override
-  Future<Profile> me() async => profileFromJson(await _api.get('/api/v1/me'));
+  Future<Profile> me() async {
+    final profile = await _api.get('/api/v1/me');
+    final blockedMovies = <Movie>[];
+    String? cursor;
+    do {
+      final blocks = await _api.get(
+        '/api/v1/me/blocks',
+        query: {
+          'limit': 50,
+          ...?(cursor == null ? null : {'cursor': cursor}),
+        },
+      );
+      for (final item in asList(blocks['items'])) {
+        blockedMovies.add(movieSummaryFromJson(asMap(asMap(item)['movie'])).$1);
+      }
+      cursor = blocks['next_cursor'] as String?;
+    } while (cursor != null);
+    return profileFromJson(profile, blockedMovies: blockedMovies);
+  }
 
   @override
   Future<void> setRegion(String? countryCode) async {
@@ -53,6 +75,15 @@ class ApiAccountRepository implements AccountRepository {
         ((r as Map)['code'] as String, r['name'] as String),
     ];
   }
+
+  @override
+  Future<void> unblock(int tmdbId) async {
+    final path = '/api/v1/me/blocks/$tmdbId';
+    await _keys.send(
+      commandFingerprint('DELETE', path, null),
+      (key) => _api.delete(path, idempotencyKey: key),
+    );
+  }
 }
 
 Map<String, dynamic> _map(Object? value) {
@@ -69,7 +100,10 @@ const _malformed = ApiError(
 /// MeResponse -> Profile. Missing required fields are a visible error, not an
 /// empty profile. Genre names arrive with the registry in P3; blocked films
 /// with GET /me/blocks in P5, so they are "not available" (null) here.
-Profile profileFromJson(Map<String, dynamic> json) {
+Profile profileFromJson(
+  Map<String, dynamic> json, {
+  List<Movie>? blockedMovies,
+}) {
   final prefs = _map(json['preferences']);
   final timezone = json['timezone'];
   final displayName = json['display_name'];
@@ -93,7 +127,7 @@ Profile profileFromJson(Map<String, dynamic> json) {
     blockedGenres: const [],
     defaultMaxRuntimeMinutes: cap as int?,
     aiContextEnabled: ai,
-    blockedMovies: null,
+    blockedMovies: blockedMovies,
     region: region as String?,
     regionChosen: chosen != null,
   );

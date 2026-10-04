@@ -14,7 +14,7 @@ It chooses **one** film from your own list — not a feed, not a carousel, not t
 
 ---
 
-> **Status:** in active development. Search, a persistent per-user watchlist and the deterministic Tonight pick work end to end against real services. History, ratings and blocks come next (P5). See [Roadmap](#roadmap).
+> **Status:** P5 implementation is complete on `feat/p5-history-ratings`; History, ratings, next-day follow-up and reversible Never recommend are backend-backed. See [Roadmap](#roadmap). The P5 migration is not applied to the hosted database.
 
 ## The problem
 
@@ -53,7 +53,7 @@ Cinemé is built to help you **decide**. The watchlist is the inventory you alre
 | Web / PWA | The same Flutter app as an installable web app (Add to Home Screen on iPhone): https://cineme-theta.vercel.app, hosted on Vercel with Neon PostgreSQL; wide browsers get a centred phone-width canvas. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Preview mode | An opt-in build with scripted, in-memory data that shows the full designed flow — including Tonight, feedback and history — without contacting any service |
 
-Not there yet: “Mark watched”, ratings, never-recommend blocks, the History tab and natural-language context. Those exist only in the preview build for now.
+P5 adds backend-backed History, ratings, explicit Mark watched actions, manual logging and reversible Never recommend blocks. Natural-language context is planned for P6. The P5 migration remains unapplied to the hosted database.
 
 ## Product principles
 
@@ -141,7 +141,7 @@ Phases and their gates are defined in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
 | P2 | Supabase auth, profile bootstrap, PostgreSQL foundation | Complete |
 | P3 | TMDB search and persistent per-user watchlist | Complete |
 | P4 | Deterministic daily selection: the real Tonight pick, with evidence, passes/pause, Already watched and where-to-watch (ADR 006, 007) | Complete |
-| P5 | Mark watched, ratings, blocks, History and conservative learning | Planned (next) |
+| P5 | Mark watched, ratings, blocks, History and conservative learning | Implemented; PR pending |
 | P6 | Structured tonight context and time interpretation | Planned |
 | P7 | Optional local LLM context adapter | Planned |
 | P8 | Release hardening, deployment and portfolio evidence | Planned |

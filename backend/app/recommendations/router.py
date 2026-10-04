@@ -19,7 +19,9 @@ from .schemas import (
     ChooseRequest,
     ComparisonResponse,
     ContextPatch,
+    FollowUpAction,
     HistoryPage,
+    MarkWatchedRequest,
     RecommendationDetail,
     RejectRequest,
     RejectResponse,
@@ -91,6 +93,43 @@ def accept(
     key = idempotency.parse_key(idempotency_key)
     status, payload = service.accept(
         session, identity.user_id, rec_id, body.expected_session_version, key
+    )
+    return JSONResponse(payload, status_code=status)
+
+
+@router.post("/recommendations/{rec_id}/follow-up", response_model=TodayEnvelope)
+def follow_up(
+    rec_id: uuid.UUID,
+    body: FollowUpAction,
+    identity: CallerIdentity,
+    session: DbSession,
+    idempotency_key: IdempotencyKey = None,
+) -> JSONResponse:
+    key = idempotency.parse_key(idempotency_key)
+    status, payload = service.follow_up_action(session, identity.user_id, rec_id, body.action, key)
+    return JSONResponse(payload, status_code=status)
+
+
+@router.post("/recommendations/{rec_id}/watched", response_model=None)
+def mark_watched(
+    rec_id: uuid.UUID,
+    body: MarkWatchedRequest,
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    idempotency_key: IdempotencyKey = None,
+) -> JSONResponse:
+    key = idempotency.parse_key(idempotency_key)
+    names, base = _display(provider)
+    status, payload = service.mark_watched(
+        session,
+        identity.user_id,
+        rec_id,
+        body.expected_session_version,
+        body.rating,
+        key,
+        names,
+        base,
     )
     return JSONResponse(payload, status_code=status)
 

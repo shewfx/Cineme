@@ -109,6 +109,7 @@ class TodayEnvelope {
     this.recommendation,
     this.noMatch,
     this.viewing,
+    this.followUp,
     this.rejectionCount = 0,
   });
 
@@ -126,6 +127,7 @@ class TodayEnvelope {
 
   /// Tonight's viewing once completed; carries the optional rating.
   final Viewing? viewing;
+  final FollowUpPrompt? followUp;
   final int rejectionCount;
 }
 

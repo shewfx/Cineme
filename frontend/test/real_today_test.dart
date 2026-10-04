@@ -13,6 +13,7 @@ import 'package:cineme/features/today/data/today_repository.dart';
 import 'package:cineme/preview/preview_store.dart';
 import 'package:cineme/shared/models/session_context.dart';
 import 'package:cineme/shared/models/today_state.dart';
+import 'package:cineme/shared/models/viewing.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +56,7 @@ class FakeTodayApi implements HttpClientAdapter {
   int version = 0;
   Map<String, dynamic>? context;
   Map<String, dynamic>? current;
+  Map<String, dynamic>? completedViewing;
   int rejections = 0;
   int attempts = 0;
   final offered = <int>{};
@@ -74,7 +76,9 @@ class FakeTodayApi implements HttpClientAdapter {
   Map<String, dynamic> get state {
     final String s;
     if (current != null) {
-      s = current!['status'] as String;
+      s = current!['status'] == 'watched'
+          ? 'completed'
+          : current!['status'] as String;
     } else if (emptyWatchlist) {
       s = 'empty_watchlist';
     } else if (context == null) {
@@ -98,9 +102,13 @@ class FakeTodayApi implements HttpClientAdapter {
               'overridden_fields': <String>[],
               'rejection_count': rejections,
               'attempt_count': attempts,
-              'completed_at': null,
+              'completed_at': completedViewing == null
+                  ? null
+                  : '2026-10-02T20:00:00Z',
             },
       'recommendation': current,
+      'viewing': completedViewing,
+      'follow_up': null,
     };
   }
 
@@ -290,6 +298,22 @@ class FakeTodayApi implements HttpClientAdapter {
       current = {...current!, 'status': 'accepted'};
       version++;
       return (200, state);
+    }
+    if (path.endsWith('/watched')) {
+      final movie = current!['movie'] as Map<String, dynamic>;
+      current = {...current!, 'status': 'watched'};
+      version++;
+      completedViewing = {
+        'id': 'viewing-1',
+        'movie': movie,
+        'watched_at': '2026-10-02T20:00:00Z',
+        'recorded_at': '2026-10-02T20:00:00Z',
+        'source': 'recommendation',
+        'rating': body['rating'],
+        'version': 1,
+        'recommendation_id': current!['id'],
+      };
+      return (200, {'viewing': completedViewing, 'today': state});
     }
     if (path.endsWith('/reject')) {
       rejections++;
@@ -1029,6 +1053,27 @@ void main() {
         await repo.reject(id, RejectReason.notTonight, chooseAnother: false);
         expect(rig.server.keys.last, isNot(rig.server.keys[2]));
         expect(rig.server.keys.toSet(), hasLength(3));
+      },
+    );
+
+    test(
+      'Mark watched unwraps the documented viewing and Today response',
+      () async {
+        final rig = TodayRig();
+        final repo = ApiTodayRepository(rig.api);
+        final picked = await repo.choose(
+          const SessionContext(desiredExperience: DesiredExperience.exciting),
+        );
+        final result = await repo.markWatched(
+          picked.recommendation!.id,
+          rating: Rating.liked,
+        );
+        expect(result.state, TodayStatus.completed);
+        expect(result.viewing?.rating, Rating.liked);
+        expect(result.viewing?.movie.tmdbId, 104);
+        final command = rig.server.commands('/watched').single;
+        expect((command.data as Map)['rating'], 'liked');
+        expect(rig.server.processed, 2);
       },
     );
 

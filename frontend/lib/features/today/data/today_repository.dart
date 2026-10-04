@@ -42,6 +42,8 @@ abstract interface class TodayRepository {
   /// POST /recommendations/{id}/watched: tonight's completion.
   Future<TodayEnvelope> markWatched(String recommendationId, {Rating? rating});
 
+  Future<TodayEnvelope> followUp(String recommendationId, String action);
+
   /// GET /recommendations/{id}: the winner's score breakdown for Why. Null
   /// when the source has none (the preview's scripted picks).
   Future<WhyBreakdown?> why(String recommendationId);
@@ -64,8 +66,10 @@ class ApiTodayRepository implements TodayRepository {
   int _version = 0;
 
   TodayEnvelope _envelope(Map<String, dynamic> json) {
-    final envelope = todayEnvelopeFromJson(json);
-    _version = sessionVersionOf(json);
+    final nested = json['today'];
+    final payload = nested == null ? json : asMap(nested);
+    final envelope = todayEnvelopeFromJson(payload);
+    _version = sessionVersionOf(payload);
     return envelope;
   }
 
@@ -179,12 +183,25 @@ class ApiTodayRepository implements TodayRepository {
     );
   }
 
-  /// Tonight's completion needs viewing history (P5); the normal build
-  /// doesn't offer Mark watched yet.
   @override
   Future<TodayEnvelope> markWatched(
     String recommendationId, {
     Rating? rating,
-  }) =>
-      throw UnsupportedError('Mark watched arrives with viewing history (P5).');
+  }) async {
+    final body = await _command('POST', _rec(recommendationId, 'watched'), {
+      'expected_session_version': _version,
+      'rating': rating?.name,
+    });
+    return _envelope(asMap(body['today']));
+  }
+
+  @override
+  Future<TodayEnvelope> followUp(
+    String recommendationId,
+    String action,
+  ) async => _envelope(
+    await _command('POST', _rec(recommendationId, 'follow-up'), {
+      'action': action,
+    }),
+  );
 }

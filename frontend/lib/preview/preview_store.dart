@@ -481,6 +481,20 @@ class FakeTodayRepository implements TodayRepository {
       .._current = null;
     return _s._envelope();
   }
+
+  @override
+  Future<TodayEnvelope> followUp(String recommendationId, String action) async {
+    await _s._io();
+    if (action == 'yes') {
+      final rec = _s._records.firstWhere((r) => r.id == recommendationId);
+      final viewing = _s._recordViewing(rec.movie!, watchedAt: _s.now());
+      _s
+        .._archive(rec.movie!.tmdbId, supersede: false)
+        .._setRecord(rec.id, RecommendationStatus.watched)
+        .._completedViewingId = viewing.id;
+    }
+    return _s._envelope();
+  }
 }
 
 /// The preview's stand-in for the server's `sort` (same rules): unknown year
@@ -667,7 +681,11 @@ class FakeHistoryRepository implements HistoryRepository {
   }
 
   @override
-  Future<Viewing> rateViewing(String viewingId, Rating? rating) async {
+  Future<Viewing> rateViewing(
+    String viewingId,
+    Rating? rating, {
+    int expectedVersion = 1,
+  }) async {
     await _s._io();
     final i = _s._viewings.indexWhere((v) => v.id == viewingId);
     if (i < 0) throw const InventoryConflict('NOT_FOUND');
@@ -679,7 +697,19 @@ class FakeHistoryRepository implements HistoryRepository {
       watchedAt: v.watchedAt,
       recordedAt: v.recordedAt,
       rating: rating,
+      version: v.version + 1,
     );
+  }
+
+  @override
+  Future<RecordWatchedResult> recordManual(int tmdbId) async {
+    final movie = _s._catalog[tmdbId];
+    if (movie == null) throw const InventoryConflict('NOT_FOUND');
+    final existing = _s._viewings.any((v) => v.movie.tmdbId == tmdbId);
+    final viewing = existing
+        ? _s._viewings.firstWhere((v) => v.movie.tmdbId == tmdbId)
+        : _s._recordViewing(movie);
+    return RecordWatchedResult(viewing: viewing, alreadyRecorded: existing);
   }
 }
 

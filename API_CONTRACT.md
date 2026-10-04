@@ -215,9 +215,13 @@ Each reason/uncertainty object also carries `text`, the deterministic template s
     "uncertainties": [],
     "created_at": "2026-10-01T22:20:00Z",
     "no_match_summary": null
-  }
+  },
+  "viewing": null,
+  "follow_up": null
 }
 ```
+
+`viewing` is populated for a completed Mark watched choice and includes its optional rating. `follow_up` is the most recent unresolved accepted recommendation from an earlier user-local calendar date and includes its accepted local date. A `not_yet` answer suppresses that prompt until a later local date.
 
 Use full RecommendationSummary in actual responses; movie=null is valid only for no_match, not offered. States: `not_started`, `ready`, `offered`, `accepted`, `completed`, `paused`, `no_match`, `empty_watchlist`. Derive in this precedence: completed session ->completed; offered/accepted pointer ->matching state; no_match pointer ->no_match; no active watchlist ->empty_watchlist; absent session ->not_started; existing no-pointer session with >=3 rejections ->paused; otherwise ->ready. No session means session/recommendation null and expected version0. Never return “offered” without a movie. Every mutation affecting Today returns the current envelope where specified.
 
@@ -302,6 +306,10 @@ Paginated `{items:[{movie:MovieSummary,blocked_at:"..."}],next_cursor:null}` new
 ### DELETE `/me/blocks/{tmdb_id}`
 
 Explicit unblock, idempotency key. Response200 `{unblocked:true,watchlist_restored:false,today:TodayEnvelope}`; absent block succeeds. Does not re-add archived entry. Invalidate cached no-match pointer if necessary; existing offered/accepted pick stays stable when only expanding eligibility.
+
+### POST `/me/blocks/{tmdb_id}`
+
+Explicit persistent Never recommend, idempotency key. Response200 `{blocked:true,already_blocked:boolean,today:TodayEnvelope}`. Block is per-user, hard-excluded by eligibility and creates no rating/history evidence.
 
 ## Movies and metadata
 
@@ -461,13 +469,17 @@ Request examples:
 }
 ```
 
-P4 accepts not_tonight/too_long/wrong_genre/too_serious/want_lighter/other and already_watched (records a viewing with unknown or past date, no rating, never tonight's completion; ADR 006 amendment); never_recommend returns 422 until P5 adds blocks. Request also accepts choose_another boolean, defaultfalse, alongside expected_session_version/reason/details/note. UI Pick another and direct Already seen send true; Stop sends false. Just give me another and Not feeling this one both map to not_tonight, never implicit dislike. Reason code enum in PROJECT_SPEC. Details defaults `{}`. For wrong_genre require nonempty chosen subset of selected film genres. For too_long optional cap must be shorter than effective existing cap if present; if absent any valid user-entered cap is accepted. All other reason-specific extra detail keys rejected. Already_watched may include `watched_at:null|past timestamp`; never_recommend has no detail. Other may have optional note. Only current offered/accepted resource in today's session.
+P5 accepts not_tonight/too_long/wrong_genre/too_serious/want_lighter/other, already_watched (records a viewing with unknown or past date, no rating, never tonight's completion; ADR 006 amendment) and never_recommend (persistent user-scoped block). Request also accepts choose_another boolean, defaultfalse, alongside expected_session_version/reason/details/note. UI Pick another and direct Already seen send true; Stop sends false. Just give me another and Not feeling this one both map to not_tonight, never implicit dislike. Reason code enum in PROJECT_SPEC. Details defaults `{}`. For wrong_genre require nonempty chosen subset of selected film genres. For too_long optional cap must be shorter than effective existing cap if present; if absent any valid user-entered cap is accepted. All other reason-specific extra detail keys rejected. Already_watched may include `watched_at:null|past timestamp`; never_recommend has no detail. Other may have optional note. Only current offered/accepted resource in today's session.
 
 200 `{feedback:{id:"uuid",reason:"too_long",created_at:"..."},viewing:null|ViewingSummary,today:TodayEnvelope}`. Atomic rejection/context/watch/block changes. Old pointer cleared, session version incremented ONCE for the whole atomic command. With choose_another=true, select exactly ONE replacement atomically under updated context (no_match allowed), and return that as today.recommendation. On third/later rejection or exhausted durable attempt quota, feedback still commits but no auto-replacement; return paused or ready with replacement_outcome=paused|daily_limit and no film. Defaultfalse selects none. Add replacement_outcome=selected|no_match|paused|daily_limit|not_requested to the response. No partial feedback failure is hidden: invalid requests roll back; no-match/pause/quota outcomes are valid committed feedback results. Wrong-genre effects remove avoided IDs from tonight's preferred list. Want-lighter sets desired_experience=relax and optional heaviness target; too-serious sets only heaviness target, as specified, preserving all unrelated context fields.409 invalid transition/version;422 unsupported detail.
 
 ### POST `/recommendations/{id}/watched`
 
-Request `{expected_session_version:3,rating:"liked"}`; rating optional/null.200 `{viewing:ViewingSummary,today:TodayEnvelope}`. Current offered or accepted today; allow offered because user may have watched without tapping accept. Records server completion time, archives watchlist, marks record watched and session completed atomically.409 stale/noncurrent/expired. Rating may be skipped and edited later. Retries cannot create second viewing.
+Request `{expected_session_version:3,rating:"liked"}`; rating optional/null.200 `{viewing:ViewingSummary,today:TodayEnvelope}`. Current offered or accepted today; allow offered because user may have watched without tapping accept. Records server completion time, archives watchlist, marks record watched and session completed atomically. `today.viewing` is also populated for the completed card.409 stale/noncurrent/expired. Rating may be skipped and edited later. Retries cannot create second viewing.
+
+### POST `/recommendations/{id}/follow-up`
+
+Request `{action:"yes"|"no"|"not_yet"}`; the recommendation must belong to this user and an earlier local date. `yes` records through the canonical viewing path and resolves the accepted intent; `no` resolves it without a viewing and leaves inventory alone; `not_yet` stores the user's local date and can be asked again only on a later local date. Response200 TodayEnvelope; same-key retries replay. GET `/today` returns at most the most recent unresolved accepted recommendation, including after missed days. No action duplicates a viewing.
 
 ### GET `/recommendations`
 

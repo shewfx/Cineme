@@ -82,6 +82,10 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
   final rec = json['recommendation'] == null
       ? null
       : asMap(json['recommendation']);
+  final followUpJson = json['follow_up'] == null
+      ? null
+      : asMap(json['follow_up']);
+  final viewingJson = json['viewing'] == null ? null : asMap(json['viewing']);
 
   Recommendation? recommendation;
   NoMatchSummary? noMatch;
@@ -113,6 +117,33 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
       recommendation == null) {
     throw malformedResponse; // never "offered" without a film
   }
+  Viewing? viewing;
+  if (viewingJson != null) {
+    final recordedAt = DateTime.tryParse(
+      viewingJson['recorded_at'] as String? ?? '',
+    );
+    final watchedAtRaw = viewingJson['watched_at'];
+    final ratingRaw = viewingJson['rating'];
+    if (recordedAt == null ||
+        (watchedAtRaw != null && watchedAtRaw is! String)) {
+      throw malformedResponse;
+    }
+    viewing = Viewing(
+      id: viewingJson['id'] as String,
+      movie: movieSummaryFromJson(asMap(viewingJson['movie'])).$1,
+      watchedAt: watchedAtRaw == null
+          ? null
+          : DateTime.tryParse(watchedAtRaw as String),
+      recordedAt: recordedAt,
+      rating: ratingRaw == null
+          ? null
+          : Rating.values.firstWhere(
+              (value) => value.name == ratingRaw,
+              orElse: () => throw malformedResponse,
+            ),
+      version: viewingJson['version'] as int? ?? 1,
+    );
+  }
   return TodayEnvelope(
     state: state,
     context: session == null
@@ -120,6 +151,16 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
         : sessionContextFromJson(asMap(session['context'])),
     recommendation: recommendation,
     noMatch: noMatch,
+    viewing: viewing,
+    followUp: followUpJson == null
+        ? null
+        : FollowUpPrompt(
+            recommendationId: followUpJson['recommendation_id'] as String,
+            movie: movieSummaryFromJson(asMap(followUpJson['movie'])).$1,
+            acceptedLocalDate: DateTime.parse(
+              followUpJson['accepted_local_date'] as String,
+            ),
+          ),
     rejectionCount: (session?['rejection_count'] as int?) ?? 0,
   );
 }

@@ -173,7 +173,7 @@ CHECK jsonb_typeof(top_candidates)='array' and jsonb_array_length(top_candidates
 
 `id uuid PK`, `recommendation_id uuid UNIQUE FK recommendations CASCADE`, `reason text`, `details jsonb`, `note varchar(500) nullable`, `created_at timestamptz`.
 
-Reason enum matches PROJECT_SPEC. Details may contain a confirmed shorter cap, selected avoided genres, and/or resulting context effect. No independent user/movie foreign keys: derive them through owned recommendation to avoid mismatches. Rating is not stored here. On already-watched rejection, create/reuse viewing and archive watchlist in the same transaction. On never-recommend, create block and archive. One rejected recommendation means one feedback row.
+Reason enum matches PROJECT_SPEC. Details may contain a confirmed shorter cap, selected avoided genres, and/or resulting context effect. No independent user/movie foreign keys: derive them through owned recommendation to avoid mismatches. Rating is not stored here. On already-watched rejection, create/reuse viewing and archive watchlist in the same transaction. On never-recommend, create a persistent block without changing watchlist inventory. One rejected recommendation means one feedback row.
 
 ### `idempotency_records`
 
@@ -234,7 +234,7 @@ Fixture movies and users exist only in explicit test/demo seeding, never automat
 - P3: movies and watchlist_entries; their private mutations reuse the P2 idempotency ledger.
 - P4: recommendation_sessions and recommendations with bounded JSON evidence; no candidate-score table; rejection_feedback brought forward for temporary reasons (ADR 006).
 - P4 polish (migration 0004; ADR 006 amendment, ADR 007): viewings in the documented shape, written only by the already_watched rejection; `users.country_code varchar(2)` nullable (streaming region); `movies.watch_providers jsonb` + `watch_providers_fetched_at` (24 h shared availability cache).
-- P5: movie_blocks, manual viewings, ratings and their edits.
+- P5 (migration 0005): per-user `movie_blocks` plus durable follow-up prompted/resolved state on recommendations. Activates manual viewings, categorical ratings and their edits on the existing one-viewing-per-user/movie table. Hosted migration is not applied by this milestone.
 - P6: optional movie_traits table only when deliberately enabling reviewed enrichment. Core ranking must also work without it.
 
 Future-table queries do not run in earlier phases: recommendation scorer tests use typed fixtures; P4 history inputs are empty until P5 exists. Avoid placeholder database tables just to satisfy an import. Post-P5 migrations preserve real data.

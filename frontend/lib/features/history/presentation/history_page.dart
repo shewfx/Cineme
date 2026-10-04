@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/format.dart';
 import '../../../core/theme/app_theme.dart';
@@ -11,6 +12,7 @@ import '../../../core/widgets/tab_page.dart';
 import '../../../shared/models/viewing.dart';
 import '../application/history_controllers.dart';
 import '../data/history_repository.dart';
+import '../../today/presentation/feedback_sheets.dart';
 
 /// Watched and Recommendations segments. Read-only in P1b.
 class HistoryPage extends ConsumerStatefulWidget {
@@ -23,6 +25,36 @@ class HistoryPage extends ConsumerStatefulWidget {
 class _HistoryPageState extends ConsumerState<HistoryPage> {
   var _segment = 0;
 
+  Future<void> _editRating(BuildContext context, Viewing viewing) async {
+    final result = await showModalBottomSheet<(bool, Rating?)>(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (sheet) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: RatingSelector(
+          value: viewing.rating,
+          onChanged: (value) => Navigator.pop(sheet, (true, value)),
+        ),
+      ),
+    );
+    if (result == null || !result.$1 || !context.mounted) return;
+    try {
+      await ref
+          .read(historyRepositoryProvider)!
+          .rateViewing(viewing.id, result.$2, expectedVersion: viewing.version);
+      ref.invalidate(viewingHistoryProvider);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't save your rating. Try again."),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (ref.watch(historyRepositoryProvider) == null) {
@@ -30,6 +62,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     }
     return TabPage(
       title: 'History',
+      action: IconButton(
+        tooltip: 'Log watched movie',
+        onPressed: () => context.push('/search?mode=log'),
+        icon: const Icon(Icons.add),
+      ),
       child: Column(
         children: [
           Padding(
@@ -71,6 +108,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             : 'Date unknown  ·  recorded ${shortDate(v.recordedAt)}',
                         v.rating?.label ?? 'No rating',
                       ],
+                      trailing: TextButton(
+                        onPressed: () => _editRating(context, v),
+                        child: Text(v.rating == null ? 'Rate' : 'Edit'),
+                      ),
                     ),
                     onRetry: () => ref.invalidate(viewingHistoryProvider),
                     onRefresh: () => ref.refresh(viewingHistoryProvider.future),

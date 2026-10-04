@@ -72,6 +72,9 @@ class FakeAuth implements AuthRepository {
 /// Per-user server state, so account switches can be checked for leaks.
 class FakeAccount implements AccountRepository {
   @override
+  Future<void> unblock(int tmdbId) async {}
+
+  @override
   Future<void> setRegion(String? countryCode) async {}
 
   @override

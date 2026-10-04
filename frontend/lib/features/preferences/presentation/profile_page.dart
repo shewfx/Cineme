@@ -157,7 +157,7 @@ class _BlockedRowState extends ConsumerState<_BlockedRow> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            '“${widget.title}” can be recommended again once you add it back.',
+            '“${widget.title}” can be recommended again if it is in your watchlist.',
           ),
         ),
       );

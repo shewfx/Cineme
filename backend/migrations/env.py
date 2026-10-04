@@ -11,6 +11,7 @@ from app.core import idempotency  # noqa: F401  (registers idempotency_records)
 from app.core.db import Base
 from app.movies import models as movie_models  # noqa: F401  (registers movies)
 from app.recommendations import models as recommendation_models  # noqa: F401  (P4)
+from app.users import blocks as movie_blocks  # noqa: F401 (P5)
 from app.users import models  # noqa: F401  (registers users tables)
 from app.viewings import models as viewing_models  # noqa: F401  (ADR 006)
 from app.watchlist import models as watchlist_models  # noqa: F401  (watchlist)

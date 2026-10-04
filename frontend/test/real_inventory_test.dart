@@ -188,6 +188,9 @@ class FakeAuth implements AuthRepository {
 
 class FakeAccount implements AccountRepository {
   @override
+  Future<void> unblock(int tmdbId) async {}
+
+  @override
   Future<void> setRegion(String? countryCode) async {}
 
   @override

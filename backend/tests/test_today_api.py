@@ -123,7 +123,7 @@ def test_first_pick_is_one_watchlist_film_and_reload_keeps_it(
     assert r.status_code == 201
     env = r.json()
     assert env["state"] == "offered"
-    assert set(env) == {"state", "local_date", "session", "recommendation"}
+    assert set(env) == {"state", "local_date", "session", "recommendation", "viewing", "follow_up"}
     rec = env["recommendation"]
     assert rec["movie"]["tmdb_id"] in {LOLA, PRIMER, 501, 502, 503}
     assert rec["movie"]["runtime_minutes"] <= 100
@@ -407,6 +407,128 @@ def test_accept_persists_and_creates_no_history(stocked: Tonight, engine: Engine
     assert active == 1, "accepting is not watching"
     stocked.version -= 1
     assert stocked.accept(rec_id).status_code == 409
+
+
+def test_accepted_pick_surfaces_followup_on_next_local_date(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch, engine: Engine
+) -> None:
+    day_one = datetime(2026, 10, 3, 18, tzinfo=UTC)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one)
+    picked = stocked.choose(ctx())
+    rec_id, movie_id = stocked.pick(picked.json())
+    stocked.accept(rec_id)
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings") == 0
+
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one + timedelta(days=1))
+    prompt = stocked.get().get("follow_up")
+    assert prompt["recommendation_id"] == rec_id
+    assert prompt["movie"]["tmdb_id"] == movie_id
+    assert prompt["accepted_local_date"] == "2026-10-03"
+
+
+def test_followup_not_yet_is_suppressed_until_a_later_local_date(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    day_one = datetime(2026, 10, 3, 18, tzinfo=UTC)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one)
+    rec_id, _ = stocked.pick(stocked.choose(ctx()).json())
+    stocked.accept(rec_id)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one + timedelta(days=1))
+    response = stocked.post(f"/api/v1/recommendations/{rec_id}/follow-up", {"action": "not_yet"})
+    assert response.status_code == 200
+    assert stocked.get()["follow_up"] is None
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one + timedelta(days=2))
+    assert stocked.get()["follow_up"]["recommendation_id"] == rec_id
+
+
+def test_followup_boundary_uses_the_users_local_midnight(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stocked.client.patch(
+        "/api/v1/me",
+        json={"timezone": "Asia/Kolkata"},
+        headers=stocked.headers | {"Idempotency-Key": str(uuid.uuid4())},
+    )
+    acceptance_time = datetime(2026, 10, 3, 18, 20, tzinfo=UTC)  # 23:50 local
+    monkeypatch.setattr(today_service, "utc_now", lambda: acceptance_time)
+    rec_id, _ = stocked.pick(stocked.choose(ctx()).json())
+    stocked.accept(rec_id)
+    monkeypatch.setattr(today_service, "utc_now", lambda: datetime(2026, 10, 3, 18, 29, tzinfo=UTC))
+    assert stocked.get()["local_date"] == "2026-10-03"
+    assert stocked.get()["follow_up"] is None
+    monkeypatch.setattr(today_service, "utc_now", lambda: datetime(2026, 10, 3, 18, 31, tzinfo=UTC))
+    assert stocked.get()["local_date"] == "2026-10-04"
+    assert stocked.get()["follow_up"]["recommendation_id"] == rec_id
+
+
+def test_followup_yes_records_once_and_completes_intent(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch, engine: Engine
+) -> None:
+    day_one = datetime(2026, 10, 3, 18, tzinfo=UTC)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one)
+    rec_id, movie_id = stocked.pick(stocked.choose(ctx()).json())
+    stocked.accept(rec_id)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one + timedelta(days=1))
+    key = str(uuid.uuid4())
+    first = stocked.post(f"/api/v1/recommendations/{rec_id}/follow-up", {"action": "yes"}, key)
+    replay = stocked.post(f"/api/v1/recommendations/{rec_id}/follow-up", {"action": "yes"}, key)
+    assert first.status_code == 200 and replay.json() == first.json()
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE movie_id=:m", m=movie_id) == 1
+    assert (
+        scalar(
+            engine, "SELECT status FROM cineme.recommendations WHERE id=:id", id=uuid.UUID(rec_id)
+        )
+        == "watched"
+    )
+    assert (
+        scalar(engine, "SELECT status FROM cineme.watchlist_entries WHERE movie_id=:m", m=movie_id)
+        == "removed"
+    )
+
+
+def test_followup_no_resolves_without_watch_or_inventory_change(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch, engine: Engine
+) -> None:
+    day_one = datetime(2026, 10, 3, 18, tzinfo=UTC)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one)
+    rec_id, movie_id = stocked.pick(stocked.choose(ctx()).json())
+    stocked.accept(rec_id)
+    monkeypatch.setattr(today_service, "utc_now", lambda: day_one + timedelta(days=1))
+    result = stocked.post(f"/api/v1/recommendations/{rec_id}/follow-up", {"action": "no"})
+    assert result.status_code == 200 and result.json()["follow_up"] is None
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE movie_id=:m", m=movie_id) == 0
+    assert (
+        scalar(engine, "SELECT status FROM cineme.watchlist_entries WHERE movie_id=:m", m=movie_id)
+        == "active"
+    )
+
+
+def test_mark_watched_completes_today_and_exposes_viewing(stocked: Tonight) -> None:
+    rec_id, movie_id = stocked.pick(stocked.choose(ctx()).json())
+    response = stocked.post(
+        f"/api/v1/recommendations/{rec_id}/watched",
+        {"expected_session_version": stocked.version, "rating": "liked"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    envelope = result["today"]
+    assert envelope["state"] == "completed"
+    assert envelope["viewing"]["movie"]["tmdb_id"] == movie_id
+    assert envelope["viewing"]["rating"] == "liked"
+    assert result["viewing"]["id"] == envelope["viewing"]["id"]
+
+
+def test_manual_log_supersedes_a_current_pick_without_completing_today(
+    stocked: Tonight,
+) -> None:
+    rec_id, movie_id = stocked.pick(stocked.choose(ctx()).json())
+    result = stocked.post("/api/v1/viewings", {"tmdb_id": movie_id})
+    assert result.status_code == 201
+    assert result.json()["today"]["state"] == "ready"
+    assert result.json()["today"]["session"]["completed_at"] is None
+    assert result.json()["viewing"]["recommendation_id"] is None
+    detail = stocked.client.get(f"/api/v1/recommendations/{rec_id}", headers=stocked.headers).json()
+    assert detail["recommendation"]["status"] == "superseded"
 
 
 def test_accepted_pick_survives_reload_and_choose(stocked: Tonight) -> None:
@@ -751,7 +873,111 @@ def test_reject_and_accept_replays_never_apply_twice(stocked: Tonight, engine: E
 def test_viewings_are_private(stocked: Tonight, b: Tonight, engine: Engine) -> None:
     rec_id, movie = stocked.pick(stocked.choose(ctx()).json())
     stocked.reject(rec_id, "already_watched")
+    a_history = stocked.client.get("/api/v1/viewings", headers=stocked.headers).json()
+    b_history = b.client.get("/api/v1/viewings", headers=b.headers).json()
+    assert any(row["movie"]["tmdb_id"] == movie for row in a_history["items"])
+    assert b_history["items"] == []
     assert b.add(movie).status_code == 201, "A's history never blocks B"
     b_pick = b.choose(ctx()).json()
     assert b_pick["recommendation"]["movie"]["tmdb_id"] == movie
     assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE user_id = :u", u=b.id) == 0
+
+
+def test_manual_viewing_is_idempotent_and_archives_inventory(
+    stocked: Tonight, engine: Engine
+) -> None:
+    movie = LOLA
+    body = {"tmdb_id": movie, "rating": "loved"}
+    key = str(uuid.uuid4())
+    first = stocked.post("/api/v1/viewings", body, key)
+    assert first.status_code == 201
+    result = first.json()
+    assert result["viewing"]["watched_at"] is None
+    assert result["viewing"]["rating"] == "loved"
+    assert result["already_recorded"] is False
+    replay = stocked.post("/api/v1/viewings", body, key)
+    assert replay.status_code == 201 and replay.json() == result
+    duplicate = stocked.post("/api/v1/viewings", body)
+    assert duplicate.status_code == 200 and duplicate.json()["already_recorded"] is True
+    assert duplicate.json()["viewing"]["id"] == result["viewing"]["id"]
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE movie_id=:m", m=movie) == 1
+    assert (
+        scalar(engine, "SELECT status FROM cineme.watchlist_entries WHERE movie_id=:m", m=movie)
+        == "removed"
+    )
+
+
+def test_viewing_rating_is_versioned_and_private(stocked: Tonight, b: Tonight) -> None:
+    created = stocked.post("/api/v1/viewings", {"tmdb_id": PRIMER})
+    viewing = created.json()["viewing"]
+    path = f"/api/v1/viewings/{viewing['id']}"
+    changed = stocked.client.patch(
+        path,
+        json={"expected_version": 1, "rating": "disliked"},
+        headers=stocked.headers | {"Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["rating"] == "disliked" and changed.json()["version"] == 2
+    stale = stocked.client.patch(
+        path,
+        json={"expected_version": 1, "rating": "loved"},
+        headers=stocked.headers | {"Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert stale.status_code == 409
+    foreign = b.client.patch(
+        path,
+        json={"expected_version": 2, "rating": "loved"},
+        headers=b.headers | {"Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert foreign.status_code == 404
+
+
+def test_never_recommend_is_persistent_and_reversible(
+    stocked: Tonight, b: Tonight, engine: Engine
+) -> None:
+    rec_id, movie = stocked.pick(stocked.choose(ctx()).json())
+    rejected = stocked.reject(rec_id, "never_recommend")
+    assert rejected.status_code == 200
+    assert (
+        scalar(engine, "SELECT count(*) FROM cineme.movie_blocks WHERE movie_id=:m", m=movie) == 1
+    )
+    assert scalar(engine, "SELECT count(*) FROM cineme.viewings WHERE movie_id=:m", m=movie) == 0
+    assert (
+        scalar(engine, "SELECT status FROM cineme.watchlist_entries WHERE movie_id=:m", m=movie)
+        == "removed"
+    )
+    assert b.add(movie).status_code == 201, "A's block never affects B"
+    headers = stocked.headers | {"Idempotency-Key": str(uuid.uuid4())}
+    blocks = stocked.client.get("/api/v1/me/blocks", headers=stocked.headers)
+    assert blocks.status_code == 200
+    assert any(row["movie"]["tmdb_id"] == movie for row in blocks.json()["items"])
+    headers["Idempotency-Key"] = str(uuid.uuid4())
+    unblocked = stocked.client.delete(f"/api/v1/me/blocks/{movie}", headers=headers)
+    assert unblocked.status_code == 200
+    assert unblocked.json()["watchlist_restored"] is False
+    assert (
+        scalar(engine, "SELECT count(*) FROM cineme.movie_blocks WHERE movie_id=:m", m=movie) == 0
+    )
+
+
+def test_rated_viewings_reach_the_existing_affinity_component(
+    stocked: Tonight, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.recommendations import engine as ranking_engine
+
+    stocked.post("/api/v1/viewings", {"tmdb_id": LOLA, "rating": "loved"})
+    captured: list[tuple[Any, ...]] = []
+    original = ranking_engine.genre_affinities
+
+    def observe(inp: Any, config: Any) -> Any:
+        captured.append(inp.rated_viewings)
+        return original(inp, config)
+
+    monkeypatch.setattr(ranking_engine, "genre_affinities", observe)
+    result = stocked.choose(ctx()).json()
+    assert result["recommendation"] is not None
+    assert captured and any(
+        item.rating == "loved" and item.genre_ids == (28, 18)
+        for items in captured
+        for item in items
+    )
