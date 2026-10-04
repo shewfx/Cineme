@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'nav_finders.dart';
+
 PreviewStore store({List<Movie> watchlist = previewWatchlist}) =>
     PreviewStore(watchlist: watchlist, latency: Duration.zero);
 
@@ -64,6 +66,7 @@ String shownTitle(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const ValueKey('tonight-title'))).data!;
 
 Future<void> pickHooked(WidgetTester tester) async {
+  await tapText(tester, 'Choose one');
   await tapText(tester, 'Keep me hooked');
   await tapText(tester, 'Pick my movie');
 }
@@ -523,29 +526,37 @@ void main() {
     ) async {
       await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      expect(find.text('Cheer me up'), findsNothing);
+      await tapText(tester, 'Not set');
       await tapText(tester, 'Down');
-
-      for (final (label, _) in downFollowUps) {
-        expect(find.text(label), findsWidgets);
+      // Feeling down chooses no intent, and certainly not comedy.
+      expect(find.text('Choose one'), findsOneWidget);
+      for (final intent in DesiredExperience.values) {
+        expect(find.text(intent.label), findsNothing, reason: intent.label);
       }
-      for (final pill in tester.widgetList<ChoicePill>(
-        find.byType(ChoicePill),
-      )) {
-        if (pill.label != 'Down' && pill.label != 'Any length') {
-          expect(pill.selected, isFalse, reason: pill.label);
-        }
-      }
-      await tapText(tester, 'Cheer me up');
       expect(
         tester
-            .widget<ChoicePill>(
-              find.widgetWithText(ChoicePill, 'Make me laugh'),
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Pick my movie'),
             )
-            .selected,
-        isTrue,
+            .onPressed,
+        isNull,
       );
+
+      // The intent sheet then offers exactly the four documented follow-ups.
+      await tapText(tester, 'Choose one');
+      expect(find.text('What would help tonight?'), findsOneWidget);
+      for (final (label, _) in downFollowUps) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Make me laugh'), findsNothing);
+      expect(find.text('Deep'), findsNothing);
+      for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
+        expect(tile.selected, isFalse, reason: 'nothing is preselected');
+      }
+      await tapText(tester, 'Cheer me up');
+      expect(find.text('Make me laugh'), findsOneWidget);
       expect(find.text('Cheer me up'), findsNothing);
+      expect(find.text('Down'), findsOneWidget);
     });
 
     testWidgets('Edit tonight keeps the film for a mood-only change', (
@@ -652,12 +663,7 @@ void main() {
     ) async {
       await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Profile'),
-        ),
-      );
+      await tester.tap(navTab('Profile'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Editing is coming later'), findsWidgets);
       await tester.scrollUntilVisible(

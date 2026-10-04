@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'nav_finders.dart';
+
 PreviewStore store({List<Movie> watchlist = previewWatchlist}) =>
     PreviewStore(watchlist: watchlist, latency: Duration.zero);
 
@@ -37,9 +39,7 @@ Widget app(PreviewStore s) => ProviderScope(
 );
 
 Future<void> goTab(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
-  );
+  await tester.tap(navTab(label));
   await tester.pumpAndSettle();
 }
 
@@ -69,7 +69,7 @@ Future<void> expectClearsNav(WidgetTester tester, String lastTitle) async {
   );
   await tester.pumpAndSettle();
   final last = tester.getRect(find.text(lastTitle));
-  final nav = tester.getRect(find.byType(NavigationBar));
+  final nav = tester.getRect(find.byType(FloatingNavBar));
   expect(last.bottom, lessThanOrEqualTo(nav.top), reason: lastTitle);
 }
 
@@ -113,7 +113,10 @@ class _SlowSearch implements MovieSearchRepository {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  // Posters are the default; these screens are exercised as a list.
+  setUp(
+    () => SharedPreferences.setMockInitialValues({'watchlist_layout': 'list'}),
+  );
 
   group('Preview store keeps the documented inventory rules', () {
     test('watchlist pages 20 at a time, newest first, then ends', () async {
@@ -310,9 +313,10 @@ void main() {
 
         // Tonight still exposes one film, however many are in the watchlist.
         await goTab(tester, 'Tonight');
-        await tester.ensureVisible(find.text('Exciting'));
-        await tester.tap(find.text('Exciting'));
-        await tester.pump();
+        await tester.tap(find.text('Choose one'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Exciting').last);
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Pick my movie'));
         await tester.pumpAndSettle();
         expect(find.byType(MoviePoster), findsOneWidget);
@@ -453,6 +457,23 @@ void main() {
       expect(find.text('Run Lola Run'), findsNothing);
       expect(find.text('Removed “Run Lola Run”.'), findsOneWidget);
       semantics.dispose();
+    });
+
+    testWidgets('posters are the default layout and titles are centred', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(app(store()));
+      await tester.pumpAndSettle();
+      await goTab(tester, 'Watchlist');
+      expect(find.byType(SliverGrid), findsOneWidget);
+      expect(find.byTooltip('Show as list'), findsOneWidget);
+      final title = tester.widget<Text>(find.text('Run Lola Run'));
+      expect(title.textAlign, TextAlign.center);
+      // Centred under its own poster.
+      final poster = tester.getRect(find.byType(AspectRatio).first);
+      final text = tester.getRect(find.text('Run Lola Run'));
+      expect(text.center.dx, closeTo(poster.center.dx, 0.5));
     });
 
     testWidgets('list/poster toggle switches layout and is remembered', (
@@ -792,9 +813,10 @@ void main() {
     ) async {
       await tester.pumpWidget(app(store()));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Exciting'));
-      await tester.tap(find.text('Exciting'));
-      await tester.pump();
+      await tester.tap(find.text('Choose one'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exciting').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Pick my movie'));
       await tester.pumpAndSettle();
       expect(find.text('Run Lola Run'), findsOneWidget);
@@ -839,7 +861,7 @@ void main() {
       await tester.pumpAndSettle();
       // No tabs at all without configuration, so no fake inventory either.
       expect(find.text('This build is not configured'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
       expect(find.text('Run Lola Run'), findsNothing);
     });
   });

@@ -40,6 +40,7 @@ Future<RejectRequest?> showRejectSheet(
   required int rejectionCount,
 }) => showModalBottomSheet<RejectRequest>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: AppColors.surface,
   showDragHandle: true,
@@ -245,6 +246,7 @@ Future<(bool, Rating?)?> showMarkWatchedSheet(
   Movie movie,
 ) => showModalBottomSheet<(bool, Rating?)>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: AppColors.surface,
   showDragHandle: true,

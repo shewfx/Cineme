@@ -483,15 +483,68 @@ class FakeTodayRepository implements TodayRepository {
   }
 }
 
+/// The preview's stand-in for the server's `sort` (same rules): unknown year
+/// or runtime last in both directions, ties by title A-Z then entry id. The
+/// input is newest first, which is also the stable fallback order.
+List<WatchlistEntry> sortWatchlist(
+  List<WatchlistEntry> newestFirst,
+  WatchlistSort sort,
+) {
+  int byTitle(WatchlistEntry a, WatchlistEntry b) {
+    final c = a.movie.title.toLowerCase().compareTo(
+      b.movie.title.toLowerCase(),
+    );
+    return c != 0 ? c : a.id.compareTo(b.id);
+  }
+
+  int unknownLast(int? x, int? y, bool ascending) {
+    if (x == null || y == null) {
+      return x == y ? 0 : (x == null ? 1 : -1);
+    }
+    final c = x.compareTo(y);
+    return ascending ? c : -c;
+  }
+
+  Comparator<WatchlistEntry>? compare = switch (sort) {
+    WatchlistSort.addedDesc => null,
+    WatchlistSort.addedAsc => null,
+    WatchlistSort.titleAsc => byTitle,
+    WatchlistSort.titleDesc => (a, b) => byTitle(b, a),
+    WatchlistSort.yearAsc || WatchlistSort.yearDesc => (a, b) {
+      final c = unknownLast(
+        a.movie.year,
+        b.movie.year,
+        sort == WatchlistSort.yearAsc,
+      );
+      return c != 0 ? c : byTitle(a, b);
+    },
+    WatchlistSort.runtimeAsc || WatchlistSort.runtimeDesc => (a, b) {
+      final c = unknownLast(
+        a.movie.runtimeMinutes,
+        b.movie.runtimeMinutes,
+        sort == WatchlistSort.runtimeAsc,
+      );
+      return c != 0 ? c : byTitle(a, b);
+    },
+  };
+  if (sort == WatchlistSort.addedAsc) return newestFirst.reversed.toList();
+  final copy = [...newestFirst];
+  if (compare != null) copy.sort(compare);
+  return copy;
+}
+
 class FakeWatchlistRepository implements WatchlistRepository {
   FakeWatchlistRepository(this._s);
 
   final PreviewStore _s;
 
   @override
-  Future<Paged<WatchlistEntry>> list({String? cursor}) async {
+  Future<Paged<WatchlistEntry>> list({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+  }) async {
     await _s._io();
-    return _s._page(_s._active, cursor, pageSize);
+    return _s._page(sortWatchlist(_s._active, sort), cursor, pageSize);
   }
 
   @override

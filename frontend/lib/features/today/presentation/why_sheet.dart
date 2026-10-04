@@ -21,6 +21,7 @@ const _components = [
 Future<void> showWhySheet(BuildContext context, Recommendation r) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       showDragHandle: true,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
+import '../core/widgets/floating_nav_bar.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_pages.dart';
 import '../features/history/presentation/history_page.dart';
@@ -23,6 +24,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: '/today',
     refreshListenable: refresh,
+    // Browser URLs we do not own (for example a Supabase email-confirmation
+    // redirect carrying `#access_token=...`) land on the app root, which also
+    // replaces that address-bar fragment. Tokens in it are never used.
+    onException: (context, state, router) => router.go('/today'),
     redirect: (context, state) =>
         authRedirect(ref.read(authGateProvider), state.matchedLocation),
     routes: [
@@ -82,35 +87,64 @@ class _AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A floating pill, positioned with real layout (padding and the safe area),
+    // never a paint-only translation: what you see is what you touch.
     return Scaffold(
       body: shell,
-      bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: NavigationBar(
-          selectedIndex: shell.currentIndex,
-          // Re-tapping the current tab returns it to its first page.
-          onDestinationSelected: (i) =>
-              shell.goBranch(i, initialLocation: i == shell.currentIndex),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.movie_outlined),
-              selectedIcon: Icon(Icons.movie),
-              label: 'Tonight',
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 6, 28, 20),
+          // Compact and constant-width on every screen, centred.
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: FloatingNavBar.maxWidth,
+              ),
+              child: DecoratedBox(
+                key: const ValueKey('floating-nav'),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: FloatingNavBar(
+                  selectedIndex: shell.currentIndex,
+                  // Re-tapping the current tab returns it to its first page.
+                  onSelected: (i) => shell.goBranch(
+                    i,
+                    initialLocation: i == shell.currentIndex,
+                  ),
+                  tabs: const [
+                    NavTab(
+                      label: 'Tonight',
+                      icon: Icons.movie_outlined,
+                      selectedIcon: Icons.movie,
+                    ),
+                    NavTab(
+                      label: 'Watchlist',
+                      icon: Icons.bookmark_border,
+                      selectedIcon: Icons.bookmark,
+                    ),
+                    NavTab(label: 'History', icon: Icons.history),
+                    NavTab(
+                      label: 'Profile',
+                      icon: Icons.person_outline,
+                      selectedIcon: Icons.person,
+                    ),
+                  ],
+                ),
+              ),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.bookmark_border),
-              selectedIcon: Icon(Icons.bookmark),
-              label: 'Watchlist',
-            ),
-            NavigationDestination(icon: Icon(Icons.history), label: 'History'),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
+          ),
         ),
       ),
     );

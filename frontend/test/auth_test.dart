@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'nav_finders.dart';
+
 const config = AppConfig(
   apiBaseUrl: 'http://10.0.2.2:8000',
   supabaseUrl: 'https://test-project.supabase.co',
@@ -131,12 +133,7 @@ const alice = AuthUser(id: 'alice', email: 'alice@example.test');
 const bob = AuthUser(id: 'bob', email: 'bob@example.test');
 
 Future<void> goProfile(WidgetTester tester) async {
-  await tester.tap(
-    find.descendant(
-      of: find.byType(NavigationBar),
-      matching: find.text('Profile'),
-    ),
-  );
+  await tester.tap(navTab('Profile'));
   await tester.pumpAndSettle();
 }
 
@@ -147,7 +144,7 @@ void main() {
       await tester.pumpWidget(rig.app());
       await tester.pumpAndSettle();
       expect(find.text('Sign in'), findsWidgets);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
       expect(rig.account.calls, isEmpty);
     });
 
@@ -173,7 +170,7 @@ void main() {
         'bootstrap:user-a@example.test',
         'me:user-a@example.test',
       ]);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(FloatingNavBar), findsOneWidget);
       // Tonight has no real repository until P4: honest, no fake movie.
       expect(
         find.text("Tonight's pick is not available in this build yet."),
@@ -201,7 +198,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
       await tester.pumpAndSettle();
       expect(find.text('Email or password is incorrect.'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
     });
 
     testWidgets('restored session goes straight to setup, then the shell', (
@@ -211,7 +208,7 @@ void main() {
       await tester.pumpWidget(rig.app());
       await tester.pumpAndSettle();
       expect(rig.account.calls, ['bootstrap:alice', 'me:alice']);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(FloatingNavBar), findsOneWidget);
     });
 
     testWidgets('setup failure offers Retry and keeps the session', (
@@ -233,7 +230,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byType(NavigationBar),
+        find.byType(FloatingNavBar),
         findsNothing,
         reason: 'no fake success',
       );
@@ -246,7 +243,7 @@ void main() {
       rig.account.failBootstrap = null;
       await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(FloatingNavBar), findsOneWidget);
     });
 
     testWidgets('unconfirmed email goes to Check your email', (tester) async {
@@ -259,7 +256,7 @@ void main() {
       await tester.pumpWidget(rig.app());
       await tester.pumpAndSettle();
       expect(find.text('Check your email'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
     });
 
     testWidgets('sign-up needing confirmation shows Check your email', (
@@ -302,6 +299,8 @@ void main() {
           scrollable: find.byType(Scrollable).last,
         );
         expect(find.text('alice@example.test'), findsOneWidget);
+        await tester.ensureVisible(find.text('Sign out'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Sign out'));
         await tester.pumpAndSettle();
         expect(rig.auth.signOuts, 1);
@@ -332,7 +331,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('This build is not configured'), findsOneWidget);
       expect(find.textContaining('SUPABASE_URL'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(FloatingNavBar), findsNothing);
     });
 
     testWidgets('preview build never asks for sign-in', (tester) async {

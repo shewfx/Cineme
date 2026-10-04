@@ -12,8 +12,15 @@ BASE = {
 }
 
 
+PROD = {
+    **BASE,
+    "ENVIRONMENT": "production",
+    "DATABASE_URL": "postgresql+psycopg://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require",
+}
+
+
 def test_reads_p2_configuration() -> None:
-    settings = load_settings({**BASE, "ENVIRONMENT": "production", "LOG_LEVEL": "WARNING"})
+    settings = load_settings({**PROD, "LOG_LEVEL": "WARNING"})
 
     assert settings.environment == "production"
     assert settings.jwks_url == "https://abc.supabase.co/auth/v1/.well-known/jwks.json"
@@ -50,3 +57,26 @@ def test_rejects_non_psycopg_database_urls() -> None:
 def test_invalid_environment_fails_clearly() -> None:
     with pytest.raises(ValidationError, match="environment"):
         load_settings({**BASE, "ENVIRONMENT": "staging"})
+
+
+def test_production_database_urls_must_require_tls() -> None:
+    plain = "postgresql+psycopg://u:pw@ep-x.neon.tech/neondb"
+    with pytest.raises(ValidationError, match="database_url must set sslmode"):
+        load_settings({**PROD, "DATABASE_URL": plain})
+    with pytest.raises(ValidationError, match="database_migration_url must set sslmode"):
+        load_settings({**PROD, "DATABASE_MIGRATION_URL": plain + "?sslmode=prefer"})
+    ok = load_settings({**PROD, "DATABASE_MIGRATION_URL": plain + "?sslmode=verify-full"})
+    assert ok.database_migration_url is not None
+
+
+def test_local_development_does_not_need_tls_and_defaults_to_local_pool() -> None:
+    settings = load_settings(BASE)
+    assert settings.database_pool_mode == "local"
+
+
+def test_pool_mode_is_explicit() -> None:
+    assert load_settings({**BASE, "DATABASE_POOL_MODE": "serverless"}).database_pool_mode == (
+        "serverless"
+    )
+    with pytest.raises(ValidationError, match="database_pool_mode"):
+        load_settings({**BASE, "DATABASE_POOL_MODE": "pgbouncer"})

@@ -166,11 +166,11 @@ V1 runs one backend worker/replica. An in-process token bucket limits authentica
 
 ## Configuration and secrets
 
-Backend: `ENVIRONMENT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_ISSUER`, `TMDB_READ_ACCESS_TOKEN`, `AI_PROVIDER=disabled|ollama`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `CORS_ALLOWED_ORIGINS`, `LOG_LEVEL`. JWKS URL derives from the allowlisted Supabase project URL; do not accept arbitrary user URLs.
+Backend: `ENVIRONMENT`, `DATABASE_URL`, `DATABASE_MIGRATION_URL` (direct URL for migrations only), `DATABASE_POOL_MODE=local|serverless`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_ISSUER`, `TMDB_READ_ACCESS_TOKEN`, `AI_PROVIDER=disabled|ollama`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `CORS_ALLOWED_ORIGINS`, `LOG_LEVEL`. JWKS URL derives from the allowlisted Supabase project URL; do not accept arbitrary user URLs.
 
 Validate only dependencies implemented/enabled at the current milestone. P0 starts without database/Auth/TMDB/AI credentials. P1 is an offline UI preview; P2 requires identity/database configuration; P3 requires TMDB configuration. AI disabled never requires a model/key. Configured JWT issuer must match the configured Supabase project. These are explicit phased settings, not a production auth bypass.
 
-Frontend: `API_BASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. The publishable key is intentionally public. Access/refresh tokens are sensitive and handled by the SDK; configure an Android secure-storage-backed session persistence adapter and test logout/account switches. Do not store credentials in plain app preferences or logs.
+Frontend: `API_BASE_URL` (`same-origin` for the hosted web build), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. The publishable key is intentionally public. Web builds keep the Supabase session in the SDK's browser storage (no Keystore equivalent exists there); Android keeps the secure-storage adapter. Access/refresh tokens are sensitive and handled by the SDK; configure an Android secure-storage-backed session persistence adapter and test logout/account switches. Do not store credentials in plain app preferences or logs.
 
 Local `.env` ignored; `.env.example` contains names and placeholders only. Secrets live in deployment settings. No service-role key in Flutter; no LLM or TMDB key in app assets. PostgreSQL production connections require TLS. Development cleartext exceptions apply only to emulator/debug builds. Backend runs on Windows host; emulator API URL uses `10.0.2.2`; backend's Ollama URL uses host localhost. Containers use documented `host.docker.internal`, not guessed emulator addressing.
 
@@ -192,7 +192,9 @@ Targets on a documented dev machine: pure ranking of 500 films under 100 ms; cac
 
 ## Deployment
 
-Baseline: one containerized FastAPI service on Render, hosted Supabase Auth/PostgreSQL, Flutter Android APK for the portfolio demo. No local Ollama exposed publicly. Hosted deployment defaults `AI_PROVIDER=disabled`; optional cloud provider is future work, and the local demo demonstrates LLM context parsing separately. Product remains usable with structured controls.
+**Hosted web/PWA (ADR 009, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)):** one Vercel project (root `backend/`) serves FastAPI as a Python function and the Flutter web build from the CDN, same-origin, backed by Neon PostgreSQL through its pooled endpoint (`DATABASE_POOL_MODE=serverless`: per-transaction `SET LOCAL` timeouts, no startup `options`, no driver prepared statements, small pool). Production database URLs must require TLS. Migrations are the explicit `scripts/migrate_hosted.py` step against the direct URL. Previews carry no data credentials. Persistent state lives only in PostgreSQL; nothing depends on process memory surviving between requests.
+
+Original baseline (still valid for a container host): one containerized FastAPI service on Render, hosted Supabase Auth/PostgreSQL, Flutter Android APK for the portfolio demo. No local Ollama exposed publicly. Hosted deployment defaults `AI_PROVIDER=disabled`; optional cloud provider is future work, and the local demo demonstrates LLM context parsing separately. Product remains usable with structured controls.
 
 `/healthz` checks process liveness; `/readyz` checks a short DB query and applied migration compatibility, not TMDB/AI availability. CI never deploys automatically in early phases. Migrations run as a one-off release step before app promotion; never concurrently on every worker startup. Deploy staging, smoke-test two accounts, confirm backups/restore procedure and costs for actual selected hosting plans before release. No “free forever” promise.
 

@@ -39,16 +39,18 @@ Cinemé is built to help you **decide**. The watchlist is the inventory you alre
 
 | Area | Capability |
 |---|---|
-| Accounts | Supabase email/password sign-up and sign-in, sessions in Android secure storage, explicit profile bootstrap |
+| Accounts | Supabase email/password sign-up and sign-in, sessions in Android secure storage (browser storage on web), explicit profile bootstrap |
 | Backend | FastAPI verifies Supabase JWTs and scopes every private read and write to the caller |
 | Search | TMDB movie search through the backend, with years, genres and real poster artwork |
 | Watchlist | Persistent per-user watchlist in PostgreSQL: add, duplicate detection, pagination, remove with Undo |
-| Watchlist views | List or poster grid, remembered on the device; swipe a row to remove, long-press a poster for actions |
+| Watchlist views | List or poster grid and a Sort control (recently added, oldest, title, release year, runtime; sorted by the server so paging stays correct), all remembered on the device; swipe a row to remove, long-press a poster for actions |
 | Upcoming films | Upcoming or undated films can be saved and are labelled "Not released yet"; they will not be eligible for Tonight until released |
 | Resilience | The saved watchlist keeps working while TMDB is down; failures are shown, never replaced with fake data |
 | Isolation | Users can never see or change each other's watchlists (covered by PostgreSQL integration tests) |
+| Tonight setup | A short branded opening, then three compact selectors (what you want, optional feeling, optional time) in bottom sheets, or **Skip, just pick something** for one pick with no questions (it uses the explicit Surprise me intent) |
 | Tonight | One pick from your watchlist with factual reasons and a “Why this film?” breakdown; reloading never picks again; “Not feeling it” gives one replacement (or records “Already watched”), and after three passes it pauses instead of re-rolling; an honest “nothing fits” with counts instead of relaxing your limits |
 | Where to watch | “Available on” for tonight's film in your streaming region (JustWatch data via TMDB), display-only |
+| Web / PWA | The same Flutter app as an installable web app (Add to Home Screen on iPhone): https://cineme-theta.vercel.app, hosted on Vercel with Neon PostgreSQL; wide browsers get a centred phone-width canvas. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Preview mode | An opt-in build with scripted, in-memory data that shows the full designed flow — including Tonight, feedback and history — without contacting any service |
 
 Not there yet: “Mark watched”, ratings, never-recommend blocks, the History tab and natural-language context. Those exist only in the preview build for now.
@@ -242,6 +244,7 @@ The root specifications are the source of truth, each for its own subject:
 | [FRONTEND_SPEC.md](FRONTEND_SPEC.md) | Flutter structure and interaction details |
 | [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) | Phases and gates |
 | [CRITICAL_REVIEW.md](CRITICAL_REVIEW.md) | Concept risks and decisions taken before specification |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Hosted web/PWA: Vercel, Neon, environment names, migrations, rollback, Add to Home Screen |
 | [docs/adr/](docs/adr) | Approved deviations |
 
 If two documents disagree, the conflict is reported and resolved explicitly before the affected behavior is built. Agent instructions live in [CLAUDE.md](CLAUDE.md); the original planning-package notes (baseline decisions, external sources, completion definition) are in [docs/PLANNING_PACKAGE.md](docs/PLANNING_PACKAGE.md).

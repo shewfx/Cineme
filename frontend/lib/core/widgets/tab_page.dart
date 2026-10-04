@@ -27,40 +27,37 @@ class TabPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 12, 8),
+              padding: const EdgeInsets.fromLTRB(24, 20, 12, 0),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // One line even at large text sizes, so header
-                        // actions never push the content off small screens.
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Semantics(
-                            header: true,
-                            child: Text(title, style: text.headlineMedium),
-                          ),
-                        ),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            subtitle!,
-                            style: text.bodyMedium?.copyWith(
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ],
+                    // One line even at large text sizes, so header actions
+                    // never push the content off small screens.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Semantics(
+                        header: true,
+                        child: Text(title, style: text.headlineMedium),
+                      ),
                     ),
                   ),
                   ?action,
                 ],
               ),
             ),
+            if (subtitle != null)
+              // Full width under the title row, so a row of header actions
+              // never squeezes it into a narrow column.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                child: Text(
+                  subtitle!,
+                  style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
+                ),
+              ),
+            const SizedBox(height: 8),
             Expanded(child: child),
           ],
         ),

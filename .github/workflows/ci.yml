@@ -54,6 +54,13 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
+      # The hosted PWA must build, and nothing server-side may end up in it.
+      - run: >-
+          flutter build web --release
+          --dart-define=API_BASE_URL=same-origin
+          --dart-define=SUPABASE_URL=https://ci-placeholder.supabase.co
+          --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_placeholder
+      - run: python3 ../infra/check_web_bundle.py build/web
 
   compose:
     runs-on: ubuntu-latest
