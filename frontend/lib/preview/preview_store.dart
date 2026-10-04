@@ -59,7 +59,7 @@ class PreviewStore {
             movie: amelie,
             watchedAt: start.subtract(const Duration(days: 12)),
             recordedAt: start.subtract(const Duration(days: 12)),
-            rating: Rating.liked,
+            rating: Rating.four,
           ),
         )
         ..add(

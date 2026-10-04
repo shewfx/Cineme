@@ -3,6 +3,7 @@ import 'package:cineme/core/config/app_config.dart';
 import 'package:cineme/core/widgets/app_canvas.dart';
 import 'package:cineme/core/widgets/movie_poster.dart';
 import 'package:cineme/preview/preview_store.dart';
+import 'package:cineme/preview/preview_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -137,6 +138,88 @@ void main() {
       expect(find.byType(AppCanvas), findsNothing);
       expect(tester.getSize(floatingNav).width, 316);
     });
+  });
+
+  testWidgets('root-tab horizontal swipes follow order and stop at edges', (
+    tester,
+  ) async {
+    sizeWindow(tester, const Size(390, 844));
+    await tester.pumpWidget(webApp());
+    await tester.pumpAndSettle();
+
+    Future<void> swipe(double dx) async {
+      await tester.dragFrom(const Offset(195, 80), Offset(dx, 0));
+      await tester.pumpAndSettle();
+    }
+
+    // Right at the first tab cannot wrap to Profile.
+    await swipe(140);
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      0,
+    );
+    await tester.dragFrom(const Offset(195, 80), const Offset(-130, 180));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      0,
+      reason: 'diagonal motion is treated as vertical scrolling',
+    );
+    for (final tab in ['Watchlist', 'History', 'Profile']) {
+      await swipe(-140);
+      expect(
+        tester
+            .widget<FloatingNavBar>(find.byType(FloatingNavBar))
+            .selectedIndex,
+        ['Watchlist', 'History', 'Profile'].indexOf(tab) + 1,
+      );
+    }
+    await swipe(-140);
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      3,
+    );
+
+    await swipe(140);
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      2,
+    );
+    await tester.tap(navTab('Watchlist'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      1,
+    );
+
+    final movieTitle = previewWatchlist.first.title;
+    await tester.tap(find.text(movieTitle).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Movie details'), findsOneWidget);
+    await tester.dragFrom(const Offset(195, 300), const Offset(-140, 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      1,
+      reason: 'nested details screens do not respond to tab swipes',
+    );
+
+    // Retap the selected branch to return to its root, then use the row's
+    // existing remove gesture; it must beat the shell swipe detector.
+    await tester.tap(navTab('Watchlist'));
+    await tester.pumpAndSettle();
+    final showList = find.byTooltip('Show as list');
+    if (showList.evaluate().isNotEmpty) {
+      await tester.tap(showList);
+      await tester.pumpAndSettle();
+    }
+    await tester.drag(find.text(movieTitle).first, const Offset(160, 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FloatingNavBar>(find.byType(FloatingNavBar)).selectedIndex,
+      1,
+      reason: 'watchlist row swipe remains a remove action',
+    );
   });
 
   group('iPhone safe areas', () {

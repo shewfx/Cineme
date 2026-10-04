@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.movies.schemas import MovieSummary
 
-Rating = Literal["loved", "liked", "okay", "disliked"]
+Rating = Annotated[int, Field(strict=True, ge=1, le=5)]
 
 
 class ViewingOut(BaseModel):

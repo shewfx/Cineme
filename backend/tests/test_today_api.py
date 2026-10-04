@@ -507,14 +507,14 @@ def test_mark_watched_completes_today_and_exposes_viewing(stocked: Tonight) -> N
     rec_id, movie_id = stocked.pick(stocked.choose(ctx()).json())
     response = stocked.post(
         f"/api/v1/recommendations/{rec_id}/watched",
-        {"expected_session_version": stocked.version, "rating": "liked"},
+        {"expected_session_version": stocked.version, "rating": 4},
     )
     assert response.status_code == 200
     result = response.json()
     envelope = result["today"]
     assert envelope["state"] == "completed"
     assert envelope["viewing"]["movie"]["tmdb_id"] == movie_id
-    assert envelope["viewing"]["rating"] == "liked"
+    assert envelope["viewing"]["rating"] == 4
     assert result["viewing"]["id"] == envelope["viewing"]["id"]
 
 
@@ -887,13 +887,13 @@ def test_manual_viewing_is_idempotent_and_archives_inventory(
     stocked: Tonight, engine: Engine
 ) -> None:
     movie = LOLA
-    body = {"tmdb_id": movie, "rating": "loved"}
+    body = {"tmdb_id": movie, "rating": 5}
     key = str(uuid.uuid4())
     first = stocked.post("/api/v1/viewings", body, key)
     assert first.status_code == 201
     result = first.json()
     assert result["viewing"]["watched_at"] is None
-    assert result["viewing"]["rating"] == "loved"
+    assert result["viewing"]["rating"] == 5
     assert result["already_recorded"] is False
     replay = stocked.post("/api/v1/viewings", body, key)
     assert replay.status_code == 201 and replay.json() == result
@@ -913,23 +913,31 @@ def test_viewing_rating_is_versioned_and_private(stocked: Tonight, b: Tonight) -
     path = f"/api/v1/viewings/{viewing['id']}"
     changed = stocked.client.patch(
         path,
-        json={"expected_version": 1, "rating": "disliked"},
+        json={"expected_version": 1, "rating": 1},
         headers=stocked.headers | {"Idempotency-Key": str(uuid.uuid4())},
     )
     assert changed.status_code == 200
-    assert changed.json()["rating"] == "disliked" and changed.json()["version"] == 2
+    assert changed.json()["rating"] == 1 and changed.json()["version"] == 2
     stale = stocked.client.patch(
         path,
-        json={"expected_version": 1, "rating": "loved"},
+        json={"expected_version": 1, "rating": 5},
         headers=stocked.headers | {"Idempotency-Key": str(uuid.uuid4())},
     )
     assert stale.status_code == 409
     foreign = b.client.patch(
         path,
-        json={"expected_version": 2, "rating": "loved"},
+        json={"expected_version": 2, "rating": 5},
         headers=b.headers | {"Idempotency-Key": str(uuid.uuid4())},
     )
     assert foreign.status_code == 404
+
+
+@pytest.mark.parametrize("rating", [0, 6, "4", "liked", True])
+def test_viewing_rating_requires_an_integer_from_one_to_five(
+    stocked: Tonight, rating: object
+) -> None:
+    response = stocked.post("/api/v1/viewings", {"tmdb_id": PRIMER, "rating": rating})
+    assert response.status_code == 422
 
 
 def test_never_recommend_is_persistent_and_reversible(
@@ -965,7 +973,7 @@ def test_rated_viewings_reach_the_existing_affinity_component(
 ) -> None:
     from app.recommendations import engine as ranking_engine
 
-    stocked.post("/api/v1/viewings", {"tmdb_id": LOLA, "rating": "loved"})
+    stocked.post("/api/v1/viewings", {"tmdb_id": LOLA, "rating": 5})
     captured: list[tuple[Any, ...]] = []
     original = ranking_engine.genre_affinities
 
@@ -977,7 +985,5 @@ def test_rated_viewings_reach_the_existing_affinity_component(
     result = stocked.choose(ctx()).json()
     assert result["recommendation"] is not None
     assert captured and any(
-        item.rating == "loved" and item.genre_ids == (28, 18)
-        for items in captured
-        for item in items
+        item.rating == 5 and item.genre_ids == (28, 18) for items in captured for item in items
     )

@@ -24,11 +24,10 @@ class MovieListTile extends StatelessWidget {
   final Movie movie;
   final List<String> lines;
   final Widget? trailing;
+  final Widget? footer;
   final bool large;
 
   /// Optional actions under the text (Search's separate Add/Watched).
-  final Widget? footer;
-
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;

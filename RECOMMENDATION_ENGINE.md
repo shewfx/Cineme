@@ -49,14 +49,15 @@ Runtime fit is a filter in V1, not another weighted component. Within the cap, s
 
 Explicit preference `p_g` is [-1,1], default zero. Preferred genre selection in simple onboarding writes +0.6; profile advanced slider may choose any allowed value. Permanent exclusion uses blocked genres, not a -1 slider value.
 
-Ratings map to evidence values:
+Whole-star ratings (1–5) map linearly to the existing conservative evidence scale:
 
 | Rating | Evidence r |
 |---|---:|
-| loved | +1.0 |
-| liked | +0.5 |
-| okay | 0.0 |
-| disliked | -1.0 |
+| 5 | +1.0 |
+| 4 | +0.5 |
+| 3 | 0.0 |
+| 2 | -0.5 |
+| 1 | -1.0 |
 | null | No observation |
 
 For a rated film with k snapshot genres, allocate weight `w=1/k` to each genre. This prevents a six-genre film contributing six full observations. For each genre:
@@ -71,7 +72,7 @@ Empty M -> G=0.5. Store the evidence support `sum(w)` separately for explanation
 
 One viewing/movie and its current rating is the only observation. Rating edits recompute from source records; no incremental hidden counters. Genre snapshots on viewing are frozen, so later TMDB genre changes do not rewrite past learning. There is no temporal decay, implicit watchlist-distribution preference, actor/director learning or mood-rating cross-model in V1.
 
-Example: explicit comedy p=0.6; one two-genre loved film adds w=0.5. New comedy affinity=(1.2+0.5)/(2+0.5)=0.68. Replacing that rating with disliked produces (1.2-0.5)/2.5=0.28, not two observations. A temporary rejection changes neither value.
+Example: explicit comedy p=0.6; one two-genre five-star film adds w=0.5. New comedy affinity=(1.2+0.5)/(2+0.5)=0.68. Replacing that rating with a one-star rating produces (1.2-0.5)/2.5=0.28, not two observations. A temporary rejection changes neither value.
 
 ## C: requested context only
 

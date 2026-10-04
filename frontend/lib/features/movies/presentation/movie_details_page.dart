@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import '../../../core/widgets/scroll_depth_hint.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/state/revision.dart';
 import '../../../shared/models/inventory.dart';
+import '../../../shared/models/movie.dart';
 import '../../today/presentation/availability_section.dart';
 import '../../history/data/history_repository.dart';
 import '../../preferences/application/profile_controller.dart';
@@ -36,6 +39,7 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
   Widget build(BuildContext context) {
     final detailsRepository = ref.watch(movieDetailsRepositoryProvider);
     final entry = widget.entry;
+    Movie? backdropMovie = entry?.movie;
     final Widget content;
     if (detailsRepository == null) {
       content = widget.entry == null
@@ -50,20 +54,40 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
           .when(
             loading: _loading,
             error: (error, _) => _error(error),
-            data: (details) => _success(details, entry),
+            data: (details) {
+              backdropMovie = details.movie;
+              return _success(details, entry);
+            },
           );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Movie details')),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Column(
-          children: [
-            Expanded(child: content),
-            _actions(entry),
-          ],
-        ),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('Movie details'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const ColoredBox(color: AppColors.background),
+          if (backdropMovie?.posterUrl case final url? when url.isNotEmpty)
+            _PosterBackdrop(url: url),
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: Column(
+              children: [
+                SizedBox(
+                  height: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                ),
+                Expanded(child: content),
+                _actions(entry),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -153,12 +177,24 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: 108,
-                    height: 162,
-                    child: MoviePoster(movie: movie),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x99000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 108,
+                      height: 162,
+                      child: MoviePoster(movie: movie),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 20),
@@ -449,6 +485,69 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
   void _showFailure(String action) => ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text("Couldn't $action. Try again.")));
+}
+
+class _PosterBackdrop extends StatelessWidget {
+  const _PosterBackdrop({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) => Positioned.fill(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight * 0.80;
+        return Stack(
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: height,
+              child: ClipRect(
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(sigmaX: 13, sigmaY: 13),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    cacheWidth:
+                        (constraints.maxWidth *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
+                    errorBuilder: (_, _, _) => const SizedBox.expand(),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: height,
+              child: const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0, 0.48, 0.67, 0.84, 1],
+                      colors: [
+                        Color(0x77000000),
+                        Color(0x99000000),
+                        Color(0xD91C1C1C),
+                        Color(0xF51C1C1C),
+                        AppColors.background,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }
 
 class InvalidMovieDetailsPage extends StatelessWidget {

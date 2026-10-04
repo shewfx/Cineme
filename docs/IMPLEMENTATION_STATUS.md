@@ -2,6 +2,14 @@
 
 Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md).
 
+## Integer star ratings, root-tab swipes and Watchlist artwork
+
+- User ratings are nullable integer stars from 1 to 5 across Flutter, API schemas, PostgreSQL and recommendation learning. The shared selector uses coral filled and muted outlined stars, states the selected value as “N out of 5,” and does not preselect unrated records.
+- Migration 0006 explicitly maps Disliked→1, Okay→3, Liked→4, Loved→5; null stays null. The downgrade maps two stars to Disliked because the former categories have no two-star value. This migration has not been applied to the hosted database.
+- Root tabs respond to horizontal, predominantly horizontal swipes in Tonight → Watchlist → History → Profile order, with no wrap. Nested routes are disabled; row/poster/choice-pill gestures are excluded from tab swiping.
+- Watchlist movie details now layers a dynamically loaded, blurred and darkened poster behind the existing details content, fading to the app background before the fixed actions and bottom navigation. Missing posters keep the solid background.
+- Verification: see the PR discussion for emulator/Chrome screenshots and the exact test runs; do not describe this change as merged or deployed before review.
+
 | Phase | Status |
 |---|---|
 | P0 — Bootable repository skeleton | Complete: local gates, manual launch/health and GitHub Actions CI verified; request-ID header implemented in P2 |

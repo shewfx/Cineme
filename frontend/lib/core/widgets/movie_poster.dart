@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../shared/models/movie.dart';
 import '../config/preview.dart';
 import '../theme/app_theme.dart';
+import 'tab_swipe_exclusion.dart';
 
 /// Fills its box with the film's artwork, cropped from the top.
 ///
@@ -18,29 +19,31 @@ class MoviePoster extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final placeholder = _Placeholder(movie: movie);
-    return Semantics(
-      image: true,
-      label: 'Poster for ${movie.title}',
-      child: ExcludeSemantics(
-        child: movie.posterUrl != null
-            // TMDB image CDN (the documented exception to backend-only TMDB
-            // access). Loading or failure shows the same-size placeholder.
-            ? Image.network(
-                movie.posterUrl!,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                frameBuilder: (context, child, frame, _) =>
-                    frame == null ? placeholder : child,
-                errorBuilder: (_, _, _) => placeholder,
-              )
-            : isUiPreview
-            ? Image.asset(
-                'preview_posters/${movie.tmdbId}.jpg',
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                errorBuilder: (_, _, _) => placeholder,
-              )
-            : placeholder,
+    return ExcludeTabSwipe(
+      child: Semantics(
+        image: true,
+        label: 'Poster for ${movie.title}',
+        child: ExcludeSemantics(
+          child: movie.posterUrl != null
+              // TMDB image CDN (the documented exception to backend-only TMDB
+              // access). Loading or failure shows the same-size placeholder.
+              ? Image.network(
+                  movie.posterUrl!,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  frameBuilder: (context, child, frame, _) =>
+                      frame == null ? placeholder : child,
+                  errorBuilder: (_, _, _) => placeholder,
+                )
+              : isUiPreview
+              ? Image.asset(
+                  'preview_posters/${movie.tmdbId}.jpg',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (_, _, _) => placeholder,
+                )
+              : placeholder,
+        ),
       ),
     );
   }

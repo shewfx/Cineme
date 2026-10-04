@@ -10,6 +10,7 @@ import '../../../core/widgets/movie_poster.dart';
 import '../../../core/widgets/paged_list_view.dart';
 import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../core/widgets/tab_swipe_exclusion.dart';
 import '../../../core/widgets/tab_page.dart';
 import '../../../shared/models/inventory.dart';
 import '../../history/application/history_controllers.dart';
@@ -222,47 +223,49 @@ class _WatchlistRow extends ConsumerWidget {
         const CustomSemanticsAction(label: 'Remove from watchlist'): () =>
             _removeWithUndo(context, ref, entry),
       },
-      child: Dismissible(
-        key: ValueKey('dismiss-${entry.id}'),
-        direction: DismissDirection.startToEnd,
-        dismissThresholds: const {DismissDirection.startToEnd: 0.4},
-        confirmDismiss: (_) => _removeWithUndo(context, ref, entry),
-        background: ColoredBox(
-          color: AppColors.accent,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                const Icon(Icons.delete_outline, color: AppColors.background),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'Remove',
-                    overflow: TextOverflow.ellipsis,
-                    style: text.titleMedium?.copyWith(
-                      color: AppColors.background,
+      child: ExcludeTabSwipe(
+        child: Dismissible(
+          key: ValueKey('dismiss-${entry.id}'),
+          direction: DismissDirection.startToEnd,
+          dismissThresholds: const {DismissDirection.startToEnd: 0.4},
+          confirmDismiss: (_) => _removeWithUndo(context, ref, entry),
+          background: ColoredBox(
+            color: AppColors.accent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  const Icon(Icons.delete_outline, color: AppColors.background),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Remove',
+                      overflow: TextOverflow.ellipsis,
+                      style: text.titleMedium?.copyWith(
+                        color: AppColors.background,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        child: ColoredBox(
-          color: AppColors.background,
-          child: InkWell(
-            onTap: () =>
-                context.push('/movies/${entry.movie.tmdbId}', extra: entry),
-            child: MovieListTile(
-              movie: entry.movie,
-              lines: _details(entry),
-              trailing: ref.watch(historyRepositoryProvider) == null
-                  ? null
-                  : IconButton(
-                      tooltip: 'Mark ${entry.movie.title} watched',
-                      onPressed: () => _markWatched(context, ref),
-                      icon: const Icon(Icons.check_circle_outline),
-                    ),
+          child: ColoredBox(
+            color: AppColors.background,
+            child: InkWell(
+              onTap: () =>
+                  context.push('/movies/${entry.movie.tmdbId}', extra: entry),
+              child: MovieListTile(
+                movie: entry.movie,
+                lines: _details(entry),
+                trailing: ref.watch(historyRepositoryProvider) == null
+                    ? null
+                    : IconButton(
+                        tooltip: 'Mark ${entry.movie.title} watched',
+                        onPressed: () => _markWatched(context, ref),
+                        icon: const Icon(Icons.check_circle_outline),
+                      ),
+              ),
             ),
           ),
         ),

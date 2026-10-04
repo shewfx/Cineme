@@ -36,10 +36,11 @@ EXCLUSIONS = (
     "runtime_exceeded",
 )
 RATING_EVIDENCE = {
-    "loved": Decimal(1),
-    "liked": Decimal("0.5"),
-    "okay": Decimal(0),
-    "disliked": Decimal(-1),
+    1: Decimal(-1),
+    2: Decimal("-0.5"),
+    3: Decimal(0),
+    4: Decimal("0.5"),
+    5: Decimal(1),
 }
 
 _DEC = Context(prec=28, rounding=ROUND_HALF_EVEN)
@@ -201,7 +202,7 @@ class EffectiveContext:
 @dataclass(frozen=True)
 class RatedViewing:
     genre_ids: tuple[int, ...]
-    rating: str | None
+    rating: int | None
 
 
 @dataclass(frozen=True)

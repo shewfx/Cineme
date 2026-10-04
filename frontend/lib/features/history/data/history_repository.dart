@@ -90,7 +90,7 @@ class ApiHistoryRepository implements HistoryRepository {
     int expectedVersion = 1,
   }) async {
     final path = '/api/v1/viewings/${Uri.encodeComponent(viewingId)}';
-    final body = {'expected_version': expectedVersion, 'rating': rating?.name};
+    final body = {'expected_version': expectedVersion, 'rating': rating?.value};
     final json = await _keys.send(
       commandFingerprint('PATCH', path, body),
       (key) => _api.patch(path, body: body, idempotencyKey: key),
@@ -111,14 +111,17 @@ Viewing _viewingFromJson(Map<String, dynamic> json) {
     movie: movieSummaryFromJson(asMap(json['movie'])).$1,
     watchedAt: watched == null ? null : DateTime.tryParse(watched as String),
     recordedAt: recorded,
-    rating: rating == null
-        ? null
-        : Rating.values.firstWhere(
-            (value) => value.name == rating,
-            orElse: () => throw malformedResponse,
-          ),
+    rating: _parseRating(rating),
     version: json['version'] as int? ?? 1,
   );
+}
+
+Rating? _parseRating(Object? value) {
+  try {
+    return Rating.fromValue(value);
+  } on FormatException {
+    throw malformedResponse;
+  }
 }
 
 RecommendationRecord _recommendationFromJson(Map<String, dynamic> json) {

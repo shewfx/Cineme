@@ -104,11 +104,13 @@ UNIQUE `(user_id,movie_id)`, including archived entries. CHECK status/removed_at
 | watched_at | timestamptz, nullable | Known completion time; null if date unknown |
 | recorded_at | timestamptz | When account recorded evidence |
 | source | text | `recommendation`, `manual`, `already_watched` |
-| rating | text, nullable | CHECK loved/liked/okay/disliked |
+| rating | smallint, nullable | CHECK 1..5; null means unrated |
 | genre_ids_snapshot | integer[] | Frozen genres for learning/diversity |
 | recommendation_id | uuid, nullable | FK recommendations SET NULL on delete; linked owned choice |
 | version | integer, 1 | Optimistic rating edits; CHECK >0 |
 | updated_at | timestamptz | Rating change |
+
+Migration 0006 preserves existing data with the explicit mapping Disliked→1, Okay→3, Liked→4, Loved→5; null remains null. The downgrade maps 2 to Disliked because the legacy categories have no two-star value.
 
 UNIQUE `(user_id,movie_id)`: V1 supports known watched state once, not rewatches. This cleanly prevents duplicate taste votes. Manual date can be unknown; if supplied it must not be in the future. Sort recent watched history using `COALESCE(watched_at,recorded_at)`. This proxy is labeled where date is unknown. Recommendation completion uses server now; already-watched feedback never claims today's completion.
 
@@ -234,7 +236,8 @@ Fixture movies and users exist only in explicit test/demo seeding, never automat
 - P3: movies and watchlist_entries; their private mutations reuse the P2 idempotency ledger.
 - P4: recommendation_sessions and recommendations with bounded JSON evidence; no candidate-score table; rejection_feedback brought forward for temporary reasons (ADR 006).
 - P4 polish (migration 0004; ADR 006 amendment, ADR 007): viewings in the documented shape, written only by the already_watched rejection; `users.country_code varchar(2)` nullable (streaming region); `movies.watch_providers jsonb` + `watch_providers_fetched_at` (24 h shared availability cache).
-- P5 (migration 0005): per-user `movie_blocks` plus durable follow-up prompted/resolved state on recommendations. Activates manual viewings, categorical ratings and their edits on the existing one-viewing-per-user/movie table. Hosted migration is not applied by this milestone.
+- P5 (migration 0005): per-user `movie_blocks` plus durable follow-up prompted/resolved state on recommendations. Activates manual viewings and rating edits on the existing one-viewing-per-user/movie table.
+- P6 ratings (migration 0006): converts legacy categories into nullable 1–5 integer ratings. This migration is local code only until separately applied; hosted database migration is not part of this change.
 - P6: optional movie_traits table only when deliberately enabling reviewed enrichment. Core ranking must also work without it.
 
 Future-table queries do not run in earlier phases: recommendation scorer tests use typed fixtures; P4 history inputs are empty until P5 exists. Avoid placeholder database tables just to satisfy an import. Post-P5 migrations preserve real data.
