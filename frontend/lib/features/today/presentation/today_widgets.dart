@@ -24,32 +24,36 @@ class Wordmark extends StatelessWidget {
     header: true,
     label: 'Cinemé',
     child: ExcludeSemantics(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.asset(
-              'assets/branding/cineme-icon.png',
-              width: 36,
-              height: 36,
-              excludeFromSemantics: true,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/branding/cineme-icon.png',
+                width: 36,
+                height: 36,
+                excludeFromSemantics: true,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Text.rich(
-            const TextSpan(
-              text: 'Cinem',
-              children: [
-                TextSpan(
-                  text: 'é',
-                  style: TextStyle(color: AppColors.accent),
-                ),
-              ],
+            const SizedBox(width: 10),
+            Text.rich(
+              const TextSpan(
+                text: 'Cinem',
+                children: [
+                  TextSpan(
+                    text: 'é',
+                    style: TextStyle(color: AppColors.accent),
+                  ),
+                ],
+              ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
