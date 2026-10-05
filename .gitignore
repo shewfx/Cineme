@@ -21,6 +21,7 @@ htmlcov/
 Thumbs.db
 
 # Flutter build output is ignored by frontend/.gitignore
+*.apk
 
 # Vercel link state and the locally built Flutter web bundle that is uploaded with the API
 .vercel
