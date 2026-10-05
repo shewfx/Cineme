@@ -65,6 +65,7 @@ flutter:
 
   # Preview-only local posters (ADR 002); image files are git-ignored.
   assets:
+    - assets/branding/
     - preview_posters/
 
   # Jost (SIL OFL 1.1, assets/fonts/OFL.txt), static weights from upstream v3.7.
