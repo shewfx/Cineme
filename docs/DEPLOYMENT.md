@@ -41,7 +41,8 @@ Check that the printed host and database are the intended project before `--appl
 ```powershell
 # 1. Build the web bundle with public configuration, then scan it
 cd frontend
-flutter build web --release --dart-define=API_BASE_URL=same-origin --dart-define=SUPABASE_URL=<url> --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key>
+$sourceCommit = git rev-parse --short HEAD
+flutter build web --release --dart-define=API_BASE_URL=same-origin --dart-define=SUPABASE_URL=<url> --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key> --dart-define=SOURCE_COMMIT=$sourceCommit
 python ../infra/check_web_bundle.py build/web
 
 # 2. Copy it next to the API and deploy (the folder is git-ignored)
@@ -49,6 +50,10 @@ Copy-Item build/web/* ../backend/public -Recurse -Force
 cd ../backend
 npx vercel@62.2.0 deploy --prod
 ```
+
+The app version displayed in About comes from package metadata generated from
+`frontend/pubspec.yaml`; web bundles include Flutter's generated `version.json`.
+The `SOURCE_COMMIT` define records the short source SHA used for this web build.
 
 First time only: `npx vercel@62.2.0 login`, then `npx vercel@62.2.0 link --project cineme` in `backend/`. Afterwards verify `/healthz` (ok), `/readyz` (ready), `/api/v1/me` (401 envelope), then sign in on the site.
 

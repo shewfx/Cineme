@@ -60,6 +60,7 @@ jobs:
           --dart-define=API_BASE_URL=same-origin
           --dart-define=SUPABASE_URL=https://ci-placeholder.supabase.co
           --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_placeholder
+          --dart-define=SOURCE_COMMIT=$(git rev-parse --short HEAD)
       - run: python3 ../infra/check_web_bundle.py build/web
 
   compose:
