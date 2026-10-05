@@ -42,10 +42,10 @@ class Wordmark extends StatelessWidget {
             const SizedBox(width: 10),
             Text.rich(
               const TextSpan(
-                text: 'Cinem',
+                text: 'Cine',
                 children: [
                   TextSpan(
-                    text: 'é',
+                    text: 'mé',
                     style: TextStyle(color: AppColors.accent),
                   ),
                 ],
