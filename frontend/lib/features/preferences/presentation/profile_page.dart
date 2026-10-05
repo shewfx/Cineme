@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/selector_field.dart';
@@ -89,6 +90,7 @@ class _ProfileBody extends ConsumerWidget {
           for (final m in profile.blockedMovies!)
             _BlockedRow(title: m.title, tmdbId: m.tmdbId),
         const _Section('About'),
+        const _ReleaseInfo(),
         const _Row(
           'Movie data',
           'This product uses the TMDB API but is not endorsed or certified by TMDB.',
@@ -98,6 +100,53 @@ class _ProfileBody extends ConsumerWidget {
       ],
     );
   }
+}
+
+const _sourceCommit = String.fromEnvironment(
+  'SOURCE_COMMIT',
+  defaultValue: 'Development',
+);
+
+class _ReleaseInfo extends StatefulWidget {
+  const _ReleaseInfo();
+
+  @override
+  State<_ReleaseInfo> createState() => _ReleaseInfoState();
+}
+
+class _ReleaseInfoState extends State<_ReleaseInfo> {
+  late final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+    future: _packageInfo,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const SizedBox.shrink();
+      }
+      final version = snapshot.data?.version.trim();
+      final appVersion = version == null || version.isEmpty
+          ? 'Cinemé version unavailable'
+          : 'Cinemé v$version';
+      final commit = _sourceCommit.trim().isEmpty
+          ? 'Development'
+          : _sourceCommit;
+      final text = Theme.of(context).textTheme;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(appVersion, style: text.bodyMedium),
+            Text(
+              'Build $commit',
+              style: text.labelMedium?.copyWith(color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 /// Normal build only: who is signed in, and Sign out. Sign-out clears the
