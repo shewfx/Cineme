@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 /// Typed error from the API envelope (API_CONTRACT). Messages shown to users
 /// come from known envelope fields or local fallbacks, never raw bodies.
@@ -118,6 +119,18 @@ class ApiClient {
       if (data is! Map<String, dynamic>) throw _malformed(response.statusCode);
       return data;
     } on DioException catch (e) {
+      final failedUri = e.requestOptions.uri;
+      final requestUri = Uri(
+        scheme: failedUri.scheme,
+        host: failedUri.host,
+        port: failedUri.hasPort ? failedUri.port : null,
+        path: failedUri.path,
+      );
+      final networkError = _safeNetworkError(e.error);
+      debugPrint(
+        '[cineme-api] $method $requestUri failed: '
+        'DioExceptionType.${e.type.name}; underlying=$networkError',
+      );
       throw _map(e);
     }
   }
@@ -127,6 +140,19 @@ class ApiClient {
     code: 'MALFORMED_RESPONSE',
     message: 'Cinemé sent an unexpected response.',
   );
+
+  static String _safeNetworkError(Object? error) {
+    if (error == null) return 'none';
+    final type = error.runtimeType.toString();
+    if (const {
+      'SocketException',
+      'HandshakeException',
+      'TimeoutException',
+    }.contains(type)) {
+      return error.toString();
+    }
+    return type;
+  }
 
   static ApiError _map(DioException e) {
     final response = e.response;
