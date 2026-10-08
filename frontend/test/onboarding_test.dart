@@ -4,6 +4,7 @@ import 'package:cineme/app.dart';
 import 'package:cineme/core/config/app_config.dart';
 import 'package:cineme/core/network/api_client.dart';
 import 'package:cineme/core/widgets/movie_list_tile.dart';
+import 'package:cineme/core/widgets/selector_field.dart';
 import 'package:cineme/features/auth/application/auth_controller.dart';
 import 'package:cineme/features/auth/data/account_repository.dart';
 import 'package:cineme/features/auth/data/auth_repository.dart';
@@ -242,6 +243,16 @@ Finder addButton(int id) => find.descendant(
   ),
   matching: find.text('Add'),
 );
+
+/// Opens the Browse dropdown and picks [label].
+Future<void> chooseList(WidgetTester tester, String label) async {
+  await tester.tap(find.byType(SelectorField));
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.descendant(of: find.byType(ListTile), matching: find.text(label)),
+  );
+  await tester.pumpAndSettle();
+}
 
 Finder trendingAdd(int id) => find.descendant(
   of: find.byKey(ValueKey('discover-$id')),
@@ -724,14 +735,35 @@ void main() {
       return rig;
     }
 
-    testWidgets('defaults to Trending this week and offers the three lists', (
+    testWidgets('one dropdown, defaulting to Trending this week', (
       tester,
     ) async {
       final rig = await addScreen(tester);
       expect(find.byType(TextField), findsOneWidget);
+      expect(find.byType(SelectorField), findsOneWidget);
+      expect(find.byIcon(Icons.expand_more), findsOneWidget);
       expect(find.text('Trending this week'), findsOneWidget);
-      expect(find.text('Popular releases this month'), findsOneWidget);
-      expect(find.text('Popular releases this year'), findsOneWidget);
+      expect(find.text('Popular releases this month'), findsNothing);
+      // The three options live in the dropdown, the current one checked.
+      await tester.tap(find.byType(SelectorField));
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Trending this week',
+        'Popular releases this month',
+        'Popular releases this year',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byType(ListTile),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+        );
+      }
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10)); // dismiss without choosing
+      await tester.pumpAndSettle();
+      expect(find.text('Trending this week'), findsOneWidget);
       expect(
         find.text('What people are watching worldwide this week.'),
         findsOneWidget,
@@ -744,8 +776,7 @@ void main() {
       tester,
     ) async {
       final rig = await addScreen(tester);
-      await tester.tap(find.text('Popular releases this month'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this month');
       expect(
         find.text('Released this month, up to today, by current popularity.'),
         findsOneWidget,
@@ -754,12 +785,11 @@ void main() {
       expect(inCell(1, 'Film 1'), findsNothing);
       expect(
         find.textContaining('rending'),
-        findsOneWidget,
-        reason: 'only the pill',
+        findsNothing,
+        reason: 'month is not trending',
       );
 
-      await tester.tap(find.text('Popular releases this year'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this year');
       expect(
         find.text('Released this year, up to today, by current popularity.'),
         findsOneWidget,
@@ -776,8 +806,7 @@ void main() {
       tester,
     ) async {
       await addScreen(tester);
-      await tester.tap(find.text('Popular releases this year'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this year');
       await search(tester);
       expect(find.text('Popular releases this year'), findsNothing);
       expect(find.text('Film 2'), findsOneWidget);
@@ -796,8 +825,7 @@ void main() {
       tester,
     ) async {
       final rig = await addScreen(tester);
-      await tester.tap(find.text('Popular releases this year'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this year');
       await tester.tap(trendingAdd(6));
       await tester.pumpAndSettle();
       expect(inCell(6, 'Added'), findsOneWidget);
@@ -816,8 +844,7 @@ void main() {
       await add(tester, 2); // added from search
       await tester.enterText(find.byType(TextField), '');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Trending this week'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Trending this week');
       expect(
         inCell(2, 'Added'),
         findsOneWidget,
@@ -832,26 +859,44 @@ void main() {
     ) async {
       final rig = await addScreen(tester);
       rig.searchRepo.lists[DiscoveryList.popularMonth] = null;
-      await tester.tap(find.text('Popular releases this month'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this month');
       expect(find.textContaining("Couldn't load this list"), findsOneWidget);
-      await tester.tap(find.text('Trending this week'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Trending this week');
       expect(inCell(1, 'Film 1'), findsOneWidget);
 
       rig.searchRepo.lists[DiscoveryList.popularMonth] = [5];
-      await tester.tap(find.text('Popular releases this month'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this month');
       await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
       expect(inCell(5, 'Film 5'), findsOneWidget);
     });
 
+    testWidgets('the dropdown holds at 320 px and 200% text', (tester) async {
+      final rig = await addScreen(tester);
+      addTearDown(() {
+        tester.view.reset();
+        tester.platformDispatcher.clearAllTestValues();
+      });
+      tester.view
+        ..physicalSize = const Size(320, 640)
+        ..devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(rig.searchRepo.requested, isNotEmpty);
+      await chooseList(tester, 'Popular releases this month');
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SelectorField), findsOneWidget);
+      expect(
+        find.text('Released this month, up to today, by current popularity.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an empty popular list says so', (tester) async {
       final rig = await addScreen(tester);
       rig.searchRepo.lists[DiscoveryList.popularYear] = [];
-      await tester.tap(find.text('Popular releases this year'));
-      await tester.pumpAndSettle();
+      await chooseList(tester, 'Popular releases this year');
       expect(
         find.textContaining('No popular releases yet for this period'),
         findsOneWidget,

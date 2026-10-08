@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/choice_pill.dart';
+import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/movie_poster.dart';
 import '../../../shared/models/inventory.dart';
 import '../../watchlist/application/watchlist_controller.dart';
@@ -105,19 +105,24 @@ class DiscoveryGrid extends ConsumerWidget {
         children: [
           if (choices.length > 1)
             Padding(
-              padding: const EdgeInsets.fromLTRB(_inset, 4, _inset, 12),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final c in choices)
-                    ChoicePill(
-                      label: c.title,
-                      selected: c == selected,
-                      onTap: () =>
-                          ref.read(discoveryChoiceProvider.notifier).select(c),
-                    ),
-                ],
+              padding: const EdgeInsets.fromLTRB(_inset, 4, _inset, 4),
+              // One compact dropdown (the app's option sheet) instead of a
+              // row of pills: it wraps at large text and never overflows.
+              child: SelectorField(
+                label: 'Browse',
+                value: selected.title,
+                onTap: () async {
+                  final picked = await showOptionSheet<DiscoveryList>(
+                    context,
+                    title: 'Browse films',
+                    options: [for (final c in choices) (c, c.title)],
+                    selected: selected,
+                  );
+                  final choice = picked?.$1;
+                  if (choice != null) {
+                    ref.read(discoveryChoiceProvider.notifier).select(choice);
+                  }
+                },
               ),
             ),
           Padding(
@@ -125,7 +130,7 @@ class DiscoveryGrid extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // With a selector the pills carry the titles.
+                // With a dropdown the selected title is already shown in it.
                 if (choices.length == 1) ...[
                   Semantics(
                     header: true,
