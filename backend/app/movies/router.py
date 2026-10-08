@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from .schemas import (
     GenreOut,
     GenresResponse,
     MovieDetails,
+    PopularResponse,
     RegionsResponse,
     SearchResponse,
     TrendingResponse,
@@ -52,6 +53,19 @@ def trending_movies(
     and not a recommendation; at most 12, one page. Registered before the
     `/movies/{tmdb_id}` route so "trending" is not read as an id."""
     return service.trending(session, provider, identity.user_id)
+
+
+@router.get("/movies/popular", response_model=PopularResponse)
+def popular_movies(
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    period: Annotated[Literal["month", "year"], Query()],
+) -> PopularResponse:
+    """Popular releases this calendar month or year (up to the caller's local
+    today), by current TMDB popularity. Not trending history, not personalized
+    and not a recommendation; at most 12, one page."""
+    return service.popular_releases(session, provider, identity.user_id, period)
 
 
 @router.get("/movies/{tmdb_id}", response_model=MovieDetails)

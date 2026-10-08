@@ -598,10 +598,10 @@ class FakeWatchlistRepository implements WatchlistRepository {
 
 class FakeSearchRepository implements MovieSearchRepository {
   @override
-  Future<TrendingPage> trending() async {
+  Future<DiscoveryPage> discover(DiscoveryList list) async {
     await _s._io();
     final saved = {for (final e in _s._active) e.movie.tmdbId};
-    return TrendingPage(
+    return DiscoveryPage(
       results: [
         for (final m in _s._catalog.values.take(8))
           if (!_s._watched(m.tmdbId)) SearchResult(movie: m, canAdd: true),

@@ -89,8 +89,8 @@ class _SlowSearch implements MovieSearchRepository {
   final queries = <String>[];
 
   @override
-  Future<TrendingPage> trending() async =>
-      const TrendingPage(results: [], inWatchlist: {});
+  Future<DiscoveryPage> discover(DiscoveryList list) async =>
+      const DiscoveryPage(results: [], inWatchlist: {});
 
   @override
   Future<SearchPage> search(String query, {int page = 1}) async {

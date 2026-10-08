@@ -136,17 +136,25 @@ class FakeWatchlist implements WatchlistRepository {
 }
 
 class FakeSearch implements MovieSearchRepository {
-  /// Films shown as trending, in order; null makes the request fail.
-  List<int>? trendingIds = [1, 2, 3, 4];
+  /// Films per list, in order; null makes that list's request fail.
+  final lists = <DiscoveryList, List<int>?>{
+    DiscoveryList.trending: [1, 2, 3, 4],
+    DiscoveryList.popularMonth: [5, 6],
+    DiscoveryList.popularYear: [6, 7, 1],
+  };
+  List<int>? get trendingIds => lists[DiscoveryList.trending];
+  set trendingIds(List<int>? ids) => lists[DiscoveryList.trending] = ids;
   Set<int> onWatchlist = {};
   int trendingCalls = 0;
+  final requested = <DiscoveryList>[];
 
   @override
-  Future<TrendingPage> trending() async {
-    trendingCalls++;
-    final ids = trendingIds;
+  Future<DiscoveryPage> discover(DiscoveryList list) async {
+    requested.add(list);
+    if (list == DiscoveryList.trending) trendingCalls++;
+    final ids = lists[list];
     if (ids == null) throw _unavailable;
-    return TrendingPage(
+    return DiscoveryPage(
       results: [
         for (final i in ids) SearchResult(movie: catalog[i]!, canAdd: true),
       ],
@@ -236,12 +244,12 @@ Finder addButton(int id) => find.descendant(
 );
 
 Finder trendingAdd(int id) => find.descendant(
-  of: find.byKey(ValueKey('trending-$id')),
+  of: find.byKey(ValueKey('discover-$id')),
   matching: find.text('Add'),
 );
 
 Finder inCell(int id, String text) => find.descendant(
-  of: find.byKey(ValueKey('trending-$id')),
+  of: find.byKey(ValueKey('discover-$id')),
   matching: find.text(text),
 );
 
@@ -548,7 +556,7 @@ void main() {
       expect(rig.searchRepo.trendingCalls, 1);
       // Two columns on a narrow phone (400 px wide here).
       Offset at(int i) =>
-          tester.getTopLeft(find.byKey(ValueKey('trending-$i')));
+          tester.getTopLeft(find.byKey(ValueKey('discover-$i')));
       expect(at(2).dy, at(1).dy);
       expect(at(2).dx, greaterThan(at(1).dx));
       expect(at(3).dy, greaterThan(at(1).dy));
@@ -566,7 +574,7 @@ void main() {
       await openAddStep(tester);
       final ys = {
         for (var i = 1; i <= 4; i++)
-          tester.getTopLeft(find.byKey(ValueKey('trending-$i'))).dy,
+          tester.getTopLeft(find.byKey(ValueKey('discover-$i'))).dy,
       };
       expect(ys.length, 1, reason: 'four films share one row at 1200 px');
     });
@@ -653,10 +661,7 @@ void main() {
       final rig = await pendingRig(tester);
       rig.searchRepo.trendingIds = null;
       await openAddStep(tester);
-      expect(
-        find.textContaining("Couldn't load trending films"),
-        findsOneWidget,
-      );
+      expect(find.textContaining("Couldn't load this list"), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Continue'), findsOneWidget);
@@ -671,7 +676,7 @@ void main() {
       rig.searchRepo.trendingIds = [1, 2];
       await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
-      expect(find.textContaining("Couldn't load trending films"), findsNothing);
+      expect(find.textContaining("Couldn't load this list"), findsNothing);
       expect(inCell(1, 'Added'), findsOneWidget);
       expect(trendingAdd(2), findsOneWidget);
 
@@ -703,6 +708,162 @@ void main() {
       expect(find.text('Trending this week'), findsNothing);
       expect(find.text('Your watchlist is empty'), findsOneWidget);
       expect(rig.server.lists['alice'], anyOf(isNull, isEmpty));
+    });
+  });
+
+  group('Watchlist add screen discovery', () {
+    /// An onboarded account on the add screen (Tonight's empty state leads
+    /// there), with nothing typed.
+    Future<Rig> addScreen(WidgetTester tester) async {
+      tallView(tester);
+      final rig = Rig(signedIn: alice);
+      await tester.pumpWidget(rig.app());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add movies'));
+      await tester.pumpAndSettle();
+      return rig;
+    }
+
+    testWidgets('defaults to Trending this week and offers the three lists', (
+      tester,
+    ) async {
+      final rig = await addScreen(tester);
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('Trending this week'), findsOneWidget);
+      expect(find.text('Popular releases this month'), findsOneWidget);
+      expect(find.text('Popular releases this year'), findsOneWidget);
+      expect(
+        find.text('What people are watching worldwide this week.'),
+        findsOneWidget,
+      );
+      expect(inCell(1, 'Film 1'), findsOneWidget);
+      expect(rig.searchRepo.requested, [DiscoveryList.trending]);
+    });
+
+    testWidgets('month and year are popular releases with a clear subtitle', (
+      tester,
+    ) async {
+      final rig = await addScreen(tester);
+      await tester.tap(find.text('Popular releases this month'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Released this month, up to today, by current popularity.'),
+        findsOneWidget,
+      );
+      expect(inCell(5, 'Film 5'), findsOneWidget);
+      expect(inCell(1, 'Film 1'), findsNothing);
+      expect(
+        find.textContaining('rending'),
+        findsOneWidget,
+        reason: 'only the pill',
+      );
+
+      await tester.tap(find.text('Popular releases this year'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Released this year, up to today, by current popularity.'),
+        findsOneWidget,
+      );
+      expect(inCell(7, 'Film 7'), findsOneWidget);
+      expect(rig.searchRepo.requested, [
+        DiscoveryList.trending,
+        DiscoveryList.popularMonth,
+        DiscoveryList.popularYear,
+      ]);
+    });
+
+    testWidgets('typing searches; clearing restores the chosen list', (
+      tester,
+    ) async {
+      await addScreen(tester);
+      await tester.tap(find.text('Popular releases this year'));
+      await tester.pumpAndSettle();
+      await search(tester);
+      expect(find.text('Popular releases this year'), findsNothing);
+      expect(find.text('Film 2'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.text('Popular releases this year'), findsOneWidget);
+      expect(inCell(7, 'Film 7'), findsOneWidget);
+      expect(
+        find.text('Released this year, up to today, by current popularity.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('membership stays in sync between discovery and search', (
+      tester,
+    ) async {
+      final rig = await addScreen(tester);
+      await tester.tap(find.text('Popular releases this year'));
+      await tester.pumpAndSettle();
+      await tester.tap(trendingAdd(6));
+      await tester.pumpAndSettle();
+      expect(inCell(6, 'Added'), findsOneWidget);
+
+      await search(tester);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Film 6'),
+            matching: find.byType(MovieListTile),
+          ),
+          matching: find.text('In watchlist'),
+        ),
+        findsOneWidget,
+      );
+      await add(tester, 2); // added from search
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Trending this week'));
+      await tester.pumpAndSettle();
+      expect(
+        inCell(2, 'Added'),
+        findsOneWidget,
+        reason: 'search add shows here',
+      );
+      expect(inCell(1, 'Add'), findsOneWidget);
+      expect(rig.server.lists['alice']!.length, 2);
+    });
+
+    testWidgets('a failed list offers Retry and leaves the others usable', (
+      tester,
+    ) async {
+      final rig = await addScreen(tester);
+      rig.searchRepo.lists[DiscoveryList.popularMonth] = null;
+      await tester.tap(find.text('Popular releases this month'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Couldn't load this list"), findsOneWidget);
+      await tester.tap(find.text('Trending this week'));
+      await tester.pumpAndSettle();
+      expect(inCell(1, 'Film 1'), findsOneWidget);
+
+      rig.searchRepo.lists[DiscoveryList.popularMonth] = [5];
+      await tester.tap(find.text('Popular releases this month'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(inCell(5, 'Film 5'), findsOneWidget);
+    });
+
+    testWidgets('an empty popular list says so', (tester) async {
+      final rig = await addScreen(tester);
+      rig.searchRepo.lists[DiscoveryList.popularYear] = [];
+      await tester.tap(find.text('Popular releases this year'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('No popular releases yet for this period'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('onboarding keeps weekly trending only', (tester) async {
+      await pendingRig(tester);
+      await openAddStep(tester);
+      expect(find.text('Trending this week'), findsOneWidget);
+      expect(find.text('Popular releases this month'), findsNothing);
+      expect(find.text('Popular releases this year'), findsNothing);
     });
   });
 

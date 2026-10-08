@@ -8,8 +8,9 @@ abstract interface class MovieSearchRepository {
   /// GET /movies/search: query length 2..100; runtime may be null.
   Future<SearchPage> search(String query, {int page = 1});
 
-  /// GET /movies/trending: at most a dozen films, one page, for onboarding.
-  Future<TrendingPage> trending();
+  /// GET /movies/trending or /movies/popular: at most a dozen films, one
+  /// page, for onboarding and the add screen.
+  Future<DiscoveryPage> discover(DiscoveryList list);
 }
 
 /// Null in builds without a backend; the preview overrides it with a fake.
@@ -47,11 +48,12 @@ class ApiSearchRepository implements MovieSearchRepository {
   }
 
   @override
-  Future<TrendingPage> trending() async {
-    final body = await _api.get('/api/v1/movies/trending');
+  Future<DiscoveryPage> discover(DiscoveryList list) async {
+    final period = list.period;
+    final body = await _api.get(list.path, query: {'period': ?period});
     final saved = asList(body['in_watchlist']);
     if (saved.any((id) => id is! int)) throw malformedResponse;
-    return TrendingPage(
+    return DiscoveryPage(
       results: [
         for (final r in asList(body['results']))
           () {

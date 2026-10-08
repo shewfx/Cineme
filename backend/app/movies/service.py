@@ -3,9 +3,10 @@ freshness"). Network calls happen outside any user lock; the movie cache is
 shared, non-private data and may be written by a GET."""
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -24,6 +25,7 @@ from .schemas import (
     GenreOut,
     MovieDetails,
     MovieSummary,
+    PopularResponse,
     SearchResponse,
     TraitsOut,
     TrendingResponse,
@@ -109,16 +111,20 @@ def search(
 TRENDING_LIMIT = 12
 
 
-def trending(
-    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID
-) -> TrendingResponse:
-    """Onboarding discovery: this week's trending films, the same for everyone
-    (TMDB, cached in the provider). Filtered to what the caller can actually
-    add and see: not adult, released, with a poster, not already watched and
-    not blocked by this user. Never a recommendation."""
+def _discovery(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    fetch: Callable[[date], tuple[ProviderMovie, ...]],
+) -> tuple[list[MovieSummary], list[int]]:
+    """Shared discovery presentation. `fetch` gets the caller's local date and
+    returns TMDB films (the same for everyone, cached in the provider). They
+    are filtered to what the caller can actually add: not adult, released, with
+    a poster, not already watched and not blocked by this user; at most
+    TRENDING_LIMIT remain. Never a recommendation."""
     today = local_today(session, user_id)
     session.rollback()  # no open transaction during network calls
-    films = provider.trending()
+    films = fetch(today)
     names = genre_names(provider)
     base = provider.image_base()
     candidates = [
@@ -152,23 +158,55 @@ def trending(
         )
     )
     session.rollback()
-    return TrendingResponse(
-        results=[
-            MovieSummary(
-                tmdb_id=m.tmdb_id,
-                title=m.title,
-                year=m.release_date.year if m.release_date else None,
-                runtime_minutes=None,
-                genre_ids=list(m.genre_ids),
-                genres=_genres(m.genre_ids, names),
-                poster_url=poster_url(base, m.poster_path),
-                vote_average=m.vote_average,
-                can_add=True,
-                released=True,
-            )
-            for m in shown
-        ],
-        in_watchlist=[m.tmdb_id for m in shown if m.tmdb_id in saved],
+    results = [
+        MovieSummary(
+            tmdb_id=m.tmdb_id,
+            title=m.title,
+            year=m.release_date.year if m.release_date else None,
+            runtime_minutes=None,
+            genre_ids=list(m.genre_ids),
+            genres=_genres(m.genre_ids, names),
+            poster_url=poster_url(base, m.poster_path),
+            vote_average=m.vote_average,
+            can_add=True,
+            released=True,
+        )
+        for m in shown
+    ]
+    return results, [m.tmdb_id for m in shown if m.tmdb_id in saved]
+
+
+def trending(
+    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID
+) -> TrendingResponse:
+    """This week's trending films (TMDB), for onboarding and Watchlist add."""
+    results, saved = _discovery(session, provider, user_id, lambda _today: provider.trending())
+    return TrendingResponse(results=results, in_watchlist=saved)
+
+
+def popular_releases(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    period: Literal["month", "year"],
+) -> PopularResponse:
+    """Films released this calendar month or year up to the caller's local
+    today, by current TMDB popularity. These are popular releases, not a
+    historical monthly or yearly trending ranking."""
+    window: list[date] = []
+
+    def fetch(today: date) -> tuple[ProviderMovie, ...]:
+        start = today.replace(day=1) if period == "month" else today.replace(month=1, day=1)
+        window[:] = [start, today]
+        return provider.popular_releases(start, today)
+
+    results, saved = _discovery(session, provider, user_id, fetch)
+    return PopularResponse(
+        period=period,
+        released_from=window[0],
+        released_to=window[1],
+        results=results,
+        in_watchlist=saved,
     )
 
 

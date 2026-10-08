@@ -10,7 +10,7 @@ import '../../watchlist/application/watchlist_controller.dart';
 import '../application/search_controller.dart';
 import '../data/search_repository.dart';
 import 'search_feedback.dart';
-import 'trending_grid.dart';
+import 'discovery_grid.dart';
 
 /// What a result row offers.
 enum SearchMode {
@@ -69,9 +69,13 @@ class SearchPanel extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
 
     final Widget body = switch (state.results) {
-      // Onboarding with nothing typed: this week's trending films.
-      null when mode == SearchMode.onboarding && state.query.isEmpty =>
-        const TrendingGrid(),
+      // Nothing typed: discovery. Onboarding shows weekly trending only;
+      // the add screen offers the three lists.
+      null when mode != SearchMode.log && state.query.isEmpty => DiscoveryGrid(
+        choices: mode == SearchMode.onboarding
+            ? const [DiscoveryList.trending]
+            : DiscoveryList.values,
+      ),
       null => _Hint(
         state.query.isEmpty
             ? (logMode
@@ -183,7 +187,7 @@ class _ResultRow extends ConsumerWidget {
     // Onboarding keeps one selection across trending and search: a film
     // already on the server-side watchlist reads as added here too.
     final listed =
-        mode == SearchMode.onboarding &&
+        mode != SearchMode.log &&
         (ref
                 .watch(watchlistControllerProvider)
                 .value

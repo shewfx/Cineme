@@ -60,10 +60,43 @@ class SearchPage {
   final List<SearchResult> results;
 }
 
-/// GET /movies/trending: this week's trending films (not personalized) and
-/// which of them are already on the caller's watchlist.
-class TrendingPage {
-  const TrendingPage({required this.results, required this.inWatchlist});
+/// The discovery lists on the add screen. Trending is TMDB's weekly trending;
+/// the popular lists are films released this calendar month or year up to
+/// today, by current popularity. Only Trending is "trending".
+enum DiscoveryList {
+  trending(
+    'Trending this week',
+    'What people are watching worldwide this week.',
+    '/api/v1/movies/trending',
+    null,
+  ),
+  popularMonth(
+    'Popular releases this month',
+    'Released this month, up to today, by current popularity.',
+    '/api/v1/movies/popular',
+    'month',
+  ),
+  popularYear(
+    'Popular releases this year',
+    'Released this year, up to today, by current popularity.',
+    '/api/v1/movies/popular',
+    'year',
+  );
+
+  const DiscoveryList(this.title, this.subtitle, this.path, this.period);
+
+  final String title;
+  final String subtitle;
+  final String path;
+
+  /// The `period` query value for the popular lists.
+  final String? period;
+}
+
+/// One discovery list (not personalized) and which of its films are already
+/// on the caller's watchlist.
+class DiscoveryPage {
+  const DiscoveryPage({required this.results, required this.inWatchlist});
 
   final List<SearchResult> results;
   final Set<int> inWatchlist;

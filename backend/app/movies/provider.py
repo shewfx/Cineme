@@ -24,6 +24,7 @@ FALLBACK_IMAGE_BASE = "https://image.tmdb.org/t/p/"
 POSTER_SIZE = "w500"
 MAX_PAGES = 500
 TRENDING_TTL_SECONDS = 3600.0
+POPULAR_CACHE_ENTRIES = 8
 _POSTER_PATH = re.compile(r"^/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$")
 
 # connect 3 s / read 5 s; whole operation (incl. one retry) within 8 s.
@@ -70,6 +71,10 @@ class MovieMetadataProvider(Protocol):
 
     def trending(self) -> tuple[ProviderMovie, ...]:
         """This week's globally trending films (TMDB), not personalized."""
+
+    def popular_releases(self, start: date, end: date) -> tuple[ProviderMovie, ...]:
+        """Films with a primary release date from `start` to `end` inclusive,
+        by current TMDB popularity. One page; not trending history."""
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         """Raises AppError 404 NOT_FOUND for an unknown film."""
@@ -268,6 +273,8 @@ class TmdbProvider:
         self._image_base: tuple[float, str] | None = None
         self._regions: tuple[float, tuple[tuple[str, str], ...]] | None = None
         self._trending: tuple[float, tuple[ProviderMovie, ...]] | None = None
+        # (start, end) -> (fetched at, films); a handful of keys, oldest dropped.
+        self._popular: dict[tuple[date, date], tuple[float, tuple[ProviderMovie, ...]]] = {}
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         deadline = self._clock() + BUDGET_SECONDS
@@ -332,6 +339,39 @@ class TmdbProvider:
             raise
         movies = tuple(m for m in (normalize_movie(r) for r in data["results"]) if m is not None)
         self._trending = (self._clock(), movies)
+        return movies
+
+    def popular_releases(self, start: date, end: date) -> tuple[ProviderMovie, ...]:
+        """/discover/movie sorted by popularity for a release-date window,
+        cached an hour per window (at most a few windows, oldest dropped); a
+        failed refresh serves the last good copy while one exists."""
+        key = (start, end)
+        cached = self._popular.get(key)
+        if cached is not None and self._clock() - cached[0] < TRENDING_TTL_SECONDS:
+            return cached[1]
+        try:
+            data = self._get(
+                "/discover/movie",
+                {
+                    "language": "en-US",
+                    "sort_by": "popularity.desc",
+                    "include_adult": "false",
+                    "include_video": "false",
+                    "page": 1,
+                    "primary_release_date.gte": start.isoformat(),
+                    "primary_release_date.lte": end.isoformat(),
+                },
+            )
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                raise _upstream_invalid()
+        except AppError:
+            if cached is not None:
+                return cached[1]
+            raise
+        movies = tuple(m for m in (normalize_movie(r) for r in data["results"]) if m is not None)
+        self._popular[key] = (self._clock(), movies)
+        while len(self._popular) > POPULAR_CACHE_ENTRIES:
+            del self._popular[next(iter(self._popular))]
         return movies
 
     def details(self, tmdb_id: int) -> ProviderMovie:

@@ -2,18 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/movie_poster.dart';
 import '../../../shared/models/inventory.dart';
 import '../../watchlist/application/watchlist_controller.dart';
 import '../application/search_controller.dart';
 import 'search_feedback.dart';
 
-/// Onboarding's discovery grid, shown while the search box is empty: this
-/// week's trending films (the same for everyone, not a recommendation), one
-/// bounded page with no further scrolling. Adds go through the same
-/// controller as search rows, so one selection spans both.
-class TrendingGrid extends ConsumerWidget {
-  const TrendingGrid({super.key});
+/// Discovery shown while the search box is empty: one bounded page of films
+/// (the same for everyone, never a recommendation) with no further scrolling.
+/// Onboarding offers weekly trending only; the add screen offers [choices]
+/// with a selector. Adds go through the same controller as search rows, so
+/// one selection spans discovery and search.
+class DiscoveryGrid extends ConsumerWidget {
+  const DiscoveryGrid({super.key, required this.choices});
+
+  final List<DiscoveryList> choices;
 
   static const _minCell = 160.0;
   static const _gap = 16.0;
@@ -22,14 +26,20 @@ class TrendingGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final trending = ref.watch(trendingProvider);
-    final page = trending.value;
+    final selected = choices.length == 1
+        ? choices.first
+        : ref.watch(discoveryChoiceProvider);
+    final list = ref.watch(discoveryProvider(selected));
+    final page = list.value;
 
     final Widget content;
     if (page != null) {
       content = page.results.isEmpty
           ? _Note(
-              'Nothing is trending right now. Search for a film above.',
+              selected == DiscoveryList.trending
+                  ? 'Nothing is trending right now. Search for a film above.'
+                  : 'No popular releases yet for this period. Search for a '
+                        'film above.',
               style: text,
             )
           : LayoutBuilder(
@@ -46,7 +56,7 @@ class TrendingGrid extends ConsumerWidget {
                     children: [
                       for (final r in page.results)
                         SizedBox(
-                          key: ValueKey('trending-${r.movie.tmdbId}'),
+                          key: ValueKey('discover-${r.movie.tmdbId}'),
                           width: width,
                           child: _TrendingCell(
                             result: r,
@@ -58,7 +68,7 @@ class TrendingGrid extends ConsumerWidget {
                 );
               },
             );
-    } else if (trending.hasError) {
+    } else if (list.hasError) {
       content = Padding(
         padding: const EdgeInsets.symmetric(horizontal: _inset),
         child: Column(
@@ -67,14 +77,13 @@ class TrendingGrid extends ConsumerWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                "Couldn't load trending films. You can still search above, "
-                'or skip.',
+                "Couldn't load this list. You can still search above.",
                 style: text.bodyMedium?.copyWith(color: AppColors.textSoft),
               ),
             ),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: () => ref.invalidate(trendingProvider),
+              onPressed: () => ref.invalidate(discoveryProvider(selected)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.text,
                 side: const BorderSide(color: AppColors.border),
@@ -94,11 +103,41 @@ class TrendingGrid extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (choices.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(_inset, 4, _inset, 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in choices)
+                    ChoicePill(
+                      label: c.title,
+                      selected: c == selected,
+                      onTap: () =>
+                          ref.read(discoveryChoiceProvider.notifier).select(c),
+                    ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(_inset, 8, _inset, 12),
-            child: Semantics(
-              header: true,
-              child: Text('Trending this week', style: text.titleMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // With a selector the pills carry the titles.
+                if (choices.length == 1) ...[
+                  Semantics(
+                    header: true,
+                    child: Text(selected.title, style: text.titleMedium),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                Text(
+                  selected.subtitle,
+                  style: text.bodySmall?.copyWith(color: AppColors.textMuted),
+                ),
+              ],
             ),
           ),
           content,
@@ -116,7 +155,7 @@ class _Note extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: TrendingGrid._inset),
+    padding: const EdgeInsets.symmetric(horizontal: DiscoveryGrid._inset),
     child: Text(
       message,
       style: style.bodyMedium?.copyWith(color: AppColors.textMuted),
@@ -132,11 +171,11 @@ class _Skeleton extends StatelessWidget {
     label: 'Loading trending films',
     child: ExcludeSemantics(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: TrendingGrid._inset),
+        padding: const EdgeInsets.symmetric(horizontal: DiscoveryGrid._inset),
         child: Row(
           children: [
             for (var i = 0; i < 2; i++) ...[
-              if (i > 0) const SizedBox(width: TrendingGrid._gap),
+              if (i > 0) const SizedBox(width: DiscoveryGrid._gap),
               Expanded(
                 child: AspectRatio(
                   aspectRatio: 2 / 3,

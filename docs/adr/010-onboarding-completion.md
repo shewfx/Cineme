@@ -18,6 +18,10 @@ Client-side flags would repeat onboarding on every new device and could not dist
 
 The empty add step shows `GET /movies/trending` (TMDB weekly trending, at most 12 films, same list for everyone, filtered per caller for add eligibility) so a new user has something to pick from without knowing a title. It reuses the existing TMDB provider, its error mapping and an in-process one-hour cache (no database table, no TMDB call from Flutter, no new credential). It is not a recommendation and does not touch ranking, preferences or Tonight. Rejected: persisting a trending table (a cache table for twelve rows adds a migration and a refresh job for nothing); personalizing the list (explicitly out of scope); infinite scrolling (bounded by design).
 
+## Amendment: popular releases on the Watchlist add screen (same release)
+
+The Watchlist add screen reuses the discovery grid with a selector: Trending this week (the endpoint above), plus `GET /movies/popular?period=month|year`, films released this calendar month or year up to the caller's local today, by current TMDB popularity (`/discover/movie`). TMDB has no historical monthly or yearly trending, so those lists are named and described as popular releases, never trending. They share the provider, its error mapping, the per-user eligibility filtering and the bound of 12; the provider caches each release window in process for an hour (at most eight windows) and serves the last good copy on failure. Still no table, no migration, no personalization, and Tonight is unchanged. Rejected: deriving monthly trending by storing daily snapshots (a job and a table for a feature that is not needed).
+
 ## Tradeoff
 
 One nullable column and one additive field. Skipping and finishing are indistinguishable by design; if the product ever needs to tell them apart, that needs a new column. Accounts created between the migration and the backend deploy by an older backend start with `NULL` and see onboarding once on a new client, which is the intended behavior for new accounts.
