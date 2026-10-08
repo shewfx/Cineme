@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+
+Android-only fix release (build 6); the web app stays on 1.2.0.
+
+- Android release builds are always built against the production Cinemé API, never a local development address.
+- The release build script checks every packaged Flutter library before an APK is distributed. It requires the production API target and rejects loopback (`localhost`, `127.x`, `10.0.2.2` and similar) or `same-origin` targets.
+- Network failures are logged with credential-safe diagnostics (request method, host and path, and the error type) to make connection problems easier to diagnose.
+
 ## 1.2.0
 
 Onboarding and movie discovery (below, formerly planned as 1.1.0) ship together with shows and anime in this release.

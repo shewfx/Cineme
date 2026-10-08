@@ -347,7 +347,7 @@ void main() {
     tester,
   ) async {
     final rig = await pendingRig(tester);
-    expect(find.text('One movie. No scrolling.'), findsOneWidget);
+    expect(find.text('One pick. No scrolling.'), findsOneWidget);
     expect(find.byType(FloatingNavBar), findsNothing);
     await openAddStep(tester);
     expect(
@@ -394,7 +394,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(rig.server.completeCalls['alice'], 1);
     expect(find.byType(FloatingNavBar), findsOneWidget);
-    expect(find.text('One movie. No scrolling.'), findsNothing);
+    expect(find.text('One pick. No scrolling.'), findsNothing);
   });
 
   testWidgets('Skip completes onboarding; Tonight is the honest empty state', (
@@ -467,7 +467,7 @@ void main() {
       ];
     final rig = await pendingRig(tester, server: server);
     // Films already saved (this or another device): the intro is skipped.
-    expect(find.text('One movie. No scrolling.'), findsNothing);
+    expect(find.text('One pick. No scrolling.'), findsNothing);
     expect(find.text('1 film added. Five is a good start.'), findsOneWidget);
     // Already on the list, so it reads Added and offers no second submit.
     expect(inCell(1, 'Added'), findsOneWidget);
@@ -527,7 +527,7 @@ void main() {
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('One movie. No scrolling.'), findsOneWidget);
+    expect(find.text('One pick. No scrolling.'), findsOneWidget);
     expect(rig.server.completeCalls['alice'], isNull);
     expect(find.byType(FloatingNavBar), findsNothing);
   });
@@ -539,7 +539,7 @@ void main() {
     final rig = Rig(signedIn: alice); // the server says complete
     await tester.pumpWidget(rig.app());
     await tester.pumpAndSettle();
-    expect(find.text('One movie. No scrolling.'), findsNothing);
+    expect(find.text('One pick. No scrolling.'), findsNothing);
     expect(find.byType(FloatingNavBar), findsOneWidget);
   });
 
@@ -554,7 +554,7 @@ void main() {
 
     rig.auth.emit(bob);
     await tester.pumpAndSettle();
-    expect(find.text('One movie. No scrolling.'), findsOneWidget);
+    expect(find.text('One pick. No scrolling.'), findsOneWidget);
 
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();

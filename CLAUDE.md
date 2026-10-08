@@ -1,6 +1,6 @@
 # Cinemé — Claude Code repository instructions
 
-You are implementing an existing architecture, not designing a different product. This repository is a portfolio app that chooses ONE movie from a user's own watchlist. Small, correct, understandable changes are the goal.
+You are implementing an existing architecture, not designing a different product. This repository is a portfolio app that chooses exactly ONE movie or next eligible episode from a user's own watchlist. Small, correct, understandable changes are the goal.
 
 ## Before each task
 
