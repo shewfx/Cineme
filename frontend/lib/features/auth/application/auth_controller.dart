@@ -32,6 +32,28 @@ final accountProvider = FutureProvider<Profile>((ref) async {
   return account.me();
 });
 
+/// Set once this session's user has finished onboarding on the server, so the
+/// gate can leave onboarding without re-running bootstrap. Keyed to the
+/// signed-in user: a sign-out or account switch starts false again.
+class OnboardingDone extends Notifier<bool> {
+  @override
+  bool build() {
+    ref.watch(currentUserIdProvider);
+    return false;
+  }
+
+  /// PATCH /me; the gate flips only after the server confirms, so a failed
+  /// call leaves the user on the screen and the next launch asks again.
+  Future<void> complete() async {
+    await ref.read(accountRepositoryProvider)!.completeOnboarding();
+    if (ref.mounted) state = true;
+  }
+}
+
+final onboardingDoneProvider = NotifierProvider<OnboardingDone, bool>(
+  OnboardingDone.new,
+);
+
 enum AuthGate {
   /// Explicit UI-preview build: fake data, no sign-in.
   preview,
@@ -46,6 +68,9 @@ enum AuthGate {
 
   /// Bootstrap or GET /me in progress or failed (Retry offered).
   settingUp,
+
+  /// Signed in and set up, but the server says onboarding is not complete.
+  onboarding,
   ready,
 }
 
@@ -59,7 +84,12 @@ final authGateProvider = Provider<AuthGate>((ref) {
   if (user.isLoading && !user.hasValue) return AuthGate.checkingSession;
   if (user.value == null) return AuthGate.signedOut;
   final account = ref.watch(accountProvider);
-  if (account.hasValue && !account.isLoading) return AuthGate.ready;
+  if (account.hasValue && !account.isLoading) {
+    final done =
+        account.requireValue.onboardingComplete ||
+        ref.watch(onboardingDoneProvider);
+    return done ? AuthGate.ready : AuthGate.onboarding;
+  }
   final error = account.error;
   if (error is ApiError && error.code == 'EMAIL_NOT_VERIFIED') {
     return AuthGate.confirmEmail;

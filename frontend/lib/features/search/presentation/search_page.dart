@@ -9,6 +9,18 @@ import '../../history/data/history_repository.dart';
 import '../application/search_controller.dart';
 import '../data/search_repository.dart';
 
+/// What a result row offers.
+enum SearchMode {
+  /// Add to watchlist, plus Already watched when history exists.
+  add,
+
+  /// Log a past viewing only.
+  log,
+
+  /// Add to watchlist only: onboarding is about the watchlist, not history.
+  onboarding,
+}
+
 /// Search/Add: separate "Add to watchlist" and "Already watched" actions.
 class SearchPage extends ConsumerWidget {
   const SearchPage({super.key, this.logMode = false});
@@ -19,6 +31,36 @@ class SearchPage extends ConsumerWidget {
     if (ref.watch(searchRepositoryProvider) == null) {
       return const Scaffold(body: UnavailableView(what: 'Search'));
     }
+    return Scaffold(
+      body: SafeArea(
+        child: SearchPanel(
+          mode: logMode ? SearchMode.log : SearchMode.add,
+          leading: const BackButton(),
+        ),
+      ),
+    );
+  }
+}
+
+/// The query field and result list, shared by the Search page and
+/// onboarding so both add films through exactly the same rows and rules.
+class SearchPanel extends ConsumerWidget {
+  const SearchPanel({
+    super.key,
+    this.mode = SearchMode.add,
+    this.leading,
+    this.autofocus = true,
+  });
+
+  final SearchMode mode;
+  final Widget? leading;
+
+  /// Onboarding does not open the keyboard over its own actions.
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final logMode = mode == SearchMode.log;
     final state = ref.watch(searchControllerProvider);
     final controller = ref.read(searchControllerProvider.notifier);
     final text = Theme.of(context).textTheme;
@@ -28,6 +70,8 @@ class SearchPage extends ConsumerWidget {
         state.query.isEmpty
             ? (logMode
                   ? 'Search for a film you watched.'
+                  : mode == SearchMode.onboarding
+                  ? 'Search by title for a film you want to watch.'
                   : 'Search by title to add films to your watchlist.')
             : 'Type at least $minQueryLength letters to search.',
       ),
@@ -46,7 +90,7 @@ class SearchPage extends ConsumerWidget {
         itemCount: results.length + (state.hasMore ? 1 : 0),
         itemBuilder: (context, i) {
           if (i < results.length) {
-            return _ResultRow(result: results[i], logMode: logMode);
+            return _ResultRow(result: results[i], mode: mode);
           }
           if (state.loadMoreError == null && !state.loadingMore) {
             WidgetsBinding.instance.addPostFrameCallback(
@@ -61,48 +105,42 @@ class SearchPage extends ConsumerWidget {
       ),
     };
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 24, 8),
-              child: Row(
-                children: [
-                  const BackButton(),
-                  Expanded(
-                    child: TextField(
-                      autofocus: true,
-                      onChanged: controller.onQueryChanged,
-                      textInputAction: TextInputAction.search,
-                      style: text.bodyLarge,
-                      decoration: InputDecoration(
-                        hintText: logMode
-                            ? 'Find a watched film'
-                            : 'Search films',
-                        hintStyle: text.bodyLarge?.copyWith(
-                          color: AppColors.textMuted,
-                        ),
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: AppColors.textMuted,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadii.chip),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(leading == null ? 24 : 8, 8, 24, 8),
+          child: Row(
+            children: [
+              ?leading,
+              Expanded(
+                child: TextField(
+                  autofocus: autofocus,
+                  onChanged: controller.onQueryChanged,
+                  textInputAction: TextInputAction.search,
+                  style: text.bodyLarge,
+                  decoration: InputDecoration(
+                    hintText: logMode ? 'Find a watched film' : 'Search films',
+                    hintStyle: text.bodyLarge?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppColors.textMuted,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.chip),
+                      borderSide: BorderSide.none,
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-            Expanded(child: body),
-          ],
+            ],
+          ),
         ),
-      ),
+        Expanded(child: body),
+      ],
     );
   }
 }
@@ -124,13 +162,14 @@ class _Hint extends StatelessWidget {
 }
 
 class _ResultRow extends ConsumerWidget {
-  const _ResultRow({required this.result, required this.logMode});
+  const _ResultRow({required this.result, required this.mode});
 
   final SearchResult result;
-  final bool logMode;
+  final SearchMode mode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final logMode = mode == SearchMode.log;
     final movie = result.movie;
     final state = ref.watch(searchControllerProvider);
     final mark = state.marks[movie.tmdbId];
@@ -232,7 +271,7 @@ class _ResultRow extends ConsumerWidget {
     final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
     // Logging a past viewing needs viewing history (P5).
     final alreadyWatched =
-        !logMode &&
+        mode == SearchMode.add &&
             ref.watch(historyRepositoryProvider) != null &&
             mark != ResultMark.watched &&
             result.canAdd

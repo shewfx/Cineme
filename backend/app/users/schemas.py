@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -27,6 +27,9 @@ class MeResponse(BaseModel):
     country_code: str | None
     region: str | None
     created_at: datetime
+    # Null: the account still needs onboarding. Clients treat an absent field
+    # (older backend) as completed.
+    onboarding_completed_at: datetime | None
     preferences: PreferencesResponse
 
 
@@ -75,6 +78,15 @@ class MePatch(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     # Null clears the choice (the timezone's country is used instead).
     country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    # One-way: only `true` is accepted. Skip and Continue both send it.
+    onboarding_completed: Literal[True] | None = None
+
+    @field_validator("onboarding_completed")
+    @classmethod
+    def _only_true(cls, v: bool | None) -> bool | None:
+        if v is None:
+            raise ValueError("onboarding_completed can only be set to true")
+        return v
 
     @field_validator("display_name")
     @classmethod
@@ -86,7 +98,7 @@ class MePatch(BaseModel):
     @model_validator(mode="after")
     def _something(self) -> Self:
         if not self.model_fields_set:
-            raise ValueError("send display_name, timezone or country_code")
+            raise ValueError("send display_name, timezone, country_code or onboarding_completed")
         return self
 
     @field_validator("country_code")

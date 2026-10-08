@@ -30,6 +30,7 @@ No generic event-sourcing table, separate user-rating table, actor table or per-
 | display_name | varchar(80), nullable | No email duplicated into app DB |
 | timezone | varchar(64), `UTC` | Valid IANA zone checked in service |
 | created_at / updated_at | timestamptz | Server UTC timestamps |
+| onboarding_completed_at | timestamptz, nullable | Null while a new account still needs onboarding. Set once by `PATCH /me {onboarding_completed:true}` and never cleared or moved; migration 0007 backfilled every existing user to `created_at` (ADR 010) |
 
 No FK to `auth.users`: same model works with local application DB and separately hosted Auth. Operator deletion workflow removes app user data then identity, with retry documentation.
 

@@ -44,6 +44,7 @@ def read_profile(session: Session, user_id: uuid.UUID) -> MeResponse:
         country_code=user.country_code,
         region=region_for(user),
         created_at=user.created_at,
+        onboarding_completed_at=user.onboarding_completed_at,
         preferences=PreferencesResponse(
             version=prefs.version,
             genre_preferences=prefs.genre_preferences,
@@ -100,6 +101,10 @@ def apply_patch(user: User, patch: MePatch) -> None:
         changed = True
     if "country_code" in patch.model_fields_set and patch.country_code != user.country_code:
         user.country_code = patch.country_code
+        changed = True
+    # One-way and monotonic: a repeat never moves the original timestamp.
+    if patch.onboarding_completed and user.onboarding_completed_at is None:
+        user.onboarding_completed_at = datetime.now(UTC)
         changed = True
     if changed:
         user.updated_at = datetime.now(UTC)

@@ -40,6 +40,9 @@ class User(Base):
     country_code: Mapped[str | None] = mapped_column(String(2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Null while a new account still needs onboarding. Set once, never cleared;
+    # accounts that existed before migration 0007 were backfilled.
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserPreferences(Base):

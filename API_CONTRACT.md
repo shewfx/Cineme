@@ -253,7 +253,10 @@ Read-only profile/default preferences. Response200:
   "id": "uuid",
   "display_name": null,
   "timezone": "UTC",
+  "country_code": null,
+  "region": null,
   "created_at": "2026-10-01T22:00:00Z",
+  "onboarding_completed_at": null,
   "preferences": {
     "version": 1,
     "genre_preferences": {},
@@ -264,11 +267,11 @@ Read-only profile/default preferences. Response200:
 }
 ```
 
-409 PROFILE_NOT_INITIALIZED if bootstrap has not succeeded; standard auth/DB errors. It never inserts or resets anything.
+`country_code` is the user's chosen streaming region (ISO 3166-1 alpha-2) or null; `region` is the effective one: the chosen code, else the one implied by the timezone, else null (ADR 007). `onboarding_completed_at` is null while the account still needs first-run onboarding and a timestamp afterwards; accounts that existed when it was introduced carry their creation time (ADR 010). Clients treat an absent field as completed. 409 PROFILE_NOT_INITIALIZED if bootstrap has not succeeded; standard auth/DB errors. It never inserts or resets anything.
 
 ### PATCH `/me`
 
-Request `{display_name:"Shew",timezone:"Asia/Kolkata"}`; either/both, unknown fields rejected. Requires idempotency key. Response200 updated profile. Timezone IANA validation; explain possible daily-date change. Editing display name/timezone does not rewrite old session snapshots. No version parameter because fields are simple explicit last-write values, not read-modify-write state.422 invalid zone/name.
+Request `{display_name:"Shew",timezone:"Asia/Kolkata"}`; any of `display_name`, `timezone`, `country_code`, `onboarding_completed`, unknown fields rejected. `onboarding_completed` accepts only `true` (ADR 010): it sets `onboarding_completed_at` once, a repeat succeeds without changing the original timestamp, and `false`/`null` are 422. Requires idempotency key. Response200 updated profile. Timezone IANA validation; explain possible daily-date change. Editing display name/timezone does not rewrite old session snapshots. No version parameter because fields are simple explicit last-write values, not read-modify-write state.422 invalid zone/name.
 
 ### GET `/movies/{tmdb_id}/availability` and GET `/watch/regions`
 

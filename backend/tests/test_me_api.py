@@ -337,3 +337,87 @@ def test_concurrent_retries_apply_once(
     # JSONB may reorder keys; compare parsed JSON, not bytes.
     assert all(r.json() == responses[0].json() for r in responses)
     assert count(engine, "idempotency_records") == 1
+
+
+# --- onboarding completion (v1.1.0) --------------------------------------------
+
+
+def completed_at(engine: Engine, user: uuid.UUID) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT onboarding_completed_at FROM cineme.users WHERE id=:id"), {"id": user}
+        ).scalar()
+
+
+def test_new_profile_needs_onboarding(client: TestClient, signer: Signer, user: uuid.UUID) -> None:
+    me = client.get("/api/v1/me", headers=auth(signer, user)).json()
+    assert me["onboarding_completed_at"] is None
+
+
+def test_completion_is_one_way_and_keeps_the_original_timestamp(
+    client: TestClient, signer: Signer, user: uuid.UUID, engine: Engine
+) -> None:
+    first = patch(client, signer, user, {"onboarding_completed": True})
+    assert first.status_code == 200
+    stamp = first.json()["onboarding_completed_at"]
+    assert stamp is not None
+    assert (
+        client.get("/api/v1/me", headers=auth(signer, user)).json()["onboarding_completed_at"]
+        == stamp
+    )
+
+    # A retry with a fresh key (for example after a lost response and an app
+    # restart) succeeds without moving the timestamp.
+    again = patch(client, signer, user, {"onboarding_completed": True})
+    assert again.status_code == 200
+    assert again.json()["onboarding_completed_at"] == stamp
+    # Other edits never clear it.
+    patch(client, signer, user, {"display_name": "Shew"})
+    assert completed_at(engine, user).isoformat().startswith(stamp[:19])
+
+
+def test_completion_replay_with_the_same_key_returns_the_stored_response(
+    client: TestClient, signer: Signer, user: uuid.UUID
+) -> None:
+    key = str(uuid.uuid4())
+    first = patch(client, signer, user, {"onboarding_completed": True}, key)
+    replay = patch(client, signer, user, {"onboarding_completed": True}, key)
+    assert replay.status_code == 200 and replay.json() == first.json()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"onboarding_completed": False}, {"onboarding_completed": None}, {"onboarding_completed": 0}],
+)
+def test_completion_cannot_be_undone_or_nulled(
+    client: TestClient, signer: Signer, user: uuid.UUID, engine: Engine, body: dict[str, Any]
+) -> None:
+    patch(client, signer, user, {"onboarding_completed": True})
+    before = completed_at(engine, user)
+    assert patch(client, signer, user, body).status_code == 422
+    assert completed_at(engine, user) == before
+
+
+def test_completion_combines_with_other_fields(
+    client: TestClient, signer: Signer, user: uuid.UUID
+) -> None:
+    body = patch(
+        client, signer, user, {"onboarding_completed": True, "display_name": "Shew"}
+    ).json()
+    assert body["display_name"] == "Shew" and body["onboarding_completed_at"] is not None
+
+
+def test_completion_only_affects_the_caller(
+    client: TestClient, signer: Signer, user: uuid.UUID, engine: Engine
+) -> None:
+    other = uuid.uuid4()
+    client.post("/api/v1/me/bootstrap", headers=auth(signer, other))
+    patch(client, signer, user, {"onboarding_completed": True})
+    assert completed_at(engine, user) is not None
+    assert completed_at(engine, other) is None
+    # The identity comes from the token; a body cannot target another user.
+    assert (
+        patch(client, signer, other, {"id": str(user), "onboarding_completed": True}).status_code
+        == 422
+    )
+    assert completed_at(engine, other) is None

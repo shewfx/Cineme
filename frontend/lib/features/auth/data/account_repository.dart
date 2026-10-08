@@ -13,6 +13,10 @@ abstract interface class AccountRepository {
 
   Future<Profile> me();
 
+  /// PATCH /me {onboarding_completed: true}. One-way and idempotent: Skip and
+  /// Continue both call it, and a retry keeps the original completion time.
+  Future<void> completeOnboarding();
+
   /// PATCH /me {country_code}; null goes back to the time zone's country.
   Future<void> setRegion(String? countryCode);
 
@@ -63,6 +67,15 @@ class ApiAccountRepository implements AccountRepository {
   @override
   Future<void> setRegion(String? countryCode) async {
     final body = {'country_code': countryCode};
+    await _keys.send(
+      commandFingerprint('PATCH', '/api/v1/me', body),
+      (key) => _api.patch('/api/v1/me', body: body, idempotencyKey: key),
+    );
+  }
+
+  @override
+  Future<void> completeOnboarding() async {
+    const body = {'onboarding_completed': true};
     await _keys.send(
       commandFingerprint('PATCH', '/api/v1/me', body),
       (key) => _api.patch('/api/v1/me', body: body, idempotencyKey: key),
@@ -122,12 +135,14 @@ Profile profileFromJson(
   final ai = prefs['ai_context_enabled'];
   final region = json['region'];
   final chosen = json['country_code'];
+  final onboardedAt = json['onboarding_completed_at'];
   if (json['id'] is! String ||
       timezone is! String ||
       (displayName != null && displayName is! String) ||
       (cap != null && cap is! int) ||
       (region != null && region is! String) ||
       (chosen != null && chosen is! String) ||
+      (onboardedAt != null && onboardedAt is! String) ||
       ai is! bool) {
     throw _malformed;
   }
@@ -141,5 +156,8 @@ Profile profileFromJson(
     blockedMovies: blockedMovies,
     region: region as String?,
     regionChosen: chosen != null,
+    // Absent key: older backend, treated as complete. Present null: pending.
+    onboardingComplete:
+        !json.containsKey('onboarding_completed_at') || onboardedAt != null,
   );
 }

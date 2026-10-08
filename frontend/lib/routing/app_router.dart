@@ -8,6 +8,7 @@ import '../core/widgets/tab_swipe_exclusion.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_pages.dart';
 import '../features/history/presentation/history_page.dart';
+import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/movies/presentation/movie_details_page.dart';
 import '../features/preferences/presentation/profile_page.dart';
 import '../features/search/presentation/search_page.dart';
@@ -43,6 +44,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/starting', builder: (_, _) => const StartingPage()),
       GoRoute(path: '/config', builder: (_, _) => const ConfigMissingPage()),
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingPage()),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => _AppShell(
           shell: shell,
@@ -111,7 +113,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 });
 
 const _signedOutRoutes = {'/sign-in', '/sign-up', '/check-email'};
-const _gateRoutes = {..._signedOutRoutes, '/starting', '/config'};
+const _gateRoutes = {
+  ..._signedOutRoutes,
+  '/starting',
+  '/config',
+  '/onboarding',
+};
 
 /// The private shell renders only for a signed-in user with a bootstrapped
 /// profile; the preview build skips identity entirely.
@@ -122,6 +129,8 @@ String? authRedirect(AuthGate gate, String location) => switch (gate) {
   AuthGate.settingUp => location == '/starting' ? null : '/starting',
   AuthGate.signedOut => _signedOutRoutes.contains(location) ? null : '/sign-in',
   AuthGate.confirmEmail => location == '/check-email' ? null : '/check-email',
+  // New accounts finish (or Skip) onboarding before any private route.
+  AuthGate.onboarding => location == '/onboarding' ? null : '/onboarding',
   AuthGate.ready => _gateRoutes.contains(location) ? '/today' : null,
 };
 

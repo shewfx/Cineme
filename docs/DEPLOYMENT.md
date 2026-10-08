@@ -34,7 +34,7 @@ uv run python scripts/migrate_hosted.py               # dry run: host, database,
 uv run python scripts/migrate_hosted.py --apply       # upgrade to head and confirm
 ```
 
-Check that the printed host and database are the intended project before `--apply`. The hosted database was provisioned empty and brought to `0004` this way. `/readyz` reports `ready` only when the database is at the code's head. Run migrations **before** deploying code that needs them.
+Check that the printed host and database are the intended project before `--apply`. The hosted database was provisioned empty and brought to head this way (`0004` at first deployment; verified at `0006`, the head of v1.0.3, by a dry run on 2026-10-08). `/readyz` reports `ready` only when the database is at the code's head. Run migrations **before** deploying code that needs them.
 
 ## Deploy
 

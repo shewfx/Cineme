@@ -12,6 +12,7 @@ class Profile {
     required this.blockedMovies,
     this.region,
     this.regionChosen = false,
+    this.onboardingComplete = true,
   });
 
   final String? displayName;
@@ -33,4 +34,9 @@ class Profile {
 
   /// Whether [region] was chosen rather than derived from the time zone.
   final bool regionChosen;
+
+  /// False only when the server says this new account has not finished
+  /// onboarding. A response without the field (an older backend) counts as
+  /// complete: a client never forces onboarding on ambiguity.
+  final bool onboardingComplete;
 }

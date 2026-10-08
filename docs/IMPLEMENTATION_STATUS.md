@@ -1,11 +1,44 @@
 # Implementation status
 
-Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md).
+Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md). Future work: [ROADMAP.md](ROADMAP.md).
+
+## Release and hosted state (verified 2026-10-08)
+
+| Artifact | Version | Evidence |
+|---|---|---|
+| `main` source, tag `v1.0.3` | 1.0.3+4 | `frontend/pubspec.yaml`, `CHANGELOG.md` |
+| Hosted web/PWA | 1.0.3, build 4 | live `/version.json` |
+| Last distributed Android APK | **1.0.2, version code 3** | project owner; the APK for 1.0.3+4 has not been distributed |
+| Hosted PostgreSQL (Neon) | migration `0006` = repository head | `scripts/migrate_hosted.py` dry run (read-only), PostgreSQL 18.6 |
+
+Version 1.0.3 therefore exists on `main` and the web, but not as a distributed APK; the next distributed APK must carry a version code above 3 (the next planned build, 1.1.0, uses 5 so that 4 stays reserved for 1.0.3).
+
+## v1.1.0 — New-account onboarding (branch `feat/onboarding-v1.1.0`, 2026-10-08)
+
+Implemented, not merged, not deployed. Decision: [ADR 010](adr/010-onboarding-completion.md).
+
+- **Backend:** migration `0007` adds `users.onboarding_completed_at` and backfills every existing user to `created_at`; `GET /me` returns it; `PATCH /me {onboarding_completed:true}` sets it once (one-way, original timestamp kept on retries, `false`/`null` are 422), reusing the users-row lock and idempotency ledger.
+- **Flutter:** `/onboarding` gate for accounts whose profile says incomplete (an absent field counts as complete); welcome (“One movie. No scrolling.”) and an add step that reuses the Search panel (add-only), shows a server-derived count with a five-film nudge, and has Skip and Continue. Both complete onboarding; closing the app, signing out or back do not. Continue/Skip with no films ends in Tonight's existing empty-watchlist state. Version `1.1.0+5`.
+- **Not in this release:** follow-up refinements, poster caching, series.
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | clean (60 files formatted; 35 source files) |
+| `uv run --env-file .env pytest` (local PostgreSQL 16) | 360 passed (includes new: onboarding PATCH/GET, isolation, monotonic timestamp, replay, rejection of `false`/`null`; migration backfill and downgrade) |
+| `dart format --output=none --set-exit-if-changed lib test` / `flutter analyze` | exit 0 / no issues |
+| `flutter test` | 280 passed (includes new: welcome, add, five-film nudge, Skip, Continue with an empty list, failed add, duplicate add, resume, failed completion retry, leave-without-completing, back, existing user, account switch, 200 % text, absent/null/malformed field, gate redirects) |
+
+Hosted state before this work (read-only dry run, 2026-10-08): migration `0006` = head. **Migration `0007` has not been applied to the hosted database**, and nothing was deployed. Manual device/browser verification of the new screens was not performed. Rollout order when approved: dry run, `--apply` `0007`, deploy backend, build/deploy web, then the APK `1.1.0+5` (the last distributed APK is 1.0.2, code 3).
+
+## v1.0.2 and v1.0.3 (2026-10-05)
+
+- 1.0.2: new Cinemé logo, red “mé” wordmark and app icons (PRs #12–#13).
+- 1.0.3: Profile → About shows installed version/build and source commit; release versioning policy in [RELEASING.md](RELEASING.md) (PR #14).
 
 ## Integer star ratings, root-tab swipes and Watchlist artwork
 
 - User ratings are nullable integer stars from 1 to 5 across Flutter, API schemas, PostgreSQL and recommendation learning. The shared selector uses coral filled and muted outlined stars, states the selected value as “N out of 5,” and does not preselect unrated records.
-- Migration 0006 explicitly maps Disliked→1, Okay→3, Liked→4, Loved→5; null stays null. The downgrade maps two stars to Disliked because the former categories have no two-star value. This migration has not been applied to the hosted database.
+- Migration 0006 explicitly maps Disliked→1, Okay→3, Liked→4, Loved→5; null stays null. The downgrade maps two stars to Disliked because the former categories have no two-star value. Applied to the hosted database (verified 2026-10-08).
 - Root tabs respond to horizontal, predominantly horizontal swipes in Tonight → Watchlist → History → Profile order, with no wrap. Nested routes are disabled; row/poster/choice-pill gestures are excluded from tab swiping.
 - Watchlist movie details now layers a dynamically loaded, blurred and darkened poster behind the existing details content, fading to the app background before the fixed actions and bottom navigation. Missing posters keep the solid background.
 - Verification: see the PR discussion for emulator/Chrome screenshots and the exact test runs; do not describe this change as merged or deployed before review.
@@ -20,7 +53,7 @@ Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_P
 | P3 — TMDB search and persistent watchlist | Complete: merged to `main` in PR #6 (CI green incl. PostgreSQL); two-account isolation passed (project owner) |
 | P4 — Deterministic daily selection (+ ADR 006 rejection/Already watched, ADR 007 availability) | Complete on branch `feat/p4-tonight-recommendations`: all automated gates pass incl. PostgreSQL; emulator flows exercised against the real watchlist; published via PR (see git history). Two-account Tonight isolation on a device not performed (second account's credentials unavailable); covered by automated tests |
 | Web/PWA deployment + Tonight/Search/Watchlist UI refinement (not a roadmap phase; ADR 008, ADR 009) | Merged to `main` in PR #8; existing deployment remains live. Physical iPhone Add-to-Home-Screen check and a live first-screen Skip run are still open |
-| P5 — Feedback, history, ratings and conservative learning | Complete; merged to `main` in PR #9. Migration 0005 is not applied to the hosted database |
+| P5 — Feedback, history, ratings and conservative learning | Complete; merged to `main` in PR #9. Migrations 0005 and 0006 are applied to the hosted database (verified 2026-10-08) |
 | P6–P8 | Not started |
 
 ## Web/PWA deployment and UI refinement: 2026-10-03, merged in PR #8
@@ -31,7 +64,7 @@ Platform task, not a roadmap phase. At the time it was completed P5 had not star
 
 - Flutter web target and PWA shell (manifest, Cinemé icons generated from the app's own palette and Jost, iOS standalone metadata, a viewport tag identical to the engine's, charcoal splash); a centred 480 px canvas on wide windows; browser session storage on web; `API_BASE_URL=same-origin`.
 - Backend: serverless/pooler engine mode, TLS required for production database URLs, Vercel entrypoint, explicit `scripts/migrate_hosted.py`; CI builds the web bundle and scans it for server-side secrets (`infra/check_web_bundle.py`).
-- Hosted: one Vercel project (Hobby) + Neon (Free), Supabase Auth, TMDB. Hosted database at migration head `0004`.
+- Hosted: one Vercel project (Hobby) + Neon (Free), Supabase Auth, TMDB. Hosted database brought to `0004` at first deployment; later migrations were applied afterwards (see Release and hosted state).
 - UI refinement: Tonight startup (“Tonight’s the night.”), compact selectors on the first Tonight screen and Edit tonight, Skip, just pick something (explicit Surprise me); Search rows without runtime placeholder and with a 76x114 anchoring poster; Watchlist Sort (server-side `sort` on `GET /api/v1/watchlist`).
 
 ### Verified (local gates)
@@ -106,7 +139,7 @@ Implemented on `feat/p5-history-ratings`, merged in PR #9. This milestone keeps 
 
 - Durable follow-up state on accepted recommendations. GET Today surfaces only the most recent unresolved accepted pick from an earlier user-local date. `not_yet` suppresses it for that date; `yes` records one viewing and resolves it; `no` resolves without recording a viewing. Missed days do not lose the prompt.
 - One canonical viewing write path for direct Already watched, History logging, recommendation completion and follow-up confirmation. It preserves unknown dates, accepts an optional past date/rating, archives active watchlist inventory, prevents duplicate user/movie history rows, and returns idempotent response bodies.
-- History reads watched records and recommendation history with cursor pagination and user ownership. Ratings use the already-documented `loved`, `liked`, `okay`, `disliked` values; edits are versioned replacements and rated genre evidence feeds the existing deterministic affinity component without changing `weighted_v1` weights.
+- History reads watched records and recommendation history with cursor pagination and user ownership. Ratings were originally the four categories `loved`, `liked`, `okay`, `disliked` (replaced by integer 1–5 stars in migration 0006, see the top section); edits are versioned replacements and rated genre evidence feeds the existing deterministic affinity component without changing `weighted_v1` weights.
 - Persistent per-user Never recommend blocks, hard-filter integration, reversible profile management, and block pagination. Temporary rejection, removal and ratings do not create blocks.
 - Flutter real-build repositories and UI for History, search-only manual logging, rating edits, follow-up choices, watchlist Mark watched and blocked-film restoration.
 
@@ -120,7 +153,7 @@ Implemented on `feat/p5-history-ratings`, merged in PR #9. This milestone keeps 
 
 ### Not performed
 
-- Migration 0005 was not applied to hosted PostgreSQL; deployed API and web assets were not changed.
+- (At the time of PR #9) migration 0005 was not applied to hosted PostgreSQL. It has since been applied; see Release and hosted state.
 - Physical device checks for the new P5 screens remain open. The web deployment's physical iPhone check also remains open.
 
 ## P4 — 2026-10-02, branch `feat/p4-tonight-recommendations`
