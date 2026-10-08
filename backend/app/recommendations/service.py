@@ -23,8 +23,18 @@ from sqlalchemy.orm import Session
 
 from app.core import idempotency
 from app.core.errors import AppError
+from app.core.features import series_enabled
 from app.movies import service as movies
 from app.movies.models import Movie
+from app.series import display as series_display
+from app.series import episodes as series_episodes
+from app.series import history as series_history
+from app.series.models import (
+    EpisodeViewing,
+    Series,
+    SeriesBlock,
+    SeriesEntry,
+)
 from app.users.blocks import MovieBlock
 from app.users.models import User, UserPreferences
 from app.users.service import lock_user
@@ -35,7 +45,7 @@ from . import engine, explain
 from .models import Recommendation, RecommendationSession, RejectionFeedback
 from .schemas import ChooseRequest, ContextPatch, RejectRequest, SessionContext
 
-CONFIG = engine.load_config()  # fails at startup on an invalid config
+CONFIG = engine.load_series_config()  # weighted_v2; fails at startup if invalid
 PAUSE_AFTER_REJECTIONS = 3
 DAILY_ATTEMPT_LIMIT = 20
 EVIDENCE_LIMIT_BYTES = 64 * 1024
@@ -126,13 +136,22 @@ def _current(db: Session, s: RecommendationSession | None) -> Recommendation | N
 
 
 def _clear_pick(
-    db: Session, s: RecommendationSession, now: datetime, *, movie_id: int | None = None
+    db: Session,
+    s: RecommendationSession,
+    now: datetime,
+    *,
+    movie_id: int | None = None,
+    series_id: int | None = None,
 ) -> bool:
-    """Supersede an offered/accepted pick (optionally only for one movie) and
-    clear the pointer. A no-match row stays terminal; only its pointer goes.
-    Returns whether anything changed."""
+    """Supersede an offered/accepted pick (optionally only for one movie or
+    show) and clear the pointer. A no-match row stays terminal; only its
+    pointer goes. Returns whether anything changed."""
     current = _current(db, s)
-    if current is None or (movie_id is not None and current.movie_id != movie_id):
+    if current is None:
+        return False
+    if movie_id is not None and current.movie_id != movie_id:
+        return False
+    if series_id is not None and current.series_id != series_id:
         return False
     if current.status in ("offered", "accepted"):
         current.status = "superseded"
@@ -165,6 +184,37 @@ def _active_count(db: Session, user_id: uuid.UUID) -> int:
     )
 
 
+def _active_series_count(db: Session, user_id: uuid.UUID) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(SeriesEntry)
+            .where(SeriesEntry.user_id == user_id, SeriesEntry.status == "active")
+        )
+        or 0
+    )
+
+
+def effective_media(prefs: UserPreferences) -> str:
+    """The media Tonight considers. A client that did not declare series
+    support always gets movies (ADR 011); the stored preference is untouched."""
+    return prefs.tonight_media if series_enabled() else "movies"
+
+
+def _empty_reason(db: Session, user_id: uuid.UUID, media: str) -> str | None:
+    """None when the preferred media has candidates; otherwise why not."""
+    movies_n = _active_count(db, user_id) if media in ("movies", "movies_and_shows") else 0
+    shows_n = _active_series_count(db, user_id) if media in ("shows", "movies_and_shows") else 0
+    if movies_n + shows_n > 0:
+        return None
+    other = _active_count(db, user_id) + (
+        _active_series_count(db, user_id) if series_enabled() else 0
+    )
+    if other == 0:
+        return "none"
+    return "no_shows" if media == "shows" else "no_movies"
+
+
 # --- envelope -------------------------------------------------------------------------
 
 
@@ -175,10 +225,13 @@ def _iso(t: datetime) -> str:
 def summary(rec: Recommendation) -> dict[str, Any]:
     """RecommendationSummary from the stored snapshot, never current metadata."""
     reasons = rec.reason_data
+    snapshot = rec.winner_snapshot
     return {
         "id": str(rec.id),
         "status": rec.status,
-        "movie": rec.winner_snapshot["movie"] if rec.winner_snapshot else None,
+        "media_kind": rec.media_kind,
+        "movie": snapshot["movie"] if snapshot and rec.media_kind == "movie" else None,
+        "episode": snapshot["episode"] if snapshot and rec.media_kind == "episode" else None,
         "total_score": float(round(rec.total_score, 2)) if rec.total_score is not None else None,
         "engine_version": rec.engine_version,
         "explanation": rec.explanation,
@@ -189,20 +242,47 @@ def summary(rec: Recommendation) -> dict[str, Any]:
     }
 
 
+def _episode_viewing_out(
+    db: Session, v: EpisodeViewing, snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "id": str(v.id),
+        "movie": None,
+        "episode": snapshot["episode"],
+        "watched_at": _iso(v.watched_at) if v.watched_at else None,
+        "recorded_at": _iso(v.recorded_at),
+        "source": v.source,
+        "rating": v.rating,
+        "version": v.version,
+        "recommendation_id": str(v.recommendation_id) if v.recommendation_id else None,
+    }
+
+
 def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, Any]:
-    """TodayEnvelope; state precedence per API_CONTRACT. Read-only."""
+    """TodayEnvelope; state precedence per API_CONTRACT. Read-only. A client
+    that did not declare series support never sees an episode pick (ADR 011):
+    it is treated as if there were no current pick."""
     now = now or utc_now()
     local = local_date_for(user, now)
     s = _today_session(db, user.id, local)
     current = _current(db, s)
+    series_ok = series_enabled()
+    if current is not None and current.media_kind == "episode" and not series_ok:
+        current = None
     rejections, attempts = _counts(db, s)
-    if s is not None and s.completed_at is not None:
+    prefs = _prefs(db, user.id)
+    media = effective_media(prefs)
+    empty_reason = _empty_reason(db, user.id, media)
+    done = s is not None and s.completed_at is not None
+    if done and (current is not None or series_ok):
         state = "completed"
+    elif done:
+        state = "ready"
     elif current is not None and current.status in ("offered", "accepted", "watched"):
         state = current.status if current.status != "watched" else "completed"
     elif current is not None and current.status == "no_match":
         state = "no_match"
-    elif _active_count(db, user.id) == 0:
+    elif empty_reason is not None:
         state = "empty_watchlist"
     elif s is None:
         state = "not_started"
@@ -212,7 +292,7 @@ def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, 
         state = "ready"
     session_out = None
     if s is not None:
-        eff, overridden = effective_context(s.context, _prefs(db, user.id))
+        eff, overridden = effective_context(s.context, prefs)
         session_out = {
             "id": str(s.id),
             "version": s.version,
@@ -226,25 +306,36 @@ def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, 
         }
     show = current is not None and current.status in ("offered", "accepted", "watched", "no_match")
     viewing_out = None
-    if current is not None and current.status == "watched":
-        viewing = db.scalar(
-            select(Viewing).where(
-                Viewing.user_id == user.id,
-                Viewing.recommendation_id == current.id,
+    if current is not None and current.status == "watched" and current.winner_snapshot is not None:
+        if current.media_kind == "episode":
+            ev = db.scalar(
+                select(EpisodeViewing).where(
+                    EpisodeViewing.user_id == user.id,
+                    EpisodeViewing.recommendation_id == current.id,
+                )
             )
-        )
-        if viewing is not None and current.winner_snapshot is not None:
-            viewing_out = {
-                "id": str(viewing.id),
-                "movie": current.winner_snapshot["movie"],
-                "watched_at": _iso(viewing.watched_at) if viewing.watched_at else None,
-                "recorded_at": _iso(viewing.recorded_at),
-                "source": viewing.source,
-                "rating": viewing.rating,
-                "version": viewing.version,
-                "recommendation_id": str(viewing.recommendation_id),
-            }
-    prior = db.execute(
+            if ev is not None:
+                viewing_out = _episode_viewing_out(db, ev, current.winner_snapshot)
+        else:
+            viewing = db.scalar(
+                select(Viewing).where(
+                    Viewing.user_id == user.id,
+                    Viewing.recommendation_id == current.id,
+                )
+            )
+            if viewing is not None:
+                viewing_out = {
+                    "id": str(viewing.id),
+                    "movie": current.winner_snapshot["movie"],
+                    "episode": None,
+                    "watched_at": _iso(viewing.watched_at) if viewing.watched_at else None,
+                    "recorded_at": _iso(viewing.recorded_at),
+                    "source": viewing.source,
+                    "rating": viewing.rating,
+                    "version": viewing.version,
+                    "recommendation_id": str(viewing.recommendation_id),
+                }
+    follow_stmt = (
         select(Recommendation, RecommendationSession)
         .join(RecommendationSession, RecommendationSession.id == Recommendation.session_id)
         .where(
@@ -259,13 +350,19 @@ def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, 
         )
         .order_by(Recommendation.accepted_at.desc(), Recommendation.id.desc())
         .limit(1)
-    ).first()
+    )
+    if not series_ok:
+        follow_stmt = follow_stmt.where(Recommendation.media_kind == "movie")
+    prior = db.execute(follow_stmt).first()
     follow_up = None
     if prior is not None and prior[0].winner_snapshot is not None:
+        snap = prior[0].winner_snapshot
         follow_up = {
             "recommendation_id": str(prior[0].id),
             "accepted_local_date": prior[1].local_date.isoformat(),
-            "movie": prior[0].winner_snapshot["movie"],
+            "media_kind": prior[0].media_kind,
+            "movie": snap["movie"] if prior[0].media_kind == "movie" else None,
+            "episode": snap["episode"] if prior[0].media_kind == "episode" else None,
         }
     return {
         "state": state,
@@ -274,6 +371,8 @@ def envelope(db: Session, user: User, now: datetime | None = None) -> dict[str, 
         "recommendation": summary(current) if show and current is not None else None,
         "viewing": viewing_out,
         "follow_up": follow_up,
+        "media": media,
+        "empty_reason": empty_reason if state == "empty_watchlist" else None,
     }
 
 
@@ -310,22 +409,113 @@ def _offer_history(
 
 def _viewing_history(
     db: Session, user_id: uuid.UUID
-) -> tuple[set[int], tuple[tuple[int, ...], ...], tuple[engine.RatedViewing, ...]]:
-    """Known-watched exclusions, recent diversity snapshots and current ratings."""
+) -> tuple[
+    set[int],
+    tuple[tuple[int, ...], ...],
+    tuple[int | None, ...],
+    tuple[engine.RatedViewing, ...],
+]:
+    """Known-watched movies, the three most recent viewings (movies and
+    episodes) as genre snapshots with their series id, and current movie
+    ratings. Episode and series ratings feed nothing."""
     viewings = db.scalars(select(Viewing).where(Viewing.user_id == user_id)).all()
     watched = {v.movie_id for v in viewings}
-    rows = db.scalars(
-        select(Viewing.genre_ids_snapshot)
+    movie_rows = db.execute(
+        select(
+            func.coalesce(Viewing.watched_at, Viewing.recorded_at).label("at"),
+            Viewing.genre_ids_snapshot,
+        )
         .where(Viewing.user_id == user_id, func.cardinality(Viewing.genre_ids_snapshot) > 0)
         .order_by(func.coalesce(Viewing.watched_at, Viewing.recorded_at).desc(), Viewing.id.desc())
         .limit(3)
     ).all()
+    episode_rows = db.execute(
+        select(
+            func.coalesce(EpisodeViewing.watched_at, EpisodeViewing.recorded_at).label("at"),
+            EpisodeViewing.genre_ids_snapshot,
+            EpisodeViewing.series_id,
+        )
+        .where(
+            EpisodeViewing.user_id == user_id,
+            func.cardinality(EpisodeViewing.genre_ids_snapshot) > 0,
+        )
+        .order_by(
+            func.coalesce(EpisodeViewing.watched_at, EpisodeViewing.recorded_at).desc(),
+            EpisodeViewing.id.desc(),
+        )
+        .limit(3)
+    ).all()
+    merged: list[tuple[datetime, tuple[int, ...], int | None]] = [
+        (r.at, tuple(r.genre_ids_snapshot), None) for r in movie_rows
+    ] + [(r.at, tuple(r.genre_ids_snapshot), r.series_id) for r in episode_rows]
+    merged.sort(key=lambda t: t[0], reverse=True)
+    top = merged[:3]
     rated = tuple(
         engine.RatedViewing(tuple(v.genre_ids_snapshot), v.rating)
         for v in viewings
         if v.rating is not None
     )
-    return watched, tuple(tuple(g) for g in rows), rated
+    return watched, tuple(t[1] for t in top), tuple(t[2] for t in top), rated
+
+
+def _episode_offers(
+    db: Session, user_id: uuid.UUID, s: RecommendationSession
+) -> tuple[dict[tuple[int, int, int], datetime], set[int]]:
+    """Last offer per episode across the user's sessions, and the series
+    already offered in today's session."""
+    last = db.execute(
+        select(
+            Recommendation.series_id,
+            Recommendation.season_number,
+            Recommendation.episode_number,
+            func.max(Recommendation.created_at),
+        )
+        .join(RecommendationSession, RecommendationSession.id == Recommendation.session_id)
+        .where(RecommendationSession.user_id == user_id, Recommendation.series_id.is_not(None))
+        .group_by(
+            Recommendation.series_id, Recommendation.season_number, Recommendation.episode_number
+        )
+    ).all()
+    tonight = db.scalars(
+        select(Recommendation.series_id).where(
+            Recommendation.session_id == s.id, Recommendation.series_id.is_not(None)
+        )
+    ).all()
+    return (
+        {
+            (sid, sn, en): t
+            for sid, sn, en, t in last
+            if sid is not None and sn is not None and en is not None
+        },
+        {x for x in tonight if x is not None},
+    )
+
+
+def _confirmed_watches(
+    db: Session, user: User, local: date, window_days: int
+) -> dict[int, tuple[int, date]]:
+    """Per series: (number of confirmed episode watches in the continuity
+    window, local date of the newest). Only recorded watches count: showing
+    or accepting a pick, and progress corrections, never do."""
+    zone = ZoneInfo(user.timezone)
+    since = datetime.combine(local - timedelta(days=window_days + 1), time(0), zone)
+    rows = db.execute(
+        select(
+            EpisodeViewing.series_id,
+            func.coalesce(EpisodeViewing.watched_at, EpisodeViewing.recorded_at),
+        ).where(
+            EpisodeViewing.user_id == user.id,
+            func.coalesce(EpisodeViewing.watched_at, EpisodeViewing.recorded_at) >= since,
+        )
+    ).all()
+    out: dict[int, tuple[int, date]] = {}
+    for series_id, at in rows:
+        day = at.astimezone(zone).date()
+        if not local - timedelta(days=window_days) <= day <= local:
+            continue
+        count, newest = out.get(series_id, (0, day))
+        out[series_id] = (count + 1, max(newest, day))
+    return out
 
 
 def record_viewing(
@@ -397,7 +587,7 @@ def _dec(x: float | None) -> Decimal | None:
 
 
 def _scoring_inputs(c: engine.Candidate) -> dict[str, Any]:
-    return {
+    inputs: dict[str, Any] = {
         "added_at": c.added_at.isoformat(),
         "release_date": c.release_date.isoformat() if c.release_date else None,
         "runtime_minutes": c.runtime_minutes,
@@ -407,17 +597,81 @@ def _scoring_inputs(c: engine.Candidate) -> dict[str, Any]:
         "last_offered_at": c.last_offered_at.isoformat() if c.last_offered_at else None,
         "traits": {"pace": None, "complexity": None, "heaviness": None, "source": None},
     }
+    if c.kind == "series":
+        inputs["season_number"] = c.season_number
+        inputs["episode_number"] = c.episode_number
+        inputs["confirmed_watches"] = c.confirmed_watch_count
+        inputs["last_confirmed_watch"] = (
+            c.last_confirmed_watch.isoformat() if c.last_confirmed_watch else None
+        )
+    return inputs
 
 
-def _scored_record(s: engine.Scored, movie: dict[str, Any]) -> dict[str, Any]:
+def _scored_record(s: engine.Scored, item: dict[str, Any]) -> dict[str, Any]:
     return {
-        "movie": movie,
+        "episode" if s.candidate.kind == "series" else "movie": item,
         "rank": s.rank,
         "total_score": f"{s.total:.6f}",
         "components": {k: f"{v:.6f}" for k, v in s.components.items()},
         "contributions": {k: f"{v:.6f}" for k, v in s.contributions.items()},
         "scoring_inputs": _scoring_inputs(s.candidate),
     }
+
+
+def _series_candidates(
+    db: Session, user: User, s: RecommendationSession, local: date
+) -> tuple[list[engine.Candidate], dict[int, tuple[Series, series_episodes.Ep | None]]]:
+    """One candidate per active show: its single next episode, or the reason
+    it has none. Eligibility itself is the engine's job."""
+    rows = db.execute(
+        select(SeriesEntry, Series)
+        .join(Series, Series.tmdb_id == SeriesEntry.series_id)
+        .where(SeriesEntry.user_id == user.id, SeriesEntry.status == "active")
+    ).all()
+    if not rows:
+        return [], {}
+    nxt = series_history.next_candidates(db, user.id)
+    blocked = set(db.scalars(select(SeriesBlock.series_id).where(SeriesBlock.user_id == user.id)))
+    last_offer, tonight = _episode_offers(db, user.id, s)
+    window = CONFIG.continuity.window_days if CONFIG.continuity else 0
+    watches = _confirmed_watches(db, user, local, window) if window else {}
+    candidates: list[engine.Candidate] = []
+    meta: dict[int, tuple[Series, series_episodes.Ep | None]] = {}
+    for entry, series in rows:
+        state = series_episodes.next_state(
+            nxt.get(series.tmdb_id),
+            has_data=series.episodes_fetched_at is not None,
+            status=series.status,
+            today=local,
+        )
+        ep = state.episode
+        count, newest = watches.get(series.tmdb_id, (0, None))
+        candidates.append(
+            engine.Candidate(
+                tmdb_id=series.tmdb_id,
+                added_at=entry.added_at,
+                release_date=series.first_air_date,
+                runtime_minutes=ep.runtime_minutes if ep else None,
+                genre_ids=tuple(series.genre_ids),
+                adult=series.adult,
+                metadata_ready=series.metadata_status == "ready",
+                vote_average=series.vote_average,
+                vote_count=series.vote_count,
+                last_offered_at=last_offer.get((series.tmdb_id, ep.season, ep.episode))
+                if ep
+                else None,
+                offered_this_session=series.tmdb_id in tonight,
+                blocked=series.tmdb_id in blocked,
+                kind="series",
+                season_number=ep.season if ep else None,
+                episode_number=ep.episode if ep else None,
+                episode_state=state.state,
+                confirmed_watch_count=count,
+                last_confirmed_watch=newest,
+            )
+        )
+        meta[series.tmdb_id] = (series, ep)
+    return candidates, meta
 
 
 def select_one(
@@ -428,19 +682,23 @@ def select_one(
     names: dict[int, str],
     image_base: str,
 ) -> Recommendation:
-    """Runs the engine over the active watchlist and persists ONE attempt
-    (a pick or an honest no-match) with bounded evidence."""
+    """Runs the engine over the active watchlist (the media the user chose
+    for Tonight) and persists ONE attempt (a pick or an honest no-match) with
+    bounded evidence."""
     local = s.local_date
     prefs = _prefs(db, user.id)
     eff, _ = effective_context(s.context, prefs)
-    rows = _candidates(db, user.id)
+    media = effective_media(prefs)
+    want_movies = media in ("movies", "movies_and_shows")
+    want_shows = media in ("shows", "movies_and_shows")
+    rows = _candidates(db, user.id) if want_movies else []
     last_offer, tonight = _offer_history(db, user.id, s)
-    watched, recent, rated_viewings = _viewing_history(db, user.id)
+    watched, recent, recent_series, rated_viewings = _viewing_history(db, user.id)
     blocked = set(
         db.scalars(select(MovieBlock.movie_id).where(MovieBlock.user_id == user.id)).all()
     )
-    by_id = {m.tmdb_id: m for _, m in rows}
-    candidates = tuple(
+    movie_by_id = {m.tmdb_id: m for _, m in rows}
+    candidates: list[engine.Candidate] = [
         engine.Candidate(
             tmdb_id=m.tmdb_id,
             added_at=e.added_at,
@@ -457,7 +715,16 @@ def select_one(
             blocked=m.tmdb_id in blocked,
         )
         for e, m in rows
-    )
+    ]
+    series_meta: dict[int, tuple[Series, series_episodes.Ep | None]] = {}
+    if want_shows:
+        series_cands, series_meta = _series_candidates(db, user, s, local)
+        candidates.extend(series_cands)
+    hidden = 0
+    if series_enabled():
+        hidden = (0 if want_movies else _active_count(db, user.id)) + (
+            0 if want_shows else _active_series_count(db, user.id)
+        )
     ctx = engine.EffectiveContext(
         desired_experience=eff["desired_experience"],
         max_runtime_minutes=eff.get("max_runtime_minutes"),
@@ -472,19 +739,21 @@ def select_one(
     }
     result = engine.rank(
         engine.RankingInput(
-            candidates=candidates,
+            candidates=tuple(candidates),
             context=ctx,
             local_date=local,
             evaluation_time=now,
             genre_preferences=preferences,
             rated_viewings=rated_viewings,
             recent_genre_sets=recent,
+            recent_series_ids=recent_series,
         ),
         CONFIG,
     )
     context_snapshot = {
         "requested": s.context,
         "effective": eff,
+        "media": media,
         "evaluation_time": now.isoformat(),
         "local_date": local.isoformat(),
         "genre_affinities": {str(g): f"{a:.6f}" for g, a in result.affinities.items()},
@@ -495,11 +764,12 @@ def select_one(
         "candidate_count": result.candidate_count,
         "eligible_count": len(result.ranked),
         "primary_exclusion_counts": result.primary_exclusions,
+        "hidden_by_preference": hidden,
     }
     rec = Recommendation(
         id=uuid.uuid4(),
         session_id=s.id,
-        engine_version=engine.ENGINE_VERSION,
+        engine_version=CONFIG.engine_version,
         config_version=CONFIG.version,
         config_hash=CONFIG.hash,
         config_snapshot=json.loads(engine.canonical_json(CONFIG.snapshot)),
@@ -513,31 +783,58 @@ def select_one(
         rec.resolved_at = now
         rec.top_candidates = []
         rec.reason_data = {"reasons": [], "uncertainties": []}
-        rec.explanation = explain.no_match_text(result.candidate_count, result.primary_exclusions)
+        rec.explanation = explain.no_match_text(
+            result.candidate_count, result.primary_exclusions, media
+        )
         rec.no_match_summary = {
             "candidate_count": result.candidate_count,
             "primary_exclusion_counts": result.primary_exclusions,
-            "suggested_actions": explain.suggested_actions(result.primary_exclusions),
+            "hidden_by_preference": hidden,
+            "suggested_actions": explain.suggested_actions(result.primary_exclusions, media),
         }
     else:
 
-        def display(tmdb_id: int) -> dict[str, Any]:
-            return movies.summary(by_id[tmdb_id], names, image_base, local).model_dump(mode="json")
+        def display(c: engine.Candidate, continues: bool = False) -> dict[str, Any]:
+            if c.kind == "series":
+                series, ep = series_meta[c.tmdb_id]
+                if ep is None:  # pragma: no cover (eligible series have an episode)
+                    raise AppError(500, "INTERNAL_ERROR", "Couldn't record this pick.")
+                return series_display.episode_card(
+                    series, ep, names, image_base, continues=continues
+                )
+            return movies.summary(movie_by_id[c.tmdb_id], names, image_base, local).model_dump(
+                mode="json"
+            )
 
+        def compact(c: engine.Candidate) -> dict[str, Any]:
+            if c.kind == "series":
+                series, _ = series_meta[c.tmdb_id]
+                return {
+                    "series_id": c.tmdb_id,
+                    "title": series.name,
+                    "season_number": c.season_number,
+                    "episode_number": c.episode_number,
+                }
+            return {"tmdb_id": c.tmdb_id, "title": movie_by_id[c.tmdb_id].title}
+
+        wc = winner.candidate
         reasons = [explain.reason_out(r, names) for r in winner.reasons]
         uncertain = [explain.reason_out(r, names) for r in winner.uncertainties]
         rec.status = "offered"
-        rec.movie_id = winner.candidate.tmdb_id
         rec.total_score = winner.total.quantize(Decimal("0.000001"))
-        rec.winner_snapshot = _scored_record(winner, display(winner.candidate.tmdb_id))
+        if wc.kind == "series":
+            rec.media_kind = "episode"
+            rec.series_id = wc.tmdb_id
+            rec.season_number = wc.season_number
+            rec.episode_number = wc.episode_number
+        else:
+            rec.movie_id = wc.tmdb_id
+        rec.winner_snapshot = _scored_record(
+            winner, display(wc, continues=winner.contributions.get("S", Decimal(0)) > 0)
+        )
         rec.reason_data = {"reasons": reasons, "uncertainties": uncertain}
         rec.explanation = " ".join(r["text"] for r in reasons + uncertain)
-        runners = [
-            _scored_record(
-                r, {"tmdb_id": r.candidate.tmdb_id, "title": by_id[r.candidate.tmdb_id].title}
-            )
-            for r in result.ranked[1:10]
-        ]
+        runners = [_scored_record(r, compact(r.candidate)) for r in result.ranked[1:10]]
         mandatory = len(
             engine.canonical_json([rec.winner_snapshot, context_snapshot, rec.config_snapshot])
         )
@@ -774,6 +1071,12 @@ def follow_up_action(
             rec.follow_up_prompted_on = local
         elif action == "no":
             rec.follow_up_resolved = True
+        elif action == "yes" and rec.media_kind == "episode":
+            _watch_episode(db, user, rec, now, source="follow_up", rating=None)
+            rec.status = "watched"
+            rec.resolved_at = now
+            rec.follow_up_resolved = True
+            session.completed_at = now
         elif action == "yes":
             movie = db.get(Movie, rec.movie_id)
             if movie is None:
@@ -807,6 +1110,18 @@ def mark_watched(
 
     def run(user: User, now: datetime) -> tuple[int, dict[str, Any]]:
         session, rec = _owned_today_pick(db, user, rec_id, now, expected)
+        if rec.media_kind == "episode":
+            ev = _watch_episode(db, user, rec, now, source="recommendation", rating=rating)
+            rec.status = "watched"
+            rec.resolved_at = now
+            rec.follow_up_resolved = True
+            session.completed_at = now
+            _bump(session, now)
+            assert rec.winner_snapshot is not None  # noqa: S101 (selected rows have one)
+            return 200, {
+                "viewing": _episode_viewing_out(db, ev, rec.winner_snapshot),
+                "today": envelope(db, user, now),
+            }
         movie = db.get(Movie, rec.movie_id)
         if movie is None:
             raise AppError(404, "NOT_FOUND", "That film was not found.")
@@ -832,6 +1147,60 @@ def mark_watched(
 
     body = {"expected_session_version": expected, "rating": rating}
     return _mutation(db, user_id, key, operation, body, run)
+
+
+def _watch_episode(
+    db: Session,
+    user: User,
+    rec: Recommendation,
+    now: datetime,
+    *,
+    source: str,
+    rating: int | None,
+) -> EpisodeViewing:
+    """Confirms the recommended episode as watched and advances the show's
+    progress in the same transaction. A pick whose episode is no longer the
+    show's next one is stale (progress moved on another device or by hand):
+    nothing is recorded and Today reloads."""
+    if rec.series_id is None or rec.season_number is None or rec.episode_number is None:
+        raise AppError(500, "INTERNAL_ERROR", "Couldn't record this episode.")
+    entry = db.scalar(
+        select(SeriesEntry)
+        .where(
+            SeriesEntry.user_id == user.id,
+            SeriesEntry.series_id == rec.series_id,
+            SeriesEntry.status == "active",
+        )
+        .with_for_update()
+    )
+    series = db.get(Series, rec.series_id)
+    if entry is None or series is None:
+        raise AppError(409, "INVALID_TRANSITION", "That show is no longer on your watchlist.")
+    key = (rec.season_number, rec.episode_number)
+    existing = db.scalar(
+        select(EpisodeViewing).where(
+            EpisodeViewing.user_id == user.id,
+            EpisodeViewing.series_id == rec.series_id,
+            EpisodeViewing.season_number == key[0],
+            EpisodeViewing.episode_number == key[1],
+        )
+    )
+    nxt = series_history.first_after(db, rec.series_id, series_history.progress_of(entry))
+    if existing is None and (nxt is None or nxt.key != key):
+        raise AppError(409, "INVALID_TRANSITION", "Your progress changed. Tonight was refreshed.")
+    episode = nxt if nxt is not None and nxt.key == key else series_episodes.Ep(*key)
+    viewing, _ = series_history.record_episode_viewing(
+        db,
+        user.id,
+        entry,
+        series,
+        episode,
+        now,
+        source=source,
+        rating=rating,
+        recommendation_id=rec.id,
+    )
+    return viewing
 
 
 def _reject_effect(
@@ -931,7 +1300,18 @@ def reject(
         s, rec = _owned_today_pick(db, user, rec_id, now, req.expected_session_version)
         prefs = _prefs(db, user.id)
         eff, _ = effective_context(s.context, prefs)
-        genres = (rec.winner_snapshot or {}).get("movie", {}).get("genre_ids", [])
+        snapshot = rec.winner_snapshot or {}
+        if rec.media_kind == "episode":
+            genres = snapshot.get("episode", {}).get("series", {}).get("genre_ids", [])
+            if req.reason == "already_watched":
+                raise AppError(
+                    422,
+                    "VALIDATION_ERROR",
+                    "To say you've seen this episode, set your progress for the show.",
+                    details={"fields": ["reason"]},
+                )
+        else:
+            genres = snapshot.get("movie", {}).get("genre_ids", [])
         s.context = _reject_effect(req, s.context, eff, genres)
         viewing = watched_movie = None
         if req.reason == "already_watched":
@@ -941,7 +1321,10 @@ def reject(
             viewing = record_viewing(
                 db, user, watched_movie, _watched_at(req.details.get("watched_at"), now), now
             )
-        if req.reason == "never_recommend":
+        if req.reason == "never_recommend" and rec.media_kind == "episode":
+            if rec.series_id is not None and db.get(SeriesBlock, (user.id, rec.series_id)) is None:
+                db.add(SeriesBlock(user_id=user.id, series_id=rec.series_id))
+        elif req.reason == "never_recommend":
             blocked_movie = db.get(Movie, rec.movie_id)
             if blocked_movie is None:
                 raise AppError(404, "NOT_FOUND", "That film was not found.")
@@ -1042,6 +1425,39 @@ def on_movie_blocked(db: Session, user: User, movie_id: int, now: datetime) -> N
         _bump(s, now)
 
 
+def on_series_removed(db: Session, user: User, series_id: int, now: datetime) -> None:
+    """Removing a show clears its pick (or a stale no-match); no replacement."""
+    s = _today_session(db, user.id, local_date_for(user, now))
+    if s is None or s.completed_at is not None:
+        return
+    current = _current(db, s)
+    if current is not None and current.status == "no_match":
+        changed = _clear_pick(db, s, now)
+    else:
+        changed = _clear_pick(db, s, now, series_id=series_id)
+    if changed:
+        _bump(s, now)
+
+
+def on_series_progress_changed(db: Session, user: User, series_id: int, now: datetime) -> None:
+    """Progress moved (manual correction or a recorded watch): a pick for that
+    show is stale and is superseded without choosing a replacement; a cached
+    no-match goes too, since eligibility may have changed."""
+    on_series_removed(db, user, series_id, now)
+
+
+def on_series_blocked(db: Session, user: User, series_id: int, now: datetime) -> None:
+    s = _today_session(db, user.id, local_date_for(user, now))
+    if s is None or s.completed_at is not None:
+        return
+    if _clear_pick(db, s, now, series_id=series_id):
+        _bump(s, now)
+
+
+def on_series_unblocked(db: Session, user: User, series_id: int, now: datetime) -> None:
+    on_movie_unblocked(db, user, series_id, now)
+
+
 def on_movie_unblocked(db: Session, user: User, movie_id: int, now: datetime) -> None:
     s = _today_session(db, user.id, local_date_for(user, now))
     if s is None or s.completed_at is not None:
@@ -1126,7 +1542,12 @@ def detail(db: Session, user_id: uuid.UUID, rec_id: uuid.UUID) -> dict[str, Any]
     if rec.winner_snapshot is not None:
         breakdown = {
             "components": {k: float(v) for k, v in rec.winner_snapshot["components"].items()},
-            "weights": {k: float(v) for k, v in rec.config_snapshot["weights"].items()},
+            "weights": {k: float(v) for k, v in rec.config_snapshot["weights"].items()}
+            | (
+                {"S": float(rec.config_snapshot["continuity"]["max_bonus"])}
+                if "S" in rec.winner_snapshot["components"]
+                else {}
+            ),
             "contributions": {k: float(v) for k, v in rec.winner_snapshot["contributions"].items()},
         }
     return {

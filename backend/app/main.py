@@ -19,10 +19,12 @@ from app.core.auth import (
 )
 from app.core.db import make_engine
 from app.core.errors import install_error_handling
+from app.core.features import FeatureMiddleware
 from app.core.settings import Settings, load_settings
 from app.movies.provider import MovieMetadataProvider, TmdbProvider
 from app.movies.router import router as movies_router
 from app.recommendations.router import router as recommendations_router
+from app.series.router import router as series_router
 from app.users.router import router as users_router
 from app.viewings.router import router as viewings_router
 from app.watchlist.router import router as watchlist_router
@@ -62,9 +64,15 @@ def create_app(
             CORSMiddleware,
             allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
             allow_credentials=False,
-            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-Cineme-Features",
+            ],
         )
+    app.add_middleware(FeatureMiddleware)
     engine = engine or make_engine(settings.database_url, settings.database_pool_mode)
     app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
     app.state.verifier = verifier or TokenVerifier(
@@ -100,6 +108,7 @@ def create_app(
     app.include_router(movies_router)
     app.include_router(watchlist_router)
     app.include_router(recommendations_router)
+    app.include_router(series_router)
     return app
 
 

@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.movies.availability import iso_countries
 
+TonightMedia = Literal["movies", "movies_and_shows", "shows"]
+
 
 class PreferencesResponse(BaseModel):
     version: int
@@ -14,6 +16,8 @@ class PreferencesResponse(BaseModel):
     blocked_genre_ids: list[int]
     default_max_runtime_minutes: int | None
     ai_context_enabled: bool
+    # Absent from older backends; clients hide series UI without it.
+    tonight_media: TonightMedia = "movies"
 
 
 class MeResponse(BaseModel):
@@ -49,10 +53,16 @@ class PreferencesPatch(BaseModel):
     blocked_genre_ids: list[int] | None = Field(default=None, max_length=20)
     default_max_runtime_minutes: int | None = Field(default=None, ge=1, le=600)
     ai_context_enabled: bool | None = None
+    tonight_media: TonightMedia | None = None
 
     @model_validator(mode="after")
     def _valid(self) -> Self:
-        for field in ("genre_preferences", "blocked_genre_ids", "ai_context_enabled"):
+        for field in (
+            "genre_preferences",
+            "blocked_genre_ids",
+            "ai_context_enabled",
+            "tonight_media",
+        ):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         for key, value in (self.genre_preferences or {}).items():

@@ -2,6 +2,7 @@
 freshness"). Network calls happen outside any user lock; the movie cache is
 shared, non-private data and may be written by a GET."""
 
+import contextlib
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -57,10 +58,14 @@ def is_released(release_date: date | None, today: date) -> bool:
 
 
 def genre_names(provider: MovieMetadataProvider) -> dict[int, str]:
-    try:
-        return {g.id: g.name for g in provider.genres()}
-    except AppError:
-        return {}  # ids stay complete; names are optional display data
+    names: dict[int, str] = {}
+    # ids stay complete; names are optional display data
+    with contextlib.suppress(AppError):
+        names = {g.id: g.name for g in provider.genres()}
+    with contextlib.suppress(AppError):  # TV ids partly differ; movie names win
+        for g in provider.tv_genres():
+            names.setdefault(g.id, g.name)
+    return names
 
 
 def _genres(ids: Iterable[int], names: dict[int, str]) -> list[GenreOut]:

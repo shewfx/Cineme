@@ -10,7 +10,7 @@ never used: integration tests fail loudly without PostgreSQL.
 import os
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import replace
 from datetime import date
 from typing import Any
@@ -30,8 +30,11 @@ from app.core.settings import Settings
 from app.main import BACKEND_DIR, create_app
 from app.movies.provider import (
     GenreRef,
+    ProviderEpisode,
     ProviderMovie,
     ProviderSearchPage,
+    ProviderSeries,
+    ProviderTvPage,
     normalize_watch_providers,
 )
 
@@ -117,6 +120,39 @@ def film(tmdb_id: int, title: str, **overrides: Any) -> ProviderMovie:
     return ProviderMovie(**values)
 
 
+def tv(tmdb_id: int, name: str, **overrides: Any) -> ProviderSeries:
+    values: dict[str, Any] = {
+        "tmdb_id": tmdb_id,
+        "name": name,
+        "original_name": None,
+        "first_air_date": date(2015, 1, 1),
+        "last_air_date": date(2020, 1, 1),
+        "status": "Returning Series",
+        "genre_ids": (18,),
+        "poster_path": f"/s{tmdb_id}.jpg",
+        "overview": None,
+        "adult": False,
+        "vote_average": 8.0,
+        "vote_count": 500,
+        "original_language": "en",
+        "origin_countries": ("US",),
+        "seasons": ((1, 3),),
+    }
+    values.update(overrides)
+    return ProviderSeries(**values)
+
+
+def episodes_for(
+    seasons: tuple[tuple[int, int], ...], *, air: date = date(2020, 1, 1), runtime: int | None = 45
+) -> tuple[ProviderEpisode, ...]:
+    """Regular episodes numbered 1..count in each season, all aired on `air`."""
+    return tuple(
+        ProviderEpisode(s, e, s * 1000 + e, f"S{s}E{e}", air, runtime)
+        for s, count in seasons
+        for e in range(1, count + 1)
+    )
+
+
 class FakeMovieProvider:
     """Scripted TMDB stand-in; counts calls and can be taken down."""
 
@@ -130,6 +166,10 @@ class FakeMovieProvider:
         # Trending order (ids of `films`); empty by default.
         self.trending_ids: list[int] = []
         self.trending_calls = 0
+        # Shows: series by id and their regular episodes (None: no data).
+        self.series: dict[int, ProviderSeries] = {}
+        self.episodes: dict[int, tuple[ProviderEpisode, ...]] = {}
+        self.tv_detail_calls: list[int] = []
         # Popular-release candidates in popularity order, filtered by window.
         self.popular_ids: list[int] = []
         self.popular_windows: list[tuple[date, date]] = []
@@ -167,6 +207,28 @@ class FakeMovieProvider:
             and (d := self.films[i].release_date) is not None
             and start <= d <= end
         )
+
+    def search_tv(self, query: str, page: int) -> ProviderTvPage:
+        self._check()
+        hits = tuple(
+            replace(s, seasons=()) for s in self.series.values() if query.lower() in s.name.lower()
+        )
+        return ProviderTvPage(page=page, total_pages=1 if hits else 0, results=hits)
+
+    def tv_details(self, tmdb_id: int) -> ProviderSeries:
+        self.tv_detail_calls.append(tmdb_id)
+        self._check()
+        if tmdb_id not in self.series:
+            raise AppError(404, "NOT_FOUND", "That show was not found.")
+        return self.series[tmdb_id]
+
+    def tv_episodes(self, tmdb_id: int, seasons: Sequence[int]) -> tuple[ProviderEpisode, ...]:
+        self._check()
+        return tuple(e for e in self.episodes.get(tmdb_id, ()) if e.season_number in seasons)
+
+    def tv_genres(self) -> tuple[GenreRef, ...]:
+        self._check()
+        return (GenreRef(10759, "Action & Adventure"), GenreRef(18, "Drama"))
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         self.detail_calls.append(tmdb_id)
@@ -265,7 +327,7 @@ def migrated_url(database_factory: Callable[[], str]) -> str:
 def engine(migrated_url: str) -> Iterator[Engine]:
     eng = create_engine(migrated_url)
     with eng.begin() as conn:
-        conn.execute(text("TRUNCATE cineme.users, cineme.movies CASCADE"))
+        conn.execute(text("TRUNCATE cineme.users, cineme.movies, cineme.series CASCADE"))
     yield eng
     eng.dispose()
 

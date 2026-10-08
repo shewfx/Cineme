@@ -8,7 +8,7 @@ dropped. Bounded timeouts and one retry for transient failures on reads.
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Protocol
@@ -25,6 +25,7 @@ POSTER_SIZE = "w500"
 MAX_PAGES = 500
 TRENDING_TTL_SECONDS = 3600.0
 POPULAR_CACHE_ENTRIES = 8
+TV_SEASON_CHUNK = 20
 _POSTER_PATH = re.compile(r"^/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$")
 
 # connect 3 s / read 5 s; whole operation (incl. one retry) within 8 s.
@@ -66,11 +67,62 @@ class ProviderSearchPage:
     results: tuple[ProviderMovie, ...]
 
 
+@dataclass(frozen=True)
+class ProviderSeries:
+    """Normalized TV series metadata. `seasons` (regular season numbers with
+    their TMDB episode counts) is filled by details only."""
+
+    tmdb_id: int
+    name: str
+    original_name: str | None
+    first_air_date: date | None
+    last_air_date: date | None
+    status: str | None
+    genre_ids: tuple[int, ...]
+    poster_path: str | None
+    overview: str | None
+    adult: bool
+    vote_average: float | None
+    vote_count: int | None
+    original_language: str | None = None
+    origin_countries: tuple[str, ...] = ()
+    seasons: tuple[tuple[int, int], ...] = field(default=())
+
+
+@dataclass(frozen=True)
+class ProviderTvPage:
+    page: int
+    total_pages: int
+    results: tuple[ProviderSeries, ...]
+
+
+@dataclass(frozen=True)
+class ProviderEpisode:
+    """A regular (season >= 1) episode; unknown air date or runtime stay None."""
+
+    season_number: int
+    episode_number: int
+    tmdb_episode_id: int | None
+    name: str | None
+    air_date: date | None
+    runtime_minutes: int | None
+
+
 class MovieMetadataProvider(Protocol):
     def search(self, query: str, page: int) -> ProviderSearchPage: ...
 
     def trending(self) -> tuple[ProviderMovie, ...]:
         """This week's globally trending films (TMDB), not personalized."""
+
+    def search_tv(self, query: str, page: int) -> ProviderTvPage: ...
+
+    def tv_details(self, tmdb_id: int) -> ProviderSeries:
+        """Raises AppError 404 NOT_FOUND for an unknown series."""
+
+    def tv_episodes(self, tmdb_id: int, seasons: Sequence[int]) -> tuple[ProviderEpisode, ...]:
+        """Regular episodes of the given seasons."""
+
+    def tv_genres(self) -> tuple[GenreRef, ...]: ...
 
     def popular_releases(self, start: date, end: date) -> tuple[ProviderMovie, ...]:
         """Films with a primary release date from `start` to `end` inclusive,
@@ -245,6 +297,91 @@ def normalize_movie(raw: object, *, details: bool = False) -> ProviderMovie | No
     )
 
 
+def normalize_series(raw: object, *, details: bool = False) -> ProviderSeries | None:
+    """None when the item lacks a usable id or name (skipped, never guessed)."""
+    if not isinstance(raw, dict):
+        return None
+    tmdb_id = raw.get("id")
+    name = _opt_str(raw.get("name"))
+    if not isinstance(tmdb_id, int) or isinstance(tmdb_id, bool) or tmdb_id <= 0 or not name:
+        return None
+    if details and isinstance(raw.get("genres"), list):
+        genre_ids = tuple(
+            g["id"] for g in raw["genres"] if isinstance(g, dict) and isinstance(g.get("id"), int)
+        )
+    else:
+        genre_ids = _ids(raw.get("genre_ids"))
+    original = _opt_str(raw.get("original_name"))
+    seasons: list[tuple[int, int]] = []
+    if details and isinstance(raw.get("seasons"), list):
+        for s in raw["seasons"]:
+            if not isinstance(s, dict):
+                continue
+            number, count = s.get("season_number"), s.get("episode_count")
+            if (
+                isinstance(number, int)
+                and not isinstance(number, bool)
+                and number >= 1
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count >= 0
+            ):
+                seasons.append((number, count))
+    countries = raw.get("origin_country")
+    return ProviderSeries(
+        tmdb_id=tmdb_id,
+        name=name,
+        original_name=original if original != name else None,
+        first_air_date=_date(raw.get("first_air_date")),
+        last_air_date=_date(raw.get("last_air_date")),
+        status=_opt_str(raw.get("status")),
+        genre_ids=genre_ids,
+        poster_path=_poster(raw.get("poster_path")),
+        overview=_opt_str(raw.get("overview")),
+        adult=raw.get("adult") is True,
+        vote_average=_vote_average(raw.get("vote_average")),
+        vote_count=_vote_count(raw.get("vote_count")),
+        original_language=(_opt_str(raw.get("original_language")) or "")[:8] or None,
+        origin_countries=tuple(c for c in countries if isinstance(c, str))
+        if isinstance(countries, list)
+        else (),
+        seasons=tuple(sorted(seasons)),
+    )
+
+
+def normalize_episodes(raw: object) -> tuple[ProviderEpisode, ...]:
+    """Regular episodes of one season payload; specials and malformed items
+    are dropped, never guessed."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("episodes"), list):
+        return ()
+    out: dict[tuple[int, int], ProviderEpisode] = {}
+    for e in raw["episodes"]:
+        if not isinstance(e, dict):
+            continue
+        season, number = e.get("season_number"), e.get("episode_number")
+        if (
+            not isinstance(season, int)
+            or isinstance(season, bool)
+            or season < 1
+            or not isinstance(number, int)
+            or isinstance(number, bool)
+            or number < 1
+        ):
+            continue
+        episode_id = e.get("id")
+        out[(season, number)] = ProviderEpisode(
+            season_number=season,
+            episode_number=number,
+            tmdb_episode_id=episode_id
+            if isinstance(episode_id, int) and not isinstance(episode_id, bool) and episode_id > 0
+            else None,
+            name=_opt_str(e.get("name")),
+            air_date=_date(e.get("air_date")),
+            runtime_minutes=_runtime(e.get("runtime")),
+        )
+    return tuple(out[k] for k in sorted(out))
+
+
 # --- HTTP client -------------------------------------------------------------
 
 
@@ -275,6 +412,7 @@ class TmdbProvider:
         self._trending: tuple[float, tuple[ProviderMovie, ...]] | None = None
         # (start, end) -> (fetched at, films); a handful of keys, oldest dropped.
         self._popular: dict[tuple[date, date], tuple[float, tuple[ProviderMovie, ...]]] = {}
+        self._tv_genres: tuple[float, tuple[GenreRef, ...]] | None = None
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         deadline = self._clock() + BUDGET_SECONDS
@@ -373,6 +511,62 @@ class TmdbProvider:
         while len(self._popular) > POPULAR_CACHE_ENTRIES:
             del self._popular[next(iter(self._popular))]
         return movies
+
+    def search_tv(self, query: str, page: int) -> ProviderTvPage:
+        data = self._get(
+            "/search/tv",
+            {"query": query, "page": page, "include_adult": "false", "language": "en-US"},
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise _upstream_invalid()
+        total = data.get("total_pages")
+        total_pages = min(total, MAX_PAGES) if isinstance(total, int) and total >= 0 else 0
+        results = tuple(s for s in (normalize_series(r) for r in data["results"]) if s is not None)
+        return ProviderTvPage(page=page, total_pages=total_pages, results=results)
+
+    def tv_details(self, tmdb_id: int) -> ProviderSeries:
+        data = self._get(f"/tv/{tmdb_id}", {"language": "en-US"})
+        series = normalize_series(data, details=True)
+        if series is None or series.tmdb_id != tmdb_id:
+            raise _upstream_invalid()
+        return series
+
+    def tv_episodes(self, tmdb_id: int, seasons: Sequence[int]) -> tuple[ProviderEpisode, ...]:
+        """Regular episodes of the given seasons, fetched with TMDB's
+        `append_to_response=season/N` in chunks of at most 20 seasons."""
+        wanted = sorted({s for s in seasons if s >= 1})
+        episodes: list[ProviderEpisode] = []
+        for i in range(0, len(wanted), TV_SEASON_CHUNK):
+            chunk = wanted[i : i + TV_SEASON_CHUNK]
+            data = self._get(
+                f"/tv/{tmdb_id}",
+                {"language": "en-US", "append_to_response": ",".join(f"season/{n}" for n in chunk)},
+            )
+            if not isinstance(data, dict):
+                raise _upstream_invalid()
+            for n in chunk:
+                payload = data.get(f"season/{n}")
+                if payload is not None:
+                    episodes.extend(normalize_episodes(payload))
+        return tuple(sorted(episodes, key=lambda e: (e.season_number, e.episode_number)))
+
+    def tv_genres(self) -> tuple[GenreRef, ...]:
+        """TV genre registry (ids differ from movies), cached like movie genres."""
+        cached = self._tv_genres
+        if cached is not None and self._clock() - cached[0] < 86400:
+            return cached[1]
+        data = self._get("/genre/tv/list", {"language": "en-US"})
+        if not isinstance(data, dict) or not isinstance(data.get("genres"), list):
+            raise _upstream_invalid()
+        genres = tuple(
+            GenreRef(g["id"], g["name"])
+            for g in data["genres"]
+            if isinstance(g, dict)
+            and isinstance(g.get("id"), int)
+            and isinstance(g.get("name"), str)
+        )
+        self._tv_genres = (self._clock(), genres)
+        return genres
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         data = self._get(f"/movie/{tmdb_id}", {"language": "en-US"})

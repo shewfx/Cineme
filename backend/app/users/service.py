@@ -51,6 +51,7 @@ def read_profile(session: Session, user_id: uuid.UUID) -> MeResponse:
             blocked_genre_ids=prefs.blocked_genre_ids,
             default_max_runtime_minutes=prefs.default_max_runtime_minutes,
             ai_context_enabled=prefs.ai_context_enabled,
+            tonight_media=prefs.tonight_media,
         ),
     )
 
@@ -117,6 +118,7 @@ def preferences_out(prefs: UserPreferences) -> PreferencesResponse:
         blocked_genre_ids=prefs.blocked_genre_ids,
         default_max_runtime_minutes=prefs.default_max_runtime_minutes,
         ai_context_enabled=prefs.ai_context_enabled,
+        tonight_media=prefs.tonight_media,
     )
 
 
@@ -153,6 +155,9 @@ def apply_preferences(prefs: UserPreferences, patch: PreferencesPatch) -> tuple[
     ):
         prefs.ai_context_enabled = patch.ai_context_enabled
         changed = True
+    if "tonight_media" in supplied and patch.tonight_media != prefs.tonight_media:
+        prefs.tonight_media = patch.tonight_media or "movies"
+        affecting = True
     changed = changed or affecting
     if changed:
         prefs.version += 1

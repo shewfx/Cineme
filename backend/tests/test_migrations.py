@@ -36,6 +36,11 @@ APP_TABLES = {
     "rejection_feedback",
     "viewings",
     "movie_blocks",
+    "series",
+    "series_episodes",
+    "series_entries",
+    "episode_viewings",
+    "series_blocks",
 }
 
 
@@ -52,6 +57,11 @@ def test_p4_downgrade_keeps_p3_data_tables(database_factory: Callable[[], str]) 
             "rejection_feedback",
             "viewings",
             "movie_blocks",
+            "series",
+            "series_episodes",
+            "series_entries",
+            "episode_viewings",
+            "series_blocks",
         }
         command.upgrade(config, "head")
         assert tables(engine) == APP_TABLES

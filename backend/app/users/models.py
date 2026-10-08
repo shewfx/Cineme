@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     func,
     text,
 )
@@ -68,5 +69,7 @@ class UserPreferences(Base):
     )
     default_max_runtime_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     ai_context_enabled: Mapped[bool] = mapped_column(server_default=text("false"))
+    # Which media Tonight considers: 'movies' (default), 'movies_and_shows', 'shows'.
+    tonight_media: Mapped[str] = mapped_column(Text, server_default=text("'movies'"))
     version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
