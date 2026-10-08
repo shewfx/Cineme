@@ -2,6 +2,10 @@
 
 Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md). Future work: [ROADMAP.md](ROADMAP.md).
 
+## Release decision (2026-10-08)
+
+The owner approved releasing onboarding, discovery and shows/anime together as **v1.2.0+5** (1.1.0 is not released separately). Build 5 was never shipped on any channel (web build 4, last APK code 3). Migrations pending on the hosted database: `0007`, `0008`, `0009`, subject to the dry run.
+
 ## Shows and anime — branch `feat/series-next-episode` (2026-10-08)
 
 Implemented, not merged, **not applied to any hosted database, not deployed, no version assigned**. Decision: [ADR 011](adr/011-shows-and-anime-next-episode.md); design and notes: [SERIES_DESIGN.md](SERIES_DESIGN.md).
