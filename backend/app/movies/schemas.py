@@ -2,6 +2,7 @@
 Never a pass-through of TMDB payloads; unknown values are null."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -54,6 +55,23 @@ class SearchResponse(BaseModel):
     page: int
     total_pages: int
     results: list[MovieSummary]
+
+
+class TrendingResponse(BaseModel):
+    """At most TRENDING_LIMIT films; one page, no cursor. `in_watchlist` lists
+    the caller's active watchlist films among them."""
+
+    results: list[MovieSummary]
+    in_watchlist: list[int]
+
+
+class PopularResponse(TrendingResponse):
+    """Popular releases for a release-date window (inclusive), by current TMDB
+    popularity: not a trending history."""
+
+    period: Literal["month", "year"]
+    released_from: date
+    released_to: date
 
 
 class GenresResponse(BaseModel):

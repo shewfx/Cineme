@@ -127,6 +127,12 @@ class FakeMovieProvider:
         # Raw TMDB /watch/providers payloads by film; normalized like TMDB's.
         self.availability: dict[int, dict[str, Any]] = {}
         self.availability_calls: list[int] = []
+        # Trending order (ids of `films`); empty by default.
+        self.trending_ids: list[int] = []
+        self.trending_calls = 0
+        # Popular-release candidates in popularity order, filtered by window.
+        self.popular_ids: list[int] = []
+        self.popular_windows: list[tuple[date, date]] = []
 
     def _check(self) -> None:
         if self.down:
@@ -141,6 +147,26 @@ class FakeMovieProvider:
             if query.lower() in f.title.lower()
         ]
         return ProviderSearchPage(page=page, total_pages=1 if hits else 0, results=tuple(hits))
+
+    def trending(self) -> tuple[ProviderMovie, ...]:
+        self.trending_calls += 1
+        self._check()
+        return tuple(
+            replace(self.films[i], runtime_minutes=None, genres=())
+            for i in self.trending_ids
+            if i in self.films
+        )
+
+    def popular_releases(self, start: date, end: date) -> tuple[ProviderMovie, ...]:
+        self.popular_windows.append((start, end))
+        self._check()
+        return tuple(
+            replace(self.films[i], runtime_minutes=None, genres=())
+            for i in self.popular_ids
+            if i in self.films
+            and (d := self.films[i].release_date) is not None
+            and start <= d <= end
+        )
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         self.detail_calls.append(tmdb_id)

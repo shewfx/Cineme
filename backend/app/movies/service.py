@@ -3,9 +3,10 @@ freshness"). Network calls happen outside any user lock; the movie cache is
 shared, non-private data and may be written by a GET."""
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -13,11 +14,22 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.users.blocks import MovieBlock
 from app.users.models import User
+from app.viewings.models import Viewing
+from app.watchlist.models import WatchlistEntry
 
 from .models import Movie
 from .provider import GenreRef, MovieMetadataProvider, ProviderMovie, poster_url
-from .schemas import GenreOut, MovieDetails, MovieSummary, SearchResponse, TraitsOut
+from .schemas import (
+    GenreOut,
+    MovieDetails,
+    MovieSummary,
+    PopularResponse,
+    SearchResponse,
+    TraitsOut,
+    TrendingResponse,
+)
 
 FRESH_FOR = timedelta(days=7)
 
@@ -93,6 +105,108 @@ def search(
             )
             for m in result.results
         ],
+    )
+
+
+TRENDING_LIMIT = 12
+
+
+def _discovery(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    fetch: Callable[[date], tuple[ProviderMovie, ...]],
+) -> tuple[list[MovieSummary], list[int]]:
+    """Shared discovery presentation. `fetch` gets the caller's local date and
+    returns TMDB films (the same for everyone, cached in the provider). They
+    are filtered to what the caller can actually add: not adult, released, with
+    a poster, not already watched and not blocked by this user; at most
+    TRENDING_LIMIT remain. Never a recommendation."""
+    today = local_today(session, user_id)
+    session.rollback()  # no open transaction during network calls
+    films = fetch(today)
+    names = genre_names(provider)
+    base = provider.image_base()
+    candidates = [
+        m
+        for m in films
+        if can_add(m.adult)
+        and is_released(m.release_date, today)
+        and poster_url(base, m.poster_path)
+    ]
+    ids = [m.tmdb_id for m in candidates]
+    watched = set(
+        session.scalars(
+            select(Viewing.movie_id).where(Viewing.user_id == user_id, Viewing.movie_id.in_(ids))
+        )
+    )
+    blocked = set(
+        session.scalars(
+            select(MovieBlock.movie_id).where(
+                MovieBlock.user_id == user_id, MovieBlock.movie_id.in_(ids)
+            )
+        )
+    )
+    shown = [m for m in candidates if m.tmdb_id not in watched | blocked][:TRENDING_LIMIT]
+    saved = set(
+        session.scalars(
+            select(WatchlistEntry.movie_id).where(
+                WatchlistEntry.user_id == user_id,
+                WatchlistEntry.status == "active",
+                WatchlistEntry.movie_id.in_([m.tmdb_id for m in shown]),
+            )
+        )
+    )
+    session.rollback()
+    results = [
+        MovieSummary(
+            tmdb_id=m.tmdb_id,
+            title=m.title,
+            year=m.release_date.year if m.release_date else None,
+            runtime_minutes=None,
+            genre_ids=list(m.genre_ids),
+            genres=_genres(m.genre_ids, names),
+            poster_url=poster_url(base, m.poster_path),
+            vote_average=m.vote_average,
+            can_add=True,
+            released=True,
+        )
+        for m in shown
+    ]
+    return results, [m.tmdb_id for m in shown if m.tmdb_id in saved]
+
+
+def trending(
+    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID
+) -> TrendingResponse:
+    """This week's trending films (TMDB), for onboarding and Watchlist add."""
+    results, saved = _discovery(session, provider, user_id, lambda _today: provider.trending())
+    return TrendingResponse(results=results, in_watchlist=saved)
+
+
+def popular_releases(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    period: Literal["month", "year"],
+) -> PopularResponse:
+    """Films released this calendar month or year up to the caller's local
+    today, by current TMDB popularity. These are popular releases, not a
+    historical monthly or yearly trending ranking."""
+    window: list[date] = []
+
+    def fetch(today: date) -> tuple[ProviderMovie, ...]:
+        start = today.replace(day=1) if period == "month" else today.replace(month=1, day=1)
+        window[:] = [start, today]
+        return provider.popular_releases(start, today)
+
+    results, saved = _discovery(session, provider, user_id, fetch)
+    return PopularResponse(
+        period=period,
+        released_from=window[0],
+        released_to=window[1],
+        results=results,
+        in_watchlist=saved,
     )
 
 

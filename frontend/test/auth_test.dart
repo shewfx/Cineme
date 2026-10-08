@@ -81,6 +81,9 @@ class FakeAccount implements AccountRepository {
   Future<void> setRegion(String? countryCode) async {}
 
   @override
+  Future<void> completeOnboarding() async {}
+
+  @override
   Future<List<(String, String)>> regions() async => const [('IN', 'India')];
 
   FakeAccount(this.auth);

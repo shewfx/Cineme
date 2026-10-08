@@ -253,7 +253,10 @@ Read-only profile/default preferences. Response200:
   "id": "uuid",
   "display_name": null,
   "timezone": "UTC",
+  "country_code": null,
+  "region": null,
   "created_at": "2026-10-01T22:00:00Z",
+  "onboarding_completed_at": null,
   "preferences": {
     "version": 1,
     "genre_preferences": {},
@@ -264,11 +267,11 @@ Read-only profile/default preferences. Response200:
 }
 ```
 
-409 PROFILE_NOT_INITIALIZED if bootstrap has not succeeded; standard auth/DB errors. It never inserts or resets anything.
+`country_code` is the user's chosen streaming region (ISO 3166-1 alpha-2) or null; `region` is the effective one: the chosen code, else the one implied by the timezone, else null (ADR 007). `onboarding_completed_at` is null while the account still needs first-run onboarding and a timestamp afterwards; accounts that existed when it was introduced carry their creation time (ADR 010). Clients treat an absent field as completed. 409 PROFILE_NOT_INITIALIZED if bootstrap has not succeeded; standard auth/DB errors. It never inserts or resets anything.
 
 ### PATCH `/me`
 
-Request `{display_name:"Shew",timezone:"Asia/Kolkata"}`; either/both, unknown fields rejected. Requires idempotency key. Response200 updated profile. Timezone IANA validation; explain possible daily-date change. Editing display name/timezone does not rewrite old session snapshots. No version parameter because fields are simple explicit last-write values, not read-modify-write state.422 invalid zone/name.
+Request `{display_name:"Shew",timezone:"Asia/Kolkata"}`; any of `display_name`, `timezone`, `country_code`, `onboarding_completed`, unknown fields rejected. `onboarding_completed` accepts only `true` (ADR 010): it sets `onboarding_completed_at` once, a repeat succeeds without changing the original timestamp, and `false`/`null` are 422. Requires idempotency key. Response200 updated profile. Timezone IANA validation; explain possible daily-date change. Editing display name/timezone does not rewrite old session snapshots. No version parameter because fields are simple explicit last-write values, not read-modify-write state.422 invalid zone/name.
 
 ### GET `/movies/{tmdb_id}/availability` and GET `/watch/regions`
 
@@ -320,6 +323,14 @@ Versioned genre registry response200 `{items:[{id:35,name:"Comedy"},...],version
 ### GET `/movies/search?q=arrival&page=1`
 
 Search title length2..100, page1..500. Response200 `{page:1,total_pages:...,results:[MovieSummary,...]}`. TMDB controls actual pages; expose at most500. No results is200 empty array.422 query/page,429 upstream throttle,503 unavailable. Search's runtime may be null.
+
+### GET `/movies/trending`
+
+Discovery for onboarding and the Watchlist add screen (ADR 010 amendment). Auth and profile required; no parameters. Response200 `{results:[MovieSummary,...],in_watchlist:[tmdb_id,...]}`: at most 12 films from TMDB's weekly trending list, in TMDB's order, one page and no cursor. Trending means what is popular this week for everyone; it is **not** personalized and **not** a recommendation, never scores or ranks anything, and is not used by Tonight. The same TMDB list is served to every user (cached in the provider for one hour; a failed refresh serves the last good copy), then filtered for this caller using the search eligibility rules plus the add rules: adult films, films without a known release date on or before the caller's local date, and films without a poster are omitted; films this caller already watched or blocked are omitted (an Add would fail). `can_add` is true and `released` is true for every item; `runtime_minutes` is null (details are not fetched); `vote_average` is included. `in_watchlist` lists the returned films already on the caller's active watchlist. Read-only: it writes nothing for the caller (the shared metadata cache is not touched either). Errors: 401, 409 PROFILE_NOT_INITIALIZED, 502 on a malformed upstream list, 503 retryable when TMDB is unavailable and no cached list exists, 429 on upstream throttling. The route is registered before `/movies/{tmdb_id}`.
+
+### GET `/movies/popular?period=month|year`
+
+Popular releases for the Watchlist add screen (ADR 010 amendment): films whose TMDB primary release date falls from the first day of the caller's current local calendar month (`month`) or year (`year`) up to and including the caller's local today, sorted by current TMDB popularity (`/discover/movie`, `popularity.desc`, adult excluded, page 1). These are **popular releases, not a trending ranking**: TMDB has no historical monthly or yearly trending, and the order is current popularity within the release window. Not personalized, not a recommendation, never used by Tonight. Response200 `{period,released_from,released_to,results:[MovieSummary,...],in_watchlist:[tmdb_id,...]}` with the same item shape, eligibility filtering (adult, unreleased/undated, poster-less, caller-watched and caller-blocked films omitted), 12-item bound, `in_watchlist` meaning and error codes as `GET /movies/trending`. `released_from`/`released_to` are ISO dates of the window actually used. The provider caches each window for one hour (at most eight windows, oldest dropped) and serves the last good copy if a refresh fails. 422 for a missing or unknown `period`. Registered before `/movies/{tmdb_id}`.
 
 ### GET `/movies/{tmdb_id}`
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/models/inventory.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../history/application/history_controllers.dart';
 import '../../history/data/history_repository.dart';
 import '../../today/application/today_controller.dart';
@@ -221,6 +222,29 @@ class SearchController extends Notifier<SearchState> {
     return o;
   }
 }
+
+/// A discovery list for onboarding and the add screen. Kept per signed-in user
+/// and not auto-disposed, so clearing the query shows it again without a
+/// reload.
+final discoveryProvider = FutureProvider.family<DiscoveryPage, DiscoveryList>((
+  ref,
+  list,
+) {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(searchRepositoryProvider)!.discover(list);
+});
+
+/// Which list the add screen shows while the search box is empty; Trending
+/// until the user picks another (this session only).
+class DiscoveryChoice extends Notifier<DiscoveryList> {
+  @override
+  DiscoveryList build() => DiscoveryList.trending;
+
+  void select(DiscoveryList list) => state = list;
+}
+
+final discoveryChoiceProvider =
+    NotifierProvider<DiscoveryChoice, DiscoveryList>(DiscoveryChoice.new);
 
 final searchControllerProvider =
     NotifierProvider.autoDispose<SearchController, SearchState>(

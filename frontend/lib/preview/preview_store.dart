@@ -597,6 +597,19 @@ class FakeWatchlistRepository implements WatchlistRepository {
 }
 
 class FakeSearchRepository implements MovieSearchRepository {
+  @override
+  Future<DiscoveryPage> discover(DiscoveryList list) async {
+    await _s._io();
+    final saved = {for (final e in _s._active) e.movie.tmdbId};
+    return DiscoveryPage(
+      results: [
+        for (final m in _s._catalog.values.take(8))
+          if (!_s._watched(m.tmdbId)) SearchResult(movie: m, canAdd: true),
+      ],
+      inWatchlist: saved,
+    );
+  }
+
   FakeSearchRepository(this._s, {this.resultsPerPage = 6});
 
   final PreviewStore _s;

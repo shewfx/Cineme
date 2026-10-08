@@ -26,3 +26,7 @@ Thumbs.db
 # Vercel link state and the locally built Flutter web bundle that is uploaded with the API
 .vercel
 backend/public/
+
+# JVM crash and replay dumps
+hs_err_pid*.log
+replay_pid*.log

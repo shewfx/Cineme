@@ -14,7 +14,7 @@ It chooses **one** film from your own list — not a feed, not a carousel, not t
 
 ---
 
-> **Status:** P5 implementation is complete on `feat/p5-history-ratings`; History, ratings, next-day follow-up and reversible Never recommend are backend-backed. See [Roadmap](#roadmap). The P5 migration is not applied to the hosted database.
+> **Status:** P0–P5 are merged; History, integer star ratings, next-day follow-up and reversible Never recommend are backend-backed. Web/main is v1.0.3+4; the last distributed Android APK is v1.0.2 (code 3). The hosted database was verified at migration `0006` (head) on 2026-10-08. See [Roadmap](#roadmap) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## The problem
 

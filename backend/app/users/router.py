@@ -62,8 +62,9 @@ def patch_me(
     session: DbSession,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JSONResponse:
-    """Display name and/or timezone. Same key + same body replays the stored
-    response; same key + different body is 409 IDEMPOTENCY_CONFLICT."""
+    """Display name, timezone, region and/or one-way onboarding completion.
+    Same key + same body replays the stored response; same key + different
+    body is 409 IDEMPOTENCY_CONFLICT."""
     key = idempotency.parse_key(idempotency_key)
     digest = idempotency.request_hash(patch.model_dump(mode="json", exclude_unset=True))
     operation = "PATCH /api/v1/me"

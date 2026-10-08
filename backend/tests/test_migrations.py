@@ -214,3 +214,54 @@ def test_deleting_a_user_cascades_private_rows(engine: Engine) -> None:
             text("SELECT count(*) FROM cineme.user_preferences WHERE user_id=:id"), {"id": uid}
         ).scalar()
     assert left == 0
+
+
+def test_onboarding_migration_backfills_existing_users_only(
+    database_factory: Callable[[], str],
+) -> None:
+    url = database_factory()
+    config = alembic_config(url)
+    engine = create_engine(url)
+    existing, later = uuid.uuid4(), uuid.uuid4()
+    try:
+        command.upgrade(config, "0006")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO cineme.users (id, created_at) VALUES (:id, '2026-01-02 03:04+00')"
+                ),
+                {"id": existing},
+            )
+        command.upgrade(config, "head")
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO cineme.users (id) VALUES (:id)"), {"id": later})
+        with engine.connect() as conn:
+            rows = dict(
+                conn.execute(
+                    text("SELECT id, onboarding_completed_at = created_at FROM cineme.users")
+                ).all()
+            )
+            nulls = (
+                conn.execute(
+                    text("SELECT id FROM cineme.users WHERE onboarding_completed_at IS NULL")
+                )
+                .scalars()
+                .all()
+            )
+        assert rows[existing] is True, "existing accounts are never sent through onboarding"
+        assert nulls == [later], "accounts created afterwards start incomplete"
+
+        command.downgrade(config, "0006")
+        with engine.connect() as conn:
+            columns = set(
+                conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema='cineme' AND table_name='users'"
+                    )
+                ).scalars()
+            )
+        assert "onboarding_completed_at" not in columns
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
