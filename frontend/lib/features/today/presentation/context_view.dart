@@ -7,7 +7,9 @@ import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/selector_field.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
+import '../../series/application/series_support.dart';
 import '../application/today_controller.dart';
+import 'media_preference.dart';
 import 'today_widgets.dart';
 
 enum ContextMode {
@@ -226,6 +228,10 @@ class _ContextViewState extends ConsumerState<ContextView> {
           if (picked != null) controller.selectMaxRuntime(picked.$1);
         },
       ),
+      if (ref.watch(seriesEnabledProvider)) ...[
+        const SizedBox(height: 24),
+        MediaPreferenceField(today: widget.today),
+      ],
       const SizedBox(height: 20),
       if (avoided.isNotEmpty) ...[
         const SizedBox(height: 20),

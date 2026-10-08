@@ -5,6 +5,7 @@ import '../../../core/network/idempotency.dart';
 import '../../../core/network/movie_dto.dart';
 import '../../../shared/models/movie.dart';
 import '../../../shared/models/profile.dart';
+import '../../../shared/models/series.dart';
 
 /// Explicit app-profile setup after sign-in (API_CONTRACT): POST
 /// /me/bootstrap creates or reuses the profile; GET /me only reads.
@@ -12,6 +13,10 @@ abstract interface class AccountRepository {
   Future<void> bootstrap();
 
   Future<Profile> me();
+
+  /// PATCH /me/preferences {tonight_media}. Reads the current version first
+  /// and retries once on a version conflict; changes nothing but the setting.
+  Future<void> setTonightMedia(TonightMedia media);
 
   /// PATCH /me {onboarding_completed: true}. One-way and idempotent: Skip and
   /// Continue both call it, and a retry keeps the original completion time.
@@ -71,6 +76,34 @@ class ApiAccountRepository implements AccountRepository {
       commandFingerprint('PATCH', '/api/v1/me', body),
       (key) => _api.patch('/api/v1/me', body: body, idempotencyKey: key),
     );
+  }
+
+  @override
+  Future<void> setTonightMedia(TonightMedia media) async {
+    Future<void> attempt() async {
+      final me = await _api.get('/api/v1/me');
+      final version = asMap(me['preferences'])['version'];
+      if (version is! int) throw _malformed;
+      final body = {
+        'expected_version': version,
+        'tonight_media': media.wireName,
+      };
+      await _keys.send(
+        commandFingerprint('PATCH', '/api/v1/me/preferences', body),
+        (key) => _api.patch(
+          '/api/v1/me/preferences',
+          body: body,
+          idempotencyKey: key,
+        ),
+      );
+    }
+
+    try {
+      await attempt();
+    } on ApiError catch (e) {
+      if (e.code != 'VERSION_CONFLICT') rethrow;
+      await attempt();
+    }
   }
 
   @override
@@ -156,6 +189,8 @@ Profile profileFromJson(
     blockedMovies: blockedMovies,
     region: region as String?,
     regionChosen: chosen != null,
+    tonightMedia: TonightMedia.fromWire(prefs['tonight_media']),
+    preferencesVersion: (prefs['version'] as int?) ?? 1,
     // Absent key: older backend, treated as complete. Present null: pending.
     onboardingComplete:
         !json.containsKey('onboarding_completed_at') || onboardedAt != null,

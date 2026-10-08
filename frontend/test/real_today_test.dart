@@ -418,6 +418,13 @@ Future<TodayRig> start(WidgetTester tester, [TodayRig? rig]) async {
   return rig;
 }
 
+/// Opens the Reason dropdown in the "Not this one?" sheet and picks [label].
+/// Choosing never submits; the caller taps Show another.
+Future<void> chooseReason(WidgetTester tester, String label) async {
+  await tapText(tester, 'Select a reason');
+  await tapText(tester, label);
+}
+
 Future<void> tapText(WidgetTester tester, String text) async {
   // A long option sheet at large text builds lazily: scroll it like a user.
   if (find.text(text).evaluate().isEmpty) {
@@ -586,7 +593,7 @@ void main() {
         await pickExciting(tester);
         await tapText(tester, 'Not feeling it');
         expect(find.text('Already seen'), findsNothing);
-        await tapText(tester, label);
+        await chooseReason(tester, label);
         await tapText(tester, 'Show another');
         final sent = rig.server.commands('/reject').single.data as Map;
         expect(sent['reason'], wire);
@@ -602,7 +609,7 @@ void main() {
       final rig = await start(tester);
       await pickExciting(tester, time: 'Under 2 hours');
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Too long');
+      await chooseReason(tester, 'Too long');
       await tapText(tester, 'Up to 90 min');
       await tapText(tester, 'Show another');
       var sent = rig.server.commands('/reject').last.data as Map;
@@ -610,7 +617,7 @@ void main() {
       expect(sent['details'], {'max_runtime_minutes': 90});
 
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Different genre');
+      await chooseReason(tester, 'Different genre');
       await tapText(tester, 'Thriller');
       await tapText(tester, 'Show another');
       sent = rig.server.commands('/reject').last.data as Map;
@@ -627,7 +634,7 @@ void main() {
       await pickExciting(tester);
       for (var i = 0; i < 3; i++) {
         await tapText(tester, 'Not feeling it');
-        await tapText(tester, 'Just give me another');
+        await chooseReason(tester, 'Just give me another');
         await tapText(tester, 'Show another');
       }
       expect(find.byType(MoviePoster), findsNothing);
@@ -645,12 +652,53 @@ void main() {
       final rig = await start(tester);
       await pickExciting(tester);
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Not feeling this one');
+      await chooseReason(tester, 'Not feeling this one');
       await tapText(tester, 'Stop for tonight');
       final sent = rig.server.commands('/reject').single.data as Map;
       expect(sent['choose_another'], isFalse);
       expect(find.byType(MoviePoster), findsNothing);
       expect(rig.server.commands('/today/choose'), hasLength(1));
+    });
+
+    testWidgets('the Reason dropdown starts empty and never submits itself', (
+      tester,
+    ) async {
+      final rig = await start(tester);
+      await pickExciting(tester);
+      await tapText(tester, 'Not feeling it');
+      expect(find.text('Reason'), findsOneWidget);
+      expect(find.text('Select a reason'), findsOneWidget);
+      FilledButton showAnother() => tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Show another'),
+      );
+      expect(showAnother().onPressed, isNull);
+      await tapText(tester, 'Select a reason');
+      for (final option in [
+        'Not feeling this one',
+        'Too long',
+        'Something lighter',
+        'Different genre',
+        'Already watched',
+        'Just give me another',
+      ]) {
+        expect(find.text(option), findsOneWidget);
+      }
+      await tapText(tester, 'Something lighter');
+      expect(find.text('Select a reason'), findsNothing);
+      expect(showAnother().onPressed, isNotNull);
+      expect(rig.server.commands('/reject'), isEmpty, reason: 'no auto-submit');
+    });
+
+    testWidgets('Stop for tonight works without choosing a reason', (
+      tester,
+    ) async {
+      final rig = await start(tester);
+      await pickExciting(tester);
+      await tapText(tester, 'Not feeling it');
+      await tapText(tester, 'Stop for tonight');
+      final sent = rig.server.commands('/reject').single.data as Map;
+      expect(sent['reason'], 'not_tonight');
+      expect(sent['choose_another'], isFalse);
     });
 
     testWidgets('no match explains itself and never relaxes the limit', (
@@ -795,6 +843,7 @@ void main() {
       final rig = await start(tester);
       await pickExciting(tester);
       await tapText(tester, 'Not feeling it');
+      await tapText(tester, 'Select a reason');
       expect(find.text('Already watched'), findsOneWidget);
       await tapText(tester, 'Already watched');
       expect(find.textContaining('date unknown'), findsOneWidget);
@@ -1022,7 +1071,7 @@ void main() {
       // 329865 has no scripted data: the API fails; the card is unaffected.
       rig.server.films.removeAt(0);
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Not feeling this one');
+      await chooseReason(tester, 'Not feeling this one');
       await tapText(tester, 'Show another');
       expect(find.byType(MoviePoster), findsOneWidget);
       expect(find.text('Watch Tonight'), findsOneWidget);

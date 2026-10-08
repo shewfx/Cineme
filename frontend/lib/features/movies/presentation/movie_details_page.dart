@@ -1,11 +1,10 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/details_scaffold.dart';
 import '../../../core/widgets/movie_poster.dart';
 import '../../../core/widgets/scroll_depth_hint.dart';
 import '../../../core/widgets/state_views.dart';
@@ -60,82 +59,17 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
             },
           );
     }
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('Movie details'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const ColoredBox(color: AppColors.background),
-          if (backdropMovie?.posterUrl case final url? when url.isNotEmpty)
-            _PosterBackdrop(url: url),
-          SafeArea(
-            top: false,
-            bottom: false,
-            child: Column(
-              children: [
-                SizedBox(
-                  height: MediaQuery.paddingOf(context).top + kToolbarHeight,
-                ),
-                Expanded(child: content),
-                _actions(entry),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return DetailsBackdropScaffold(
+      title: 'Movie details',
+      posterUrl: backdropMovie?.posterUrl,
+      body: content,
+      actions: _actions(entry),
     );
   }
 
   static void _noop() {}
 
-  Widget _loading() => ListView(
-    physics: const NeverScrollableScrollPhysics(),
-    padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
-    children: [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 108,
-            height: 162,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          const SizedBox(width: 20),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SkeletonLine(width: 170, height: 24),
-                SizedBox(height: 12),
-                _SkeletonLine(width: 112),
-                SizedBox(height: 9),
-                _SkeletonLine(width: 140),
-              ],
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 28),
-      const _SkeletonLine(width: 92),
-      const SizedBox(height: 12),
-      const _SkeletonLine(),
-      const SizedBox(height: 8),
-      const _SkeletonLine(width: 260),
-      const SizedBox(height: 8),
-      const _SkeletonLine(width: 210),
-      const SizedBox(height: 26),
-      const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-    ],
-  );
+  Widget _loading() => const DetailsLoadingSkeleton();
 
   Widget _error(Object error) {
     if (error case ApiError(status: 404)) {
@@ -252,7 +186,7 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
               ),
             ],
             const SizedBox(height: 24),
-            AvailabilitySection(tmdbId: movie.tmdbId),
+            AvailabilitySection(tmdbId: movie.tmdbId, detailed: true),
             if (entry != null && !_removed) ...[
               const SizedBox(height: 4),
               Text(
@@ -316,41 +250,13 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
         ),
       );
     }
-    if (children.isEmpty) return const SizedBox.shrink();
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 4,
-          runSpacing: 0,
-          children: children,
-        ),
-      ),
-    );
+    return DetailActionsBar(children: children);
   }
 
   Widget _action(String label, IconData icon, VoidCallback? onPressed) =>
-      TextButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-        style: TextButton.styleFrom(
-          foregroundColor: AppColors.textSoft,
-          minimumSize: const Size(48, 48),
-        ),
-      );
+      DetailActionButton(label: label, icon: icon, onPressed: onPressed);
 
-  Widget _status(String label) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-    child: Text(
-      label,
-      textAlign: TextAlign.center,
-      style: Theme.of(context).textTheme.labelMedium
-          ?.copyWith(color: AppColors.textMuted),
-    ),
-  );
+  Widget _status(String label) => DetailStatusLine(label);
 
   Future<void> _remove(WatchlistEntry entry) async {
     setState(() => _busy = 'remove');
@@ -386,7 +292,9 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
       if (mounted) {
         setState(() => _busy = null);
         if (error is ApiError && error.status == 404) {
-          ref.invalidate(watchlistControllerProvider);
+          ref
+            ..invalidate(watchlistControllerProvider)
+            ..invalidate(watchlistItemsProvider);
           setState(() => _removed = true);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('This film was already removed.')),
@@ -487,69 +395,6 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
     ..showSnackBar(SnackBar(content: Text("Couldn't $action. Try again.")));
 }
 
-class _PosterBackdrop extends StatelessWidget {
-  const _PosterBackdrop({required this.url});
-  final String url;
-
-  @override
-  Widget build(BuildContext context) => Positioned.fill(
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight * 0.80;
-        return Stack(
-          children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: height,
-              child: ClipRect(
-                child: ImageFiltered(
-                  imageFilter: ui.ImageFilter.blur(sigmaX: 13, sigmaY: 13),
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                    cacheWidth:
-                        (constraints.maxWidth *
-                                MediaQuery.devicePixelRatioOf(context))
-                            .round(),
-                    errorBuilder: (_, _, _) => const SizedBox.expand(),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: height,
-              child: const IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: [0, 0.48, 0.67, 0.84, 1],
-                      colors: [
-                        Color(0x77000000),
-                        Color(0x99000000),
-                        Color(0xD91C1C1C),
-                        Color(0xF51C1C1C),
-                        AppColors.background,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    ),
-  );
-}
-
 class InvalidMovieDetailsPage extends StatelessWidget {
   const InvalidMovieDetailsPage({super.key});
 
@@ -559,23 +404,6 @@ class InvalidMovieDetailsPage extends StatelessWidget {
     body: const EmptyState(
       title: 'Movie not found',
       message: 'This movie link is invalid or out of date.',
-    ),
-  );
-}
-
-class _SkeletonLine extends StatelessWidget {
-  const _SkeletonLine({this.width = double.infinity, this.height = 12});
-
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: width,
-    height: height,
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(6),
     ),
   );
 }

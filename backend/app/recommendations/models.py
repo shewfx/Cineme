@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -76,12 +77,20 @@ class Recommendation(Base):
             name="status_values",
         ),
         CheckConstraint(
-            "(status = 'no_match') = (movie_id IS NULL)"
-            " AND (movie_id IS NULL) = (total_score IS NULL)"
-            " AND (movie_id IS NULL) = (winner_snapshot IS NULL)",
+            "(status = 'no_match') = (movie_id IS NULL AND series_id IS NULL)"
+            " AND NOT (movie_id IS NOT NULL AND series_id IS NOT NULL)"
+            " AND (movie_id IS NULL AND series_id IS NULL) = (total_score IS NULL)"
+            " AND (movie_id IS NULL AND series_id IS NULL) = (winner_snapshot IS NULL)",
             name="selected_has_movie_score_winner",
         ),
-        CheckConstraint("total_score IS NULL OR total_score BETWEEN 0 AND 100", name="score_range"),
+        CheckConstraint("total_score IS NULL OR total_score BETWEEN 0 AND 120", name="score_range"),
+        CheckConstraint(
+            "(media_kind IN ('movie', 'episode'))"
+            " AND ((series_id IS NULL) = (season_number IS NULL))"
+            " AND ((series_id IS NULL) = (episode_number IS NULL))"
+            " AND ((media_kind = 'episode') = (series_id IS NOT NULL))",
+            name="episode_identity",
+        ),
         CheckConstraint("char_length(config_hash) = 64", name="config_hash_sha256"),
         CheckConstraint(
             "jsonb_typeof(top_candidates) = 'array' AND jsonb_array_length(top_candidates) <= 9",
@@ -124,6 +133,13 @@ class Recommendation(Base):
     movie_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("cineme.movies.tmdb_id", ondelete="RESTRICT")
     )
+    # 'movie' (movie_id) or 'episode' (series_id + season + episode), ADR 011.
+    media_kind: Mapped[str] = mapped_column(Text, server_default=text("'movie'"))
+    series_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("cineme.series.tmdb_id", ondelete="RESTRICT")
+    )
+    season_number: Mapped[int | None] = mapped_column(SmallInteger)
+    episode_number: Mapped[int | None] = mapped_column(SmallInteger)
     status: Mapped[str] = mapped_column(Text)
     total_score: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     engine_version: Mapped[str] = mapped_column(Text)

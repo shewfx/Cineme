@@ -2,6 +2,27 @@
 
 Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md). Future work: [ROADMAP.md](ROADMAP.md).
 
+## Release decision (2026-10-08)
+
+The owner approved releasing onboarding, discovery and shows/anime together as **v1.2.0+5** (1.1.0 is not released separately). Build 5 was never shipped on any channel (web build 4, last APK code 3). Migrations pending on the hosted database: `0007`, `0008`, `0009`, subject to the dry run.
+
+## Shows and anime — branch `feat/series-next-episode` (2026-10-08)
+
+Implemented, not merged, **not applied to any hosted database, not deployed, no version assigned**. Decision: [ADR 011](adr/011-shows-and-anime-next-episode.md); design and notes: [SERIES_DESIGN.md](SERIES_DESIGN.md).
+
+- **Backend:** migration `0008`; TMDB TV provider methods (search, details, regular episodes in chunks of 20 seasons, TV genres); series API (search, details, seasons, progress, mark next watched, ratings, blocks, episode history); union watchlist with a media filter and the `X-Cineme-Features: series-v1` capability header; `tonight_media` preference; `weighted_v2` with next-episode candidates and the bounded continuity bonus (movie scores identical to `weighted_v1`); refresh of stale shows before a pick; episode accept / reject / watched / follow-up.
+- **PR #16 follow-up:** migration `0009` (show provider cache), `GET /tv/trending`, `GET /tv/{id}/availability`; shared details backdrop on Show Details, Where to watch on Show Details and the Tonight episode card, Trending shows grid on the add screen, Reason dropdown in the Not this one sheet.
+- **Flutter:** Tonight media preference, episode card and empty / no-match states, Watchlist media dropdown, Movies | Shows add screen, show details with progress, History Episodes segment, Blocked shows in Profile. Hidden entirely on a backend without shows.
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | clean (74 files formatted; 44 source files) |
+| `uv run --env-file .env pytest` (local PostgreSQL 16) | 474 passed (new: 40 pure engine tests for `weighted_v2` and the continuity formula, 49 API tests across metadata, union watchlist, progress, concurrency, Tonight, continuity, history and refresh, 5 provider and migration tests) |
+| `dart format --output=none --set-exit-if-changed lib test` / `flutter analyze` | exit 0 / no issues |
+| `flutter test` | 340 passed (series_test.dart covers the trending grid, show availability, the shared backdrop and the Reason dropdown) |
+
+Not performed: a hosted migration dry run for `0008`, manual browser or device walkthrough, any deployment.
+
 ## Release and hosted state (verified 2026-10-08)
 
 | Artifact | Version | Evidence |

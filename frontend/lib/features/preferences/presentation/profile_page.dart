@@ -13,6 +13,9 @@ import '../../auth/data/auth_repository.dart';
 import '../../availability/data/availability_repository.dart';
 import '../../../shared/models/movie.dart';
 import '../../../shared/models/profile.dart';
+import '../../series/application/series_controllers.dart';
+import '../../series/application/series_support.dart';
+import '../../series/data/series_repository.dart';
 import '../application/profile_controller.dart';
 import '../data/profile_repository.dart';
 
@@ -89,6 +92,7 @@ class _ProfileBody extends ConsumerWidget {
         else
           for (final m in profile.blockedMovies!)
             _BlockedRow(title: m.title, tmdbId: m.tmdbId),
+        if (ref.watch(seriesEnabledProvider)) const _BlockedShows(),
         const _Section('About'),
         const _ReleaseInfo(),
         const _Row(
@@ -182,13 +186,46 @@ class _AccountSection extends ConsumerWidget {
   }
 }
 
+/// Shows set to Never recommend, each reversible here.
+class _BlockedShows extends ConsumerWidget {
+  const _BlockedShows();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shows = ref.watch(blockedShowsProvider);
+    return shows.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (list) => list.isEmpty
+          ? const _Row('Blocked shows', 'None')
+          : Column(
+              children: [
+                for (final s in list)
+                  _BlockedRow(
+                    key: ValueKey('blocked-show-${s.tmdbId}'),
+                    title: s.name,
+                    tmdbId: s.tmdbId,
+                    show: true,
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
 /// Never recommend is reversible. Unblocking does not re-add the film to
-/// the watchlist.
+/// the watchlist (a show keeps its entry and progress throughout).
 class _BlockedRow extends ConsumerStatefulWidget {
-  const _BlockedRow({required this.title, required this.tmdbId});
+  const _BlockedRow({
+    super.key,
+    required this.title,
+    required this.tmdbId,
+    this.show = false,
+  });
 
   final String title;
   final int tmdbId;
+  final bool show;
 
   @override
   ConsumerState<_BlockedRow> createState() => _BlockedRowState();
@@ -201,8 +238,13 @@ class _BlockedRowState extends ConsumerState<_BlockedRow> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      await ref.read(profileRepositoryProvider)!.unblock(widget.tmdbId);
-      ref.invalidate(profileProvider);
+      if (widget.show) {
+        await ref.read(seriesRepositoryProvider)!.unblock(widget.tmdbId);
+        ref.invalidate(blockedShowsProvider);
+      } else {
+        await ref.read(profileRepositoryProvider)!.unblock(widget.tmdbId);
+        ref.invalidate(profileProvider);
+      }
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -356,7 +398,7 @@ class _RegionRow extends ConsumerWidget {
           if (picked == null) return;
           await account.setRegion(picked.$1);
           ref.invalidate(profileProvider);
-          ref.invalidate(movieAvailabilityProvider);
+          ref.invalidate(availabilityProvider);
         } catch (_) {
           messenger.showSnackBar(
             const SnackBar(

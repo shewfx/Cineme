@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core import idempotency
 from app.core.auth import Identity, current_identity
 from app.core.db import get_session
+from app.core.features import series_enabled
 from app.movies.router import Provider
 
 from . import service
@@ -29,8 +30,14 @@ def list_watchlist(
     cursor: Annotated[str | None, Query(max_length=200)] = None,
     q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     sort: service.WatchlistSort = service.DEFAULT_SORT,
+    media: Annotated[Literal["all", "movies", "shows"] | None, Query()] = None,
 ) -> WatchlistPage:
-    return service.list_entries(session, provider, identity.user_id, limit, cursor, q, sort)
+    """`media` filters what is listed (default all) for clients that declared
+    series support; others always get movies. Filtering never changes data."""
+    effective = (media or "all") if series_enabled() else "movies"
+    return service.list_entries(
+        session, provider, identity.user_id, limit, cursor, q, sort, effective
+    )
 
 
 @router.post(
@@ -47,7 +54,9 @@ def add_to_watchlist(
     idempotency_key: IdempotencyKey = None,
 ) -> JSONResponse:
     key = idempotency.parse_key(idempotency_key)
-    status, payload = service.add(session, provider, identity.user_id, body.tmdb_id, key)
+    status, payload = service.add(
+        session, provider, identity.user_id, body.tmdb_id, key, body.media_type
+    )
     return JSONResponse(payload, status_code=status)
 
 

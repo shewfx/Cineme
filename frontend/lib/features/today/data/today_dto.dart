@@ -1,4 +1,6 @@
 import '../../../core/network/movie_dto.dart';
+import '../../../core/network/series_dto.dart';
+import '../../../shared/models/series.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../../shared/models/viewing.dart';
@@ -70,6 +72,16 @@ Map<String, Object?> sessionContextToJson(SessionContext c) => {
   'avoid_genre_ids': (c.avoidGenreIds.toList()..sort()),
 };
 
+/// The episode payload of a recommendation, viewing or follow-up.
+EpisodeCard episodeCardFromJson(Map<String, dynamic> json) {
+  final continues = json['continues_series'];
+  return EpisodeCard(
+    series: seriesFromJson(asMap(json['series'])),
+    episode: episodeFromJson(json),
+    continuesSeries: continues == true,
+  );
+}
+
 List<Reason> _reasons(Object? raw, {bool uncertain = false}) => [
   for (final r in asList(raw))
     ServerReason(asMap(r)['text'] as String, uncertain: uncertain),
@@ -94,6 +106,7 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
     final counts = asMap(summary['primary_exclusion_counts']);
     noMatch = NoMatchSummary(
       candidateCount: summary['candidate_count'] as int,
+      hiddenByPreference: (summary['hidden_by_preference'] as int?) ?? 0,
       counts: {
         for (final e in counts.entries)
           _byWire(ExclusionCode.values, (c) => c.wireName, e.key):
@@ -102,10 +115,19 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
     );
   } else if (rec != null) {
     final status = _statuses[rec['status']];
-    if (status == null || rec['movie'] == null) throw malformedResponse;
+    final episodeJson = rec['episode'];
+    if (status == null || (rec['movie'] == null && episodeJson == null)) {
+      throw malformedResponse;
+    }
+    final card = episodeJson == null
+        ? null
+        : episodeCardFromJson(asMap(episodeJson));
     recommendation = Recommendation(
       id: rec['id'] as String,
-      movie: movieSummaryFromJson(asMap(rec['movie'])).$1,
+      movie: card != null
+          ? card.display
+          : movieSummaryFromJson(asMap(rec['movie'])).$1,
+      episode: card,
       status: status,
       reasons: [
         ..._reasons(rec['reasons']),
@@ -128,9 +150,15 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
         (watchedAtRaw != null && watchedAtRaw is! String)) {
       throw malformedResponse;
     }
+    final viewingCard = viewingJson['episode'] == null
+        ? null
+        : episodeCardFromJson(asMap(viewingJson['episode']));
     viewing = Viewing(
       id: viewingJson['id'] as String,
-      movie: movieSummaryFromJson(asMap(viewingJson['movie'])).$1,
+      episode: viewingCard,
+      movie: viewingCard != null
+          ? viewingCard.display
+          : movieSummaryFromJson(asMap(viewingJson['movie'])).$1,
       watchedAt: watchedAtRaw == null
           ? null
           : DateTime.tryParse(watchedAtRaw as String),
@@ -151,12 +179,19 @@ TodayEnvelope todayEnvelopeFromJson(Map<String, dynamic> json) {
         ? null
         : FollowUpPrompt(
             recommendationId: followUpJson['recommendation_id'] as String,
-            movie: movieSummaryFromJson(asMap(followUpJson['movie'])).$1,
+            episode: followUpJson['episode'] == null
+                ? null
+                : episodeCardFromJson(asMap(followUpJson['episode'])),
+            movie: followUpJson['episode'] != null
+                ? episodeCardFromJson(asMap(followUpJson['episode'])).display
+                : movieSummaryFromJson(asMap(followUpJson['movie'])).$1,
             acceptedLocalDate: DateTime.parse(
               followUpJson['accepted_local_date'] as String,
             ),
           ),
     rejectionCount: (session?['rejection_count'] as int?) ?? 0,
+    media: TonightMedia.fromWire(json['media']),
+    emptyReason: json['empty_reason'] as String?,
   );
 }
 

@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.series.models import Series
 from app.users.models import User
 
 from .models import Movie
@@ -57,14 +58,39 @@ def _out(offers: list[dict[str, Any]], base: str) -> list[dict[str, Any]]:
 def availability(
     session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID, tmdb_id: int
 ) -> dict[str, Any]:
+    """A film's providers in the caller's region."""
+    return _availability(session, provider, user_id, tmdb_id, series=False)
+
+
+def series_availability(
+    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID, tmdb_id: int
+) -> dict[str, Any]:
+    """A show's providers in the caller's region. This describes the show as a
+    whole: it never promises that a given season or episode is available."""
+    return _availability(session, provider, user_id, tmdb_id, series=True)
+
+
+def _availability(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    tmdb_id: int,
+    *,
+    series: bool,
+) -> dict[str, Any]:
     user = session.get(User, user_id)
     if user is None:
         raise AppError(409, "PROFILE_NOT_INITIALIZED", "Your Cinemé profile is not set up yet.")
-    movie = session.get(Movie, tmdb_id)
-    if movie is None:
-        raise AppError(404, "NOT_FOUND", "That film was not found.")
+    owner: Movie | Series | None = (
+        session.get(Series, tmdb_id) if series else session.get(Movie, tmdb_id)
+    )
+    if owner is None:
+        raise AppError(
+            404, "NOT_FOUND", "That show was not found." if series else "That film was not found."
+        )
+    fetch = provider.tv_watch_providers if series else provider.watch_providers
     region = region_for(user)
-    cached, fetched_at = movie.watch_providers, movie.watch_providers_fetched_at
+    cached, fetched_at = owner.watch_providers, owner.watch_providers_fetched_at
     session.rollback()  # no transaction held during the network call
     empty: dict[str, Any] = {g: [] for g in GROUPS} | {"link": None}
     if region is None:
@@ -73,12 +99,13 @@ def availability(
     now = datetime.now(UTC)
     if cached is None or fetched_at is None or fetched_at <= now - FRESH_FOR:
         try:
-            cached = provider.watch_providers(tmdb_id)
+            cached = fetch(tmdb_id)
             fetched_at = now
+            table = Series if series else Movie
             with session.begin():
                 session.execute(
-                    update(Movie)
-                    .where(Movie.tmdb_id == tmdb_id)
+                    update(table)
+                    .where(table.tmdb_id == tmdb_id)
                     .values(watch_providers=cached, watch_providers_fetched_at=now)
                 )
         except AppError as e:

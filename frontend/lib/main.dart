@@ -16,6 +16,7 @@ import 'features/history/data/history_repository.dart';
 import 'features/movies/data/movie_details_repository.dart';
 import 'features/preferences/data/profile_repository.dart';
 import 'features/search/data/search_repository.dart';
+import 'features/series/data/series_repository.dart';
 import 'features/today/data/today_repository.dart';
 import 'features/watchlist/data/watchlist_repository.dart';
 import 'preview/preview_store.dart';
@@ -61,6 +62,7 @@ Future<List<Override>> realOverrides(AppConfig config) async {
     ),
     watchlistRepositoryProvider.overrideWithValue(ApiWatchlistRepository(api)),
     searchRepositoryProvider.overrideWithValue(ApiSearchRepository(api)),
+    seriesRepositoryProvider.overrideWithValue(ApiSeriesRepository(api)),
     todayRepositoryProvider.overrideWithValue(ApiTodayRepository(api)),
     historyRepositoryProvider.overrideWithValue(ApiHistoryRepository(api)),
     movieDetailsRepositoryProvider.overrideWithValue(

@@ -1,4 +1,5 @@
 import 'movie.dart';
+import 'series.dart';
 import 'session_context.dart';
 
 /// Whole-star post-watch rating. The wire value is an integer from 1 to 5.
@@ -32,10 +33,16 @@ class Viewing {
     required this.recordedAt,
     required this.rating,
     this.version = 1,
+    this.episode,
   });
 
   final String id;
+
+  /// What to draw; for an episode viewing this is the show.
   final Movie movie;
+
+  /// Set when this viewing is an episode.
+  final EpisodeCard? episode;
   final DateTime? watchedAt;
   final DateTime recordedAt;
   final Rating? rating;
@@ -47,9 +54,13 @@ class FollowUpPrompt {
     required this.recommendationId,
     required this.movie,
     required this.acceptedLocalDate,
+    this.episode,
   });
   final String recommendationId;
+
+  /// What to ask about; for an episode this is the show.
   final Movie movie;
+  final EpisodeCard? episode;
   final DateTime acceptedLocalDate;
 }
 
@@ -86,6 +97,7 @@ class RecommendationRecord {
     required this.createdAt,
     required this.desiredExperience,
     this.reasonLabel,
+    this.episodeLabel,
   });
 
   /// Null only for a no-match attempt.
@@ -95,6 +107,9 @@ class RecommendationRecord {
   final DateTime createdAt;
   final DesiredExperience desiredExperience;
   final String? reasonLabel;
+
+  /// "S1 E5 · Name" when the pick was an episode (then [movie] is the show).
+  final String? episodeLabel;
 
   RecommendationRecord withStatus(
     RecommendationStatus status, {
@@ -106,5 +121,6 @@ class RecommendationRecord {
     createdAt: createdAt,
     desiredExperience: desiredExperience,
     reasonLabel: reasonLabel ?? this.reasonLabel,
+    episodeLabel: episodeLabel,
   );
 }

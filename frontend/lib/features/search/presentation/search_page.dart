@@ -5,7 +5,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/inventory.dart';
+import '../../../shared/models/series.dart';
 import '../../history/data/history_repository.dart';
+import '../../series/application/series_support.dart';
+import '../../series/presentation/show_search_panel.dart';
 import '../../watchlist/application/watchlist_controller.dart';
 import '../application/search_controller.dart';
 import '../data/search_repository.dart';
@@ -24,22 +27,68 @@ enum SearchMode {
   onboarding,
 }
 
-/// Search/Add: separate "Add to watchlist" and "Already watched" actions.
-class SearchPage extends ConsumerWidget {
-  const SearchPage({super.key, this.logMode = false});
+/// Search/Add: separate "Add to watchlist" and "Already watched" actions. With
+/// shows available, a Movies | Shows control under the field keeps media
+/// explicit; the two never mix in one list.
+class SearchPage extends ConsumerStatefulWidget {
+  const SearchPage({
+    super.key,
+    this.logMode = false,
+    this.initialShows = false,
+  });
+
   final bool logMode;
 
+  /// Open on the Shows side (Watchlist's "Add shows").
+  final bool initialShows;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SearchPage> createState() => _SearchPageState();
+}
+
+class _SearchPageState extends ConsumerState<SearchPage> {
+  late MediaType _media = widget.initialShows
+      ? MediaType.series
+      : MediaType.movie;
+
+  @override
+  Widget build(BuildContext context) {
     if (ref.watch(searchRepositoryProvider) == null) {
       return const Scaffold(body: UnavailableView(what: 'Search'));
     }
+    final shows = !widget.logMode && ref.watch(seriesEnabledProvider);
+    final control = shows
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: SegmentedButton<MediaType>(
+              key: const ValueKey('media-toggle'),
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: MediaType.movie, label: Text('Movies')),
+                ButtonSegment(value: MediaType.series, label: Text('Shows')),
+              ],
+              selected: {_media},
+              style: SegmentedButton.styleFrom(
+                minimumSize: const Size(0, 48),
+                foregroundColor: AppColors.text,
+                selectedBackgroundColor: AppColors.accent.withValues(
+                  alpha: 0.18,
+                ),
+                selectedForegroundColor: AppColors.accent,
+              ),
+              onSelectionChanged: (s) => setState(() => _media = s.first),
+            ),
+          )
+        : null;
     return Scaffold(
       body: SafeArea(
-        child: SearchPanel(
-          mode: logMode ? SearchMode.log : SearchMode.add,
-          leading: const BackButton(),
-        ),
+        child: shows && _media == MediaType.series
+            ? ShowSearchPanel(leading: const BackButton(), below: control)
+            : SearchPanel(
+                mode: widget.logMode ? SearchMode.log : SearchMode.add,
+                leading: const BackButton(),
+                below: control,
+              ),
       ),
     );
   }
@@ -53,10 +102,14 @@ class SearchPanel extends ConsumerWidget {
     this.mode = SearchMode.add,
     this.leading,
     this.autofocus = true,
+    this.below,
   });
 
   final SearchMode mode;
   final Widget? leading;
+
+  /// Rendered under the field (the Movies | Shows control).
+  final Widget? below;
 
   /// Onboarding does not open the keyboard over its own actions.
   final bool autofocus;
@@ -149,6 +202,7 @@ class SearchPanel extends ConsumerWidget {
             ],
           ),
         ),
+        ?below,
         Expanded(child: body),
       ],
     );

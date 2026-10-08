@@ -123,13 +123,22 @@ def test_first_pick_is_one_watchlist_film_and_reload_keeps_it(
     assert r.status_code == 201
     env = r.json()
     assert env["state"] == "offered"
-    assert set(env) == {"state", "local_date", "session", "recommendation", "viewing", "follow_up"}
+    assert set(env) == {
+        "state",
+        "local_date",
+        "session",
+        "recommendation",
+        "viewing",
+        "follow_up",
+        "media",
+        "empty_reason",
+    }
     rec = env["recommendation"]
     assert rec["movie"]["tmdb_id"] in {LOLA, PRIMER, 501, 502, 503}
     assert rec["movie"]["runtime_minutes"] <= 100
     # The TMDB community rating rides on the pick for display only.
     assert rec["movie"]["vote_average"] == 7.0
-    assert rec["engine_version"] == "weighted_v1"
+    assert rec["engine_version"] == "weighted_v2"
     assert rec["reasons"][0]["code"] == "fits_runtime"
     assert all(r["text"] for r in rec["reasons"])
     assert "top_candidates" not in rec

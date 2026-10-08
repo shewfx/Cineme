@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_canvas.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/scroll_depth_hint.dart';
+import '../../../shared/models/series.dart' show MediaType;
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../history/data/history_repository.dart';
@@ -35,6 +36,8 @@ class RecommendationView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recommendation = envelope.recommendation!;
     final movie = recommendation.movie;
+    final card = recommendation.episode;
+    final isEpisode = card != null;
     final tonight = envelope.context!;
     final state = envelope.state;
     final viewing = envelope.viewing;
@@ -46,7 +49,9 @@ class RecommendationView extends ConsumerWidget {
     // The card's direct Already seen, Never recommend and Mark watched need
     // P5 (history UI, blocks, completion); the normal build hides them.
     // "Already watched" inside Not feeling it works everywhere (ADR 006).
-    final historyAvailable = ref.watch(historyRepositoryProvider) != null;
+    // An episode is recorded through the show itself, not film history.
+    final historyAvailable =
+        isEpisode || ref.watch(historyRepositoryProvider) != null;
 
     /// Failures keep the current card and say so; nothing is optimistic.
     Future<void> guard(Future<void> Function() action) async {
@@ -67,6 +72,7 @@ class RecommendationView extends ConsumerWidget {
         movie: movie,
         tonight: tonight,
         rejectionCount: envelope.rejectionCount,
+        episode: isEpisode,
       );
       if (request == null) return;
       await guard(
@@ -121,7 +127,13 @@ class RecommendationView extends ConsumerWidget {
     }
 
     Future<void> markWatched() async {
-      final result = await showMarkWatchedSheet(context, movie);
+      final result = await showMarkWatchedSheet(
+        context,
+        movie,
+        subject: card == null
+            ? null
+            : '${card.episode.code} of “${movie.title}”',
+      );
       if (result == null || !result.$1) return;
       await guard(
         () => controller.markWatched(recommendation, rating: result.$2),
@@ -176,11 +188,19 @@ class RecommendationView extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: secondary(
-                  'Already seen',
-                  alreadySeen,
-                  TodayAction.reject,
-                ),
+                child: isEpisode
+                    // Saying you've seen an episode must not move progress
+                    // silently: it opens the explicit progress picker.
+                    ? secondary(
+                        'Set my progress',
+                        () => context.push('/series/${card.series.tmdbId}'),
+                        TodayAction.reject,
+                      )
+                    : secondary(
+                        'Already seen',
+                        alreadySeen,
+                        TodayAction.reject,
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -246,7 +266,7 @@ class RecommendationView extends ConsumerWidget {
             tooltip: 'More actions',
             icon: const Icon(Icons.more_horiz),
             onPressed: busy == null
-                ? () => _moreActions(context, neverRecommend)
+                ? () => _moreActions(context, neverRecommend, isEpisode)
                 : null,
           )
         : null;
@@ -310,6 +330,20 @@ class RecommendationView extends ConsumerWidget {
                                   style: text.headlineMedium,
                                 ),
                               ),
+                              if (card != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  [
+                                    card.episode.code,
+                                    ?card.episode.name,
+                                  ].join('  ·  '),
+                                  key: const ValueKey('tonight-episode'),
+                                  textAlign: TextAlign.center,
+                                  style: text.titleMedium?.copyWith(
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               TonightMeta(
                                 movie: movie,
@@ -318,8 +352,13 @@ class RecommendationView extends ConsumerWidget {
                               ),
                               const SizedBox(height: 14),
                               if (state != TodayStatus.completed)
+                                // Where the show streams, as a whole: never a
+                                // claim about this particular episode.
                                 AvailabilitySection(
-                                  tmdbId: movie.tmdbId,
+                                  tmdbId: card?.series.tmdbId ?? movie.tmdbId,
+                                  mediaType: isEpisode
+                                      ? MediaType.series
+                                      : MediaType.movie,
                                   centered: true,
                                 ),
                               // The context line and the two secondary links.
@@ -346,13 +385,18 @@ class RecommendationView extends ConsumerWidget {
                                     TextButton(
                                       onPressed: () =>
                                           showWhySheet(context, recommendation),
-                                      child: const Text('Why this film?'),
+                                      child: Text(
+                                        isEpisode
+                                            ? 'Why this episode?'
+                                            : 'Why this film?',
+                                      ),
                                     ),
                                 ],
                               ),
                               const SizedBox(height: 6),
                               if (state == TodayStatus.completed &&
-                                  viewing != null) ...[
+                                  viewing != null &&
+                                  !isEpisode) ...[
                                 Text('How was it?', style: text.titleMedium),
                                 const SizedBox(height: 10),
                                 RatingSelector(
@@ -419,31 +463,33 @@ Future<bool> _confirm(
     false;
 
 /// "More actions": the permanent block lives here, apart from everyday skips.
-Future<void> _moreActions(BuildContext context, VoidCallback neverRecommend) =>
-    showModalBottomSheet<void>(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: AppColors.surface,
-      showDragHandle: true,
-      builder: (sheet) => SafeArea(
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 8,
-          ),
-          leading: const Icon(Icons.block, color: AppColors.textMuted),
-          title: const Text('Never recommend this film'),
-          subtitle: const Text(
-            'A lasting, reversible block. Not a rating.',
-            style: TextStyle(color: AppColors.textMuted),
-          ),
-          onTap: () {
-            Navigator.pop(sheet);
-            neverRecommend();
-          },
-        ),
+Future<void> _moreActions(
+  BuildContext context,
+  VoidCallback neverRecommend,
+  bool episode,
+) => showModalBottomSheet<void>(
+  context: context,
+  useRootNavigator: true,
+  backgroundColor: AppColors.surface,
+  showDragHandle: true,
+  builder: (sheet) => SafeArea(
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      leading: const Icon(Icons.block, color: AppColors.textMuted),
+      title: Text(
+        episode ? 'Never recommend this show' : 'Never recommend this film',
       ),
-    );
+      subtitle: const Text(
+        'A lasting, reversible block. Not a rating.',
+        style: TextStyle(color: AppColors.textMuted),
+      ),
+      onTap: () {
+        Navigator.pop(sheet);
+        neverRecommend();
+      },
+    ),
+  ),
+);
 
 /// "Keep me hooked · up to 90 min · feeling tired": intent first, mood last
 /// and labelled as a feeling, so the two never read as one thing.

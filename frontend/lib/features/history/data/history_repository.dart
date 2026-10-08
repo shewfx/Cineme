@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/idempotency.dart';
 import '../../../core/network/movie_dto.dart';
+import '../../today/data/today_dto.dart' show episodeCardFromJson;
 import '../../../shared/models/inventory.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/viewing.dart';
@@ -136,9 +137,17 @@ RecommendationRecord _recommendationFromJson(Map<String, dynamic> json) {
   };
   final created = DateTime.tryParse(json['created_at'] as String? ?? '');
   if (created == null) throw malformedResponse;
+  final card = json['episode'] == null
+      ? null
+      : episodeCardFromJson(asMap(json['episode']));
   return RecommendationRecord(
     id: json['id'] as String,
-    movie: json['movie'] == null
+    episodeLabel: card == null
+        ? null
+        : [card.episode.code, ?card.episode.name].join('  ·  '),
+    movie: card != null
+        ? card.display
+        : json['movie'] == null
         ? null
         : movieSummaryFromJson(asMap(json['movie'])).$1,
     status: status,

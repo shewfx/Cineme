@@ -62,6 +62,7 @@ def test_bootstrap_creates_then_reuses_without_resetting(
         "blocked_genre_ids": [],
         "default_max_runtime_minutes": None,
         "ai_context_enabled": False,
+        "tonight_media": "movies",
     }
 
     assert patch(client, signer, a, {"display_name": "Shew"}).status_code == 200

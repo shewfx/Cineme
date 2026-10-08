@@ -149,6 +149,7 @@ class SearchController extends Notifier<SearchState> {
       _mark(result, ResultMark.saved);
       ref
         ..invalidate(watchlistControllerProvider)
+        ..invalidate(watchlistItemsProvider)
         ..invalidate(todayEnvelopeProvider);
       return r.alreadyPresent
           ? SearchOutcome.alreadySaved
@@ -187,6 +188,7 @@ class SearchController extends Notifier<SearchState> {
           ..invalidate(viewingHistoryProvider)
           ..invalidate(recommendationHistoryProvider)
           ..invalidate(watchlistControllerProvider)
+          ..invalidate(watchlistItemsProvider)
           ..invalidate(todayEnvelopeProvider);
         return r.alreadyRecorded
             ? SearchOutcome.alreadyRecorded

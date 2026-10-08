@@ -1,4 +1,7 @@
-"""Deterministic recommendation engine `weighted_v1` (RECOMMENDATION_ENGINE.md).
+"""Deterministic recommendation engine `weighted_v1` / `weighted_v2` (RECOMMENDATION_ENGINE.md).
+
+`weighted_v2` (config with a `continuity` block, ADR 011) scores movies exactly
+like v1 and adds next-episode candidates with a bounded continuity bonus.
 
 `rank(RankingInput, EngineConfig) -> RankingResult` is pure: no network,
 database, clock, randomness or model access. The service passes every input,
@@ -28,8 +31,13 @@ INTENTS = (
 # Primary exclusion precedence; the first applicable code is the one counted.
 EXCLUSIONS = (
     "movie_unavailable",
+    "series_unavailable",
+    "series_completed",
+    "series_caught_up",
+    "next_episode_not_aired",
     "already_watched",
     "movie_blocked",
+    "series_blocked",
     "offered_this_session",
     "genre_blocked",
     "runtime_unknown",
@@ -66,6 +74,20 @@ class EngineConfig:
     reason_affinity_threshold: Decimal
     snapshot: dict[str, Any]  # exact canonical JSON, stored per run
     hash: str
+    continuity: "Continuity | None" = None
+
+    @property
+    def engine_version(self) -> str:
+        return "weighted_v2" if self.continuity is not None else "weighted_v1"
+
+
+@dataclass(frozen=True)
+class Continuity:
+    """Series continuity bonus parameters (ADR 011)."""
+
+    max_bonus: Decimal
+    window_days: int
+    ramp_watches: int
 
 
 def canonical_json(value: Any) -> str:
@@ -105,8 +127,9 @@ def parse_config(raw: dict[str, Any]) -> EngineConfig:
         "learned_reason_support",
         "reason_affinity_threshold",
     }
-    if set(raw) != keys:
-        raise ValueError(f"config keys must be exactly {sorted(keys)}")
+    if set(raw) - {"continuity"} != keys:
+        raise ValueError(f"config keys must be exactly {sorted(keys)} (plus optional continuity)")
+    continuity = _parse_continuity(raw["continuity"]) if "continuity" in raw else None
     weights = raw["weights"]
     if not isinstance(weights, dict) or set(weights) != set(COMPONENTS):
         raise ValueError("weights must name G, C, D, A, R and Q")
@@ -151,12 +174,32 @@ def parse_config(raw: dict[str, Any]) -> EngineConfig:
         ),
         snapshot=snapshot,
         hash=hashlib.sha256(canonical_json(snapshot).encode()).hexdigest(),
+        continuity=continuity,
+    )
+
+
+def _parse_continuity(raw: Any) -> Continuity:
+    if not isinstance(raw, dict) or set(raw) != {"max_bonus", "window_days", "ramp_watches"}:
+        raise ValueError("continuity must define max_bonus, window_days and ramp_watches")
+    window, ramp = raw["window_days"], raw["ramp_watches"]
+    for name, value in (("window_days", window), ("ramp_watches", ramp)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"continuity.{name} must be a positive integer")
+    return Continuity(
+        max_bonus=_dec(raw["max_bonus"], "continuity.max_bonus", ZERO, Decimal(20)),
+        window_days=window,
+        ramp_watches=ramp,
     )
 
 
 def load_config(path: Path | None = None) -> EngineConfig:
     path = path or Path(__file__).with_name("weights_v1.json")
     return parse_config(json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal))
+
+
+def load_series_config() -> EngineConfig:
+    """`weights_v2`: the v1 weights unchanged plus the continuity block."""
+    return load_config(Path(__file__).with_name("weights_v2.json"))
 
 
 # --- inputs and results -------------------------------------------------------------
@@ -183,6 +226,17 @@ class Candidate:
     pace: Decimal | None = None
     complexity: Decimal | None = None
     heaviness: Decimal | None = None
+    # Shows (ADR 011): `tmdb_id` is the series id when kind == "series" and the
+    # candidate stands for the show's single NEXT episode. `episode_state` is
+    # up_next, not_aired, caught_up, completed or unavailable; runtime_minutes
+    # is that episode's runtime. Confirmed watches in the continuity window
+    # come from Mark watched / follow-up "yes" only.
+    kind: str = "movie"
+    season_number: int | None = None
+    episode_number: int | None = None
+    episode_state: str = "up_next"
+    confirmed_watch_count: int = 0
+    last_confirmed_watch: date | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +271,9 @@ class RankingInput:
     rated_viewings: tuple[RatedViewing, ...] = ()
     # Up to three most recent viewings' nonempty genre snapshots, newest first.
     recent_genre_sets: tuple[tuple[int, ...], ...] = ()
+    # Series id of each recent viewing (None for a movie), same length; an
+    # episode candidate ignores recent viewings of its own series in D.
+    recent_series_ids: tuple[int | None, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -256,12 +313,24 @@ class RankingResult:
 def exclusions(c: Candidate, ctx: EffectiveContext, local_date: date) -> list[str]:
     """Every applicable code, in precedence order."""
     codes = []
-    if not c.metadata_ready or c.adult or c.release_date is None or c.release_date > local_date:
-        codes.append("movie_unavailable")
-    if c.watched:
-        codes.append("already_watched")
-    if c.blocked:
-        codes.append("movie_blocked")
+    if c.kind == "series":
+        if not c.metadata_ready or c.adult or c.episode_state == "unavailable":
+            codes.append("series_unavailable")
+        elif c.episode_state == "completed":
+            codes.append("series_completed")
+        elif c.episode_state == "caught_up":
+            codes.append("series_caught_up")
+        elif c.episode_state == "not_aired":
+            codes.append("next_episode_not_aired")
+        if c.blocked:
+            codes.append("series_blocked")
+    else:
+        if not c.metadata_ready or c.adult or c.release_date is None or c.release_date > local_date:
+            codes.append("movie_unavailable")
+        if c.watched:
+            codes.append("already_watched")
+        if c.blocked:
+            codes.append("movie_blocked")
     if c.offered_this_session:
         codes.append("offered_this_session")
     if ctx.avoid_genre_ids & set(c.genre_ids):
@@ -373,6 +442,48 @@ def component_r(last_offered_at: datetime | None, now: datetime, cfg: EngineConf
     return min(Decimal(_whole_days(now, last_offered_at)) / cfg.recency_saturation_days, ONE)
 
 
+def in_continuity_window(c: Candidate, local_date: date, cfg: EngineConfig) -> bool:
+    """True while the show still earns a continuity bonus: a confirmed watch
+    fewer than window_days ago. D's own-series exemption applies only then."""
+    cont = cfg.continuity
+    if (
+        cont is None
+        or c.kind != "series"
+        or c.confirmed_watch_count <= 0
+        or c.last_confirmed_watch is None
+    ):
+        return False
+    return max(0, (local_date - c.last_confirmed_watch).days) < cont.window_days
+
+
+def continuity_fraction(
+    c: Candidate, local_date: date, cfg: EngineConfig, recency: Decimal
+) -> Decimal:
+    """fade * momentum * R in [0,1]; zero for movies, without a continuity
+    config, or without a confirmed watch inside the window.
+
+    fade     = max(0, 1 - days_since_last_watch / window_days)
+    momentum = 0.5 + 0.5 * min(1, (n - 1) / (ramp_watches - 1))   (1 when ramp is 1)
+    """
+    cont = cfg.continuity
+    if (
+        cont is None
+        or c.kind != "series"
+        or c.confirmed_watch_count <= 0
+        or c.last_confirmed_watch is None
+    ):
+        return ZERO
+    days = max(0, (local_date - c.last_confirmed_watch).days)
+    fade = max(ZERO, ONE - Decimal(days) / Decimal(cont.window_days))
+    if cont.ramp_watches <= 1:
+        momentum = ONE
+    else:
+        momentum = HALF + HALF * min(
+            ONE, Decimal(c.confirmed_watch_count - 1) / Decimal(cont.ramp_watches - 1)
+        )
+    return fade * momentum * recency
+
+
 def component_q(average: Decimal | None, count: int | None, cfg: EngineConfig) -> Decimal:
     if average is None or count is None or count <= 0 or not ZERO <= average <= 10:
         return HALF
@@ -448,9 +559,16 @@ def _reasons(
             {"vote_average": str(c.vote_average), "vote_count": c.vote_count},
             "tmdb",
         )
+    if contributions.get("S", ZERO) > 0:
+        supported["S"] = Reason(
+            "continues_series",
+            {"season": c.season_number, "episode": c.episode_number},
+            "history",
+        )
+    order = (*COMPONENTS, "S")
     positive = sorted(
-        (k for k in COMPONENTS if contributions[k] > 0 and k in supported),
-        key=lambda k: (-contributions[k], COMPONENTS.index(k)),
+        (k for k in order if contributions.get(k, ZERO) > 0 and k in supported),
+        key=lambda k: (-contributions[k], order.index(k)),
     )
     for k in positive:
         if len(reasons) >= 2:
@@ -484,17 +602,35 @@ def score(
     """(total, components, contributions above-neutral, context dims)."""
     genres = set(c.genre_ids)
     dims = context_dimensions(c, inp.context, cfg)
+    recent = inp.recent_genre_sets
+    if in_continuity_window(c, inp.local_date, cfg) and len(inp.recent_series_ids) == len(recent):
+        recent = tuple(
+            g for g, sid in zip(recent, inp.recent_series_ids, strict=True) if sid != c.tmdb_id
+        )
     components = {
         "G": component_g(genres, affinities),
         "C": _mean(list(dims.values())) if dims else HALF,
-        "D": component_d(genres, inp.recent_genre_sets),
+        "D": component_d(genres, recent),
         "A": component_a(c.added_at, inp.evaluation_time, cfg),
         "R": component_r(c.last_offered_at, inp.evaluation_time, cfg),
         "Q": component_q(c.vote_average, c.vote_count, cfg),
     }
     total = sum((cfg.weights[k] * components[k] for k in COMPONENTS), ZERO)
     above_neutral = {k: cfg.weights[k] * (components[k] - HALF) for k in COMPONENTS}
+    if cfg.continuity is not None and c.kind == "series":
+        fraction = continuity_fraction(c, inp.local_date, cfg, components["R"])
+        components["S"] = fraction
+        bonus = cfg.continuity.max_bonus * fraction
+        total += bonus
+        above_neutral["S"] = bonus
     return total, components, above_neutral, dims
+
+
+def _contributions(components: dict[str, Decimal], cfg: EngineConfig) -> dict[str, Decimal]:
+    out = {k: cfg.weights[k] * components[k] for k in COMPONENTS}
+    if "S" in components and cfg.continuity is not None:
+        out["S"] = cfg.continuity.max_bonus * components["S"]
+    return out
 
 
 def rank(inp: RankingInput, cfg: EngineConfig) -> RankingResult:
@@ -514,14 +650,14 @@ def rank(inp: RankingInput, cfg: EngineConfig) -> RankingResult:
                 c, inp.context, dims, above, inp, affinities, support, cfg
             )
             scored.append((total, c, components, reasons, uncertain))
-        scored.sort(key=lambda s: (-s[0], s[1].added_at, s[1].tmdb_id))
+        scored.sort(key=lambda s: (-s[0], s[1].added_at, s[1].kind == "series", s[1].tmdb_id))
         ranked = tuple(
             Scored(
                 candidate=c,
                 rank=i + 1,
                 total=total,
                 components=components,
-                contributions={k: cfg.weights[k] * components[k] for k in COMPONENTS},
+                contributions=_contributions(components, cfg),
                 reasons=reasons,
                 uncertainties=uncertain,
             )

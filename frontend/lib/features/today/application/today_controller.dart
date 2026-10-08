@@ -190,7 +190,9 @@ class TodayController extends Notifier<TodayViewState> {
         if (action == 'yes') {
           ref.read(inventoryRevisionProvider.notifier).bump();
           ref.invalidate(viewingHistoryProvider);
-          ref.invalidate(watchlistControllerProvider);
+          ref
+            ..invalidate(watchlistControllerProvider)
+            ..invalidate(watchlistItemsProvider);
         }
       });
 

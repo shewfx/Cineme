@@ -4,6 +4,8 @@ so old cards keep their original wording. No generated prose."""
 
 from typing import Any
 
+from app.core.features import series_enabled
+
 from .engine import Reason
 
 INTENT_LABELS = {
@@ -19,8 +21,13 @@ INTENT_LABELS = {
 
 EXCLUSION_LABELS = {
     "movie_unavailable": "not released yet or unavailable",
+    "series_unavailable": "shows whose episodes couldn't be loaded",
+    "series_completed": "shows you've finished",
+    "series_caught_up": "shows you're caught up on",
+    "next_episode_not_aired": "shows whose next episode hasn't aired yet",
     "already_watched": "already watched",
     "movie_blocked": "set to never recommend",
+    "series_blocked": "shows set to never recommend",
     "offered_this_session": "already suggested tonight",
     "genre_blocked": "in a genre you're avoiding",
     "runtime_unknown": "runtime unknown with a time limit set",
@@ -52,6 +59,8 @@ def reason_text(reason: Reason, names: dict[int, str]) -> str:
         case "tonight_genre_match":
             g = _genres(v["genre_ids"], names)
             return f"Matches tonight's preferred genre ({g})." if g else "Matches tonight's genres."
+        case "continues_series":
+            return f"Continue the series you're watching — S{v['season']} E{v['episode']}."
         case "variety":
             return "A change from what you've watched recently."
         case "waiting_in_watchlist":
@@ -84,23 +93,31 @@ def reason_out(reason: Reason, names: dict[int, str]) -> dict[str, Any]:
     }
 
 
-def no_match_text(candidate_count: int, counts: dict[str, int]) -> str:
+def no_match_text(candidate_count: int, counts: dict[str, int], media: str = "movies") -> str:
     if candidate_count == 0:
         return "Your watchlist is empty."
     parts = [f"{n} {EXCLUSION_LABELS[code]}" for code, n in counts.items()]
-    films = "film" if candidate_count == 1 else "films"
+    if media == "movies":
+        noun = "film" if candidate_count == 1 else "films"
+    else:
+        noun = "title" if candidate_count == 1 else "titles"
     return (
-        f"None of the {candidate_count} {films} in your watchlist fit tonight: "
+        f"None of the {candidate_count} {noun} in your watchlist fit tonight: "
         + "; ".join(parts)
         + "."
     )
 
 
-def suggested_actions(counts: dict[str, int]) -> list[str]:
+def suggested_actions(counts: dict[str, int], media: str = "movies") -> list[str]:
     actions = []
     if counts.keys() & {"runtime_unknown", "runtime_exceeded"}:
         actions.append("edit_runtime")
     if "genre_blocked" in counts:
         actions.append("edit_genres")
-    actions.append("add_movies")
+    if media in ("movies", "movies_and_shows"):
+        actions.append("add_movies")
+    if media in ("shows", "movies_and_shows"):
+        actions.append("add_shows")
+    if media != "movies_and_shows" and series_enabled():
+        actions.append("change_media_preference")
     return actions

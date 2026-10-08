@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/models/movie.dart';
+import '../../shared/models/series.dart';
 import '../config/preview.dart';
 import '../theme/app_theme.dart';
 import 'tab_swipe_exclusion.dart';
@@ -14,7 +14,7 @@ import 'tab_swipe_exclusion.dart';
 class MoviePoster extends StatelessWidget {
   const MoviePoster({super.key, required this.movie});
 
-  final Movie movie;
+  final TitleInfo movie;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +54,7 @@ class MoviePoster extends StatelessWidget {
 class _Placeholder extends StatelessWidget {
   const _Placeholder({required this.movie});
 
-  final Movie movie;
+  final TitleInfo movie;
 
   @override
   Widget build(BuildContext context) {

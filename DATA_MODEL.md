@@ -231,6 +231,24 @@ One reviewed Alembic migration per coherent schema change, reversible when feasi
 
 Fixture movies and users exist only in explicit test/demo seeding, never automatic production startup. Demo metadata is fetched under legitimate API access; curated trait notes/values are repository-owned judgments. Offline synthetic fixtures do not include copyrighted overviews/poster binaries. Genre ID registry is versioned and validated against TMDB when integrated.
 
+## Shows and anime (migration 0008, ADR 011)
+
+All additive; film tables keep their meaning. TV ids live in their own tables because TMDB movie and TV ids overlap.
+
+| Table | Key columns and rules |
+|---|---|
+| `series` | `tmdb_id` PK; `name`, `original_name`, `first_air_date`, `last_air_date`, `status`, `genre_ids int[]`, `poster_path` (relative, validated), `adult`, votes, `metadata_status`, `fetched_at`, `episodes_fetched_at`. Shared cache, no user data. |
+| `series_episodes` | PK `(series_id, season_number, episode_number)`; `season_number >= 1` (specials are never stored); `air_date` and `runtime_minutes` (1..600) nullable = unknown. FK to `series` CASCADE. |
+| `series_entries` | per user; UNIQUE `(user_id, series_id)`; `status active/removed` with `removed_at` consistency; `progress_season/progress_episode` both null or both set (>= 1); `progress_version`; `series_rating` 1..5. Removal archives and keeps progress. |
+| `episode_viewings` | per user; UNIQUE `(user_id, series_id, season_number, episode_number)` (one watch per episode: idempotency and two devices); `source recommendation/manual/follow_up`; `rating` 1..5 (episode rating); `genre_ids_snapshot`; `version`. |
+| `series_blocks` | PK `(user_id, series_id)`; reversible Never recommend. |
+| `user_preferences.tonight_media` | `movies` (default) / `movies_and_shows` / `shows`; every existing row is `movies`. |
+| `recommendations` | adds `media_kind` (`movie`/`episode`), `series_id`, `season_number`, `episode_number`; exactly one identity (`movie_id` or the episode triple) unless `no_match`; `total_score` range raised to 0..120 (episode scores add a bounded continuity bonus). The one-unresolved-pick index is unchanged. |
+
+Migration 0009 (additive) adds `series.watch_providers jsonb` and `series.watch_providers_fetched_at`: the same 24 h shared regional availability cache the films have, owned by the show. No user data.
+
+Lock order is unchanged: `users` row, then the owned session, then the show entry. No network call inside a lock.
+
 ## Additive migration schedule
 
 - P2: users and user_preferences, plus idempotency_records for PATCH /me (ADR 003). Profile bootstrap, read, and display-name/timezone edits; preference editing arrives at P3/P4; no recommendation/history tables.
@@ -239,6 +257,7 @@ Fixture movies and users exist only in explicit test/demo seeding, never automat
 - P4 polish (migration 0004; ADR 006 amendment, ADR 007): viewings in the documented shape, written only by the already_watched rejection; `users.country_code varchar(2)` nullable (streaming region); `movies.watch_providers jsonb` + `watch_providers_fetched_at` (24 h shared availability cache).
 - P5 (migration 0005): per-user `movie_blocks` plus durable follow-up prompted/resolved state on recommendations. Activates manual viewings and rating edits on the existing one-viewing-per-user/movie table.
 - P6 ratings (migration 0006): converts legacy categories into nullable 1–5 integer ratings. This migration is local code only until separately applied; hosted database migration is not part of this change.
+- Shows (migration 0008): `series`, `series_episodes`, `series_entries`, `episode_viewings`, `series_blocks`, `user_preferences.tonight_media`, and the episode identity on `recommendations` (see "Shows and anime"). Local code until separately applied to a hosted database.
 - P6: optional movie_traits table only when deliberately enabling reviewed enrichment. Core ranking must also work without it.
 
 Future-table queries do not run in earlier phases: recommendation scorer tests use typed fixtures; P4 history inputs are empty until P5 exists. Avoid placeholder database tables just to satisfy an import. Post-P5 migrations preserve real data.

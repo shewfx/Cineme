@@ -1,4 +1,5 @@
 import 'movie.dart';
+import 'series.dart';
 
 /// GET /me with preferences, plus the blocked-movie list for the Profile shell.
 class Profile {
@@ -13,6 +14,8 @@ class Profile {
     this.region,
     this.regionChosen = false,
     this.onboardingComplete = true,
+    this.tonightMedia,
+    this.preferencesVersion = 1,
   });
 
   final String? displayName;
@@ -39,4 +42,10 @@ class Profile {
   /// onboarding. A response without the field (an older backend) counts as
   /// complete: a client never forces onboarding on ambiguity.
   final bool onboardingComplete;
+
+  /// What Tonight considers; null when the backend predates shows.
+  final TonightMedia? tonightMedia;
+
+  /// Optimistic-concurrency version of the preferences row.
+  final int preferencesVersion;
 }

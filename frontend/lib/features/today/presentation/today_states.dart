@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../shared/models/series.dart';
 import '../../../shared/models/today_state.dart';
+import '../../series/application/series_support.dart';
 import '../application/today_controller.dart';
+import 'media_preference.dart';
 import 'recommendation_view.dart';
 import 'today_widgets.dart';
 
@@ -90,16 +93,26 @@ class _PausedViewState extends ConsumerState<PausedView> {
 
 /// Honest no-match: aggregate reasons, never another catalogue, never an
 /// error, and no limit relaxed behind the user's back.
-class NoMatchView extends StatelessWidget {
+class NoMatchView extends ConsumerWidget {
   const NoMatchView({super.key, required this.envelope});
 
   final TodayEnvelope envelope;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final summary = envelope.noMatch!;
     final text = Theme.of(context).textTheme;
+    final seriesOn = ref.watch(seriesEnabledProvider);
+    final outlined = OutlinedButton.styleFrom(
+      foregroundColor: AppColors.text,
+      side: const BorderSide(color: AppColors.border),
+      minimumSize: const Size.fromHeight(50),
+    );
     final n = summary.candidateCount;
+    final media = envelope.media ?? TonightMedia.movies;
+    final noun = media == TonightMedia.movies
+        ? (n == 1 ? 'film' : 'films')
+        : (n == 1 ? 'title' : 'titles');
     final lines = [
       for (final code in ExclusionCode.values)
         if ((summary.counts[code] ?? 0) > 0)
@@ -108,8 +121,9 @@ class NoMatchView extends StatelessWidget {
     return _StateScaffold(
       title: 'Nothing in your watchlist fits tonight',
       body:
-          'Of the $n ${n == 1 ? 'film' : 'films'} in your watchlist: ${lines.join(', ')}. '
-          'Cinemé only picks from your watchlist and keeps your limits as set.',
+          'Of the $n $noun in your watchlist: ${lines.join(', ')}. '
+          'Cinemé only picks from your watchlist and keeps your limits as set.'
+          '${summary.hiddenByPreference > 0 ? ' ${summary.hiddenByPreference} more ${summary.hiddenByPreference == 1 ? 'title is' : 'titles are'} hidden by “${media.label}”.' : ''}',
       contextLine: contextLine(envelope.context!),
       actions: [
         PrimaryAction(
@@ -117,18 +131,37 @@ class NoMatchView extends StatelessWidget {
           onPressed: () => context.push('/today/context'),
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: () => context.push('/search'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.text,
-              side: const BorderSide(color: AppColors.border),
-              minimumSize: const Size.fromHeight(50),
+        if (media != TonightMedia.shows)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => context.push('/search'),
+              style: outlined,
+              child: const Text('Add movies'),
             ),
-            child: const Text('Add movies'),
           ),
-        ),
+        if (media != TonightMedia.movies) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => context.push('/search?media=shows'),
+              style: outlined,
+              child: const Text('Add shows'),
+            ),
+          ),
+        ],
+        if (media != TonightMedia.moviesAndShows && seriesOn) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => pickTonightMedia(context, ref, envelope),
+              style: outlined,
+              child: const Text('Change preference'),
+            ),
+          ),
+        ],
       ],
       textStyle: text,
     );

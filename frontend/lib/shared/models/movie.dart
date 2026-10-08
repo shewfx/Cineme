@@ -1,3 +1,5 @@
+import 'series.dart' show TitleInfo;
+
 /// MovieSummary from API_CONTRACT. Only the fields the UI uses so far.
 class Genre {
   const Genre(this.id, this.name);
@@ -6,7 +8,7 @@ class Genre {
   final String name;
 }
 
-class Movie {
+class Movie implements TitleInfo {
   const Movie({
     required this.tmdbId,
     required this.title,
@@ -18,13 +20,18 @@ class Movie {
     this.released = true,
   });
 
+  @override
   final int tmdbId;
+  @override
   final String title;
+  @override
   final int? year;
 
   /// Null means "Runtime unavailable", never zero.
   final int? runtimeMinutes;
+  @override
   final List<Genre> genres;
+  @override
   final String? posterUrl;
 
   /// TMDB community rating (0-10), display-only. Null means unknown; it is

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/movie_dto.dart';
+import '../../../shared/models/series.dart' show MediaType;
 import '../../auth/application/auth_controller.dart';
 
 /// A streaming/rental service from TMDB's JustWatch data. Never invented.
@@ -36,6 +37,25 @@ class Availability {
 abstract interface class AvailabilityRepository {
   /// GET /movies/{id}/availability through Cinemé; TMDB stays server-side.
   Future<Availability> forMovie(int tmdbId);
+
+  /// GET /tv/{id}/availability: the show as a whole, never a promise about a
+  /// particular season or episode.
+  Future<Availability> forSeries(int tmdbId);
+}
+
+/// Media type plus TMDB id: movie and TV ids overlap, so both always travel.
+class AvailabilityKey {
+  const AvailabilityKey(this.type, this.tmdbId);
+
+  final MediaType type;
+  final int tmdbId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AvailabilityKey && other.type == type && other.tmdbId == tmdbId;
+
+  @override
+  int get hashCode => Object.hash(type, tmdbId);
 }
 
 /// Null in the preview build: no availability is shown there.
@@ -43,13 +63,24 @@ final availabilityRepositoryProvider = Provider<AvailabilityRepository?>(
   (ref) => null,
 );
 
-/// Per film and signed-in user; refreshed when the region changes.
-final movieAvailabilityProvider = FutureProvider.autoDispose
-    .family<Availability?, int>((ref, tmdbId) {
+/// Per title and signed-in user; refreshed when the region changes.
+final availabilityProvider = FutureProvider.autoDispose
+    .family<Availability?, AvailabilityKey>((ref, key) {
       ref.watch(currentUserIdProvider);
       final repo = ref.watch(availabilityRepositoryProvider);
-      return repo?.forMovie(tmdbId);
+      return switch (key.type) {
+        MediaType.movie => repo?.forMovie(key.tmdbId),
+        MediaType.series => repo?.forSeries(key.tmdbId),
+      };
     });
+
+/// A film's availability (kept as the name existing callers use).
+FutureProvider<Availability?> movieAvailabilityProvider(int tmdbId) =>
+    availabilityProvider(AvailabilityKey(MediaType.movie, tmdbId));
+
+/// A show's availability.
+FutureProvider<Availability?> seriesAvailabilityProvider(int tmdbId) =>
+    availabilityProvider(AvailabilityKey(MediaType.series, tmdbId));
 
 class ApiAvailabilityRepository implements AvailabilityRepository {
   ApiAvailabilityRepository(this._api);
@@ -57,8 +88,15 @@ class ApiAvailabilityRepository implements AvailabilityRepository {
   final ApiClient _api;
 
   @override
-  Future<Availability> forMovie(int tmdbId) async {
-    final body = await _api.get('/api/v1/movies/$tmdbId/availability');
+  Future<Availability> forMovie(int tmdbId) =>
+      _fetch('/api/v1/movies/$tmdbId/availability');
+
+  @override
+  Future<Availability> forSeries(int tmdbId) =>
+      _fetch('/api/v1/tv/$tmdbId/availability');
+
+  Future<Availability> _fetch(String path) async {
+    final body = await _api.get(path);
     List<ProviderOffer> offers(Object? raw) => [
       for (final o in asList(raw))
         ProviderOffer(
