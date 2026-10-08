@@ -186,6 +186,8 @@ Repeat visit in airplane mode shows previously seen posters while data screens s
 
 ## 6. Release 4+ — TV series and anime series (later, staged)
 
+> Superseded by [SERIES_DESIGN.md](SERIES_DESIGN.md) and [ADR 011](adr/011-shows-and-anime-next-episode.md) (proposed, 2026-10-08). The sketch below is kept for history; where it differs, the design document wins.
+
 Large, separate effort. Requires a scope-change ADR (011) lifting the “No TV” non-goal in `PROJECT_SPEC.md` and amendments to `RECOMMENDATION_ENGINE.md`, `DATA_MODEL.md`, `API_CONTRACT.md` and `FRONTEND_SPEC.md` **before** any code.
 
 ### 6.1 Principles
