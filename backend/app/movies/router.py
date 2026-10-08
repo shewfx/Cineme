@@ -15,6 +15,7 @@ from .schemas import (
     MovieDetails,
     RegionsResponse,
     SearchResponse,
+    TrendingResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["movies"])
@@ -41,6 +42,16 @@ def search_movies(
 ) -> SearchResponse:
     """TMDB search through the backend; the TMDB token never reaches Flutter."""
     return service.search(session, provider, identity.user_id, q.strip(), page)
+
+
+@router.get("/movies/trending", response_model=TrendingResponse)
+def trending_movies(
+    identity: CallerIdentity, session: DbSession, provider: Provider
+) -> TrendingResponse:
+    """This week's trending films for onboarding discovery. Not personalized
+    and not a recommendation; at most 12, one page. Registered before the
+    `/movies/{tmdb_id}` route so "trending" is not read as an id."""
+    return service.trending(session, provider, identity.user_id)
 
 
 @router.get("/movies/{tmdb_id}", response_model=MovieDetails)

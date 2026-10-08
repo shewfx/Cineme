@@ -23,6 +23,7 @@ TMDB_API = "https://api.themoviedb.org/3"
 FALLBACK_IMAGE_BASE = "https://image.tmdb.org/t/p/"
 POSTER_SIZE = "w500"
 MAX_PAGES = 500
+TRENDING_TTL_SECONDS = 3600.0
 _POSTER_PATH = re.compile(r"^/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$")
 
 # connect 3 s / read 5 s; whole operation (incl. one retry) within 8 s.
@@ -66,6 +67,9 @@ class ProviderSearchPage:
 
 class MovieMetadataProvider(Protocol):
     def search(self, query: str, page: int) -> ProviderSearchPage: ...
+
+    def trending(self) -> tuple[ProviderMovie, ...]:
+        """This week's globally trending films (TMDB), not personalized."""
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         """Raises AppError 404 NOT_FOUND for an unknown film."""
@@ -263,6 +267,7 @@ class TmdbProvider:
         self._genres: tuple[float, tuple[GenreRef, ...]] | None = None
         self._image_base: tuple[float, str] | None = None
         self._regions: tuple[float, tuple[tuple[str, str], ...]] | None = None
+        self._trending: tuple[float, tuple[ProviderMovie, ...]] | None = None
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         deadline = self._clock() + BUDGET_SECONDS
@@ -310,6 +315,24 @@ class TmdbProvider:
         total_pages = min(total, MAX_PAGES) if isinstance(total, int) and total >= 0 else 0
         results = tuple(m for m in (normalize_movie(r) for r in data["results"]) if m is not None)
         return ProviderSearchPage(page=page, total_pages=total_pages, results=results)
+
+    def trending(self) -> tuple[ProviderMovie, ...]:
+        """/trending/movie/week, one page, cached in process for an hour.
+        A failed refresh serves the last good copy while one exists."""
+        cached = self._trending
+        if cached is not None and self._clock() - cached[0] < TRENDING_TTL_SECONDS:
+            return cached[1]
+        try:
+            data = self._get("/trending/movie/week", {"language": "en-US"})
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                raise _upstream_invalid()
+        except AppError:
+            if cached is not None:
+                return cached[1]
+            raise
+        movies = tuple(m for m in (normalize_movie(r) for r in data["results"]) if m is not None)
+        self._trending = (self._clock(), movies)
+        return movies
 
     def details(self, tmdb_id: int) -> ProviderMovie:
         data = self._get(f"/movie/{tmdb_id}", {"language": "en-US"})

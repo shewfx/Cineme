@@ -13,11 +13,21 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.users.blocks import MovieBlock
 from app.users.models import User
+from app.viewings.models import Viewing
+from app.watchlist.models import WatchlistEntry
 
 from .models import Movie
 from .provider import GenreRef, MovieMetadataProvider, ProviderMovie, poster_url
-from .schemas import GenreOut, MovieDetails, MovieSummary, SearchResponse, TraitsOut
+from .schemas import (
+    GenreOut,
+    MovieDetails,
+    MovieSummary,
+    SearchResponse,
+    TraitsOut,
+    TrendingResponse,
+)
 
 FRESH_FOR = timedelta(days=7)
 
@@ -93,6 +103,72 @@ def search(
             )
             for m in result.results
         ],
+    )
+
+
+TRENDING_LIMIT = 12
+
+
+def trending(
+    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID
+) -> TrendingResponse:
+    """Onboarding discovery: this week's trending films, the same for everyone
+    (TMDB, cached in the provider). Filtered to what the caller can actually
+    add and see: not adult, released, with a poster, not already watched and
+    not blocked by this user. Never a recommendation."""
+    today = local_today(session, user_id)
+    session.rollback()  # no open transaction during network calls
+    films = provider.trending()
+    names = genre_names(provider)
+    base = provider.image_base()
+    candidates = [
+        m
+        for m in films
+        if can_add(m.adult)
+        and is_released(m.release_date, today)
+        and poster_url(base, m.poster_path)
+    ]
+    ids = [m.tmdb_id for m in candidates]
+    watched = set(
+        session.scalars(
+            select(Viewing.movie_id).where(Viewing.user_id == user_id, Viewing.movie_id.in_(ids))
+        )
+    )
+    blocked = set(
+        session.scalars(
+            select(MovieBlock.movie_id).where(
+                MovieBlock.user_id == user_id, MovieBlock.movie_id.in_(ids)
+            )
+        )
+    )
+    shown = [m for m in candidates if m.tmdb_id not in watched | blocked][:TRENDING_LIMIT]
+    saved = set(
+        session.scalars(
+            select(WatchlistEntry.movie_id).where(
+                WatchlistEntry.user_id == user_id,
+                WatchlistEntry.status == "active",
+                WatchlistEntry.movie_id.in_([m.tmdb_id for m in shown]),
+            )
+        )
+    )
+    session.rollback()
+    return TrendingResponse(
+        results=[
+            MovieSummary(
+                tmdb_id=m.tmdb_id,
+                title=m.title,
+                year=m.release_date.year if m.release_date else None,
+                runtime_minutes=None,
+                genre_ids=list(m.genre_ids),
+                genres=_genres(m.genre_ids, names),
+                poster_url=poster_url(base, m.poster_path),
+                vote_average=m.vote_average,
+                can_add=True,
+                released=True,
+            )
+            for m in shown
+        ],
+        in_watchlist=[m.tmdb_id for m in shown if m.tmdb_id in saved],
     )
 
 

@@ -14,6 +14,10 @@ Clients treat a `GET /me` response without the field (an older backend) as compl
 
 Client-side flags would repeat onboarding on every new device and could not distinguish an existing user from a new one. A server timestamp resumes across sessions and devices, and the backfill is a one-line, auditable guarantee for current users. Reusing `PATCH /me` keeps one idempotent, user-locked profile mutation (ADR 003) instead of adding an endpoint for one boolean.
 
+## Amendment: trending discovery in the add step (same release)
+
+The empty add step shows `GET /movies/trending` (TMDB weekly trending, at most 12 films, same list for everyone, filtered per caller for add eligibility) so a new user has something to pick from without knowing a title. It reuses the existing TMDB provider, its error mapping and an in-process one-hour cache (no database table, no TMDB call from Flutter, no new credential). It is not a recommendation and does not touch ranking, preferences or Tonight. Rejected: persisting a trending table (a cache table for twelve rows adds a migration and a refresh job for nothing); personalizing the list (explicitly out of scope); infinite scrolling (bounded by design).
+
 ## Tradeoff
 
 One nullable column and one additive field. Skipping and finishing are indistinguishable by design; if the product ever needs to tell them apart, that needs a new column. Accounts created between the migration and the backend deploy by an older backend start with `NULL` and see onboarding once on a new client, which is the intended behavior for new accounts.

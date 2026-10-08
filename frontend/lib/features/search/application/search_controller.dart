@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/models/inventory.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../history/application/history_controllers.dart';
 import '../../history/data/history_repository.dart';
 import '../../today/application/today_controller.dart';
@@ -221,6 +222,13 @@ class SearchController extends Notifier<SearchState> {
     return o;
   }
 }
+
+/// This week's trending films for onboarding. Kept per signed-in user and not
+/// auto-disposed, so clearing the query shows them again without a reload.
+final trendingProvider = FutureProvider<TrendingPage>((ref) {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(searchRepositoryProvider)!.trending();
+});
 
 final searchControllerProvider =
     NotifierProvider.autoDispose<SearchController, SearchState>(

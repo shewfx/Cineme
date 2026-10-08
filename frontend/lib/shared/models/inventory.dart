@@ -60,6 +60,15 @@ class SearchPage {
   final List<SearchResult> results;
 }
 
+/// GET /movies/trending: this week's trending films (not personalized) and
+/// which of them are already on the caller's watchlist.
+class TrendingPage {
+  const TrendingPage({required this.results, required this.inWatchlist});
+
+  final List<SearchResult> results;
+  final Set<int> inWatchlist;
+}
+
 /// POST /watchlist result; a duplicate is a success with alreadyPresent.
 class WatchlistAddResult {
   const WatchlistAddResult({required this.entry, required this.alreadyPresent});

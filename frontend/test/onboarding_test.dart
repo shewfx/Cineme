@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cineme/app.dart';
 import 'package:cineme/core/config/app_config.dart';
 import 'package:cineme/core/network/api_client.dart';
@@ -28,6 +30,10 @@ class Server {
   final lists = <String, List<WatchlistEntry>>{};
   int failCompletions = 0;
   int failAdds = 0;
+  int addCalls = 0;
+
+  /// When set, adds wait for it (to hold a request in flight).
+  Completer<void>? gate;
 }
 
 const _unavailable = ApiError(
@@ -105,6 +111,8 @@ class FakeWatchlist implements WatchlistRepository {
 
   @override
   Future<WatchlistAddResult> add(int tmdbId) async {
+    server.addCalls++;
+    await server.gate?.future;
     if (server.failAdds > 0) {
       server.failAdds--;
       throw _unavailable;
@@ -128,6 +136,24 @@ class FakeWatchlist implements WatchlistRepository {
 }
 
 class FakeSearch implements MovieSearchRepository {
+  /// Films shown as trending, in order; null makes the request fail.
+  List<int>? trendingIds = [1, 2, 3, 4];
+  Set<int> onWatchlist = {};
+  int trendingCalls = 0;
+
+  @override
+  Future<TrendingPage> trending() async {
+    trendingCalls++;
+    final ids = trendingIds;
+    if (ids == null) throw _unavailable;
+    return TrendingPage(
+      results: [
+        for (final i in ids) SearchResult(movie: catalog[i]!, canAdd: true),
+      ],
+      inWatchlist: onWatchlist,
+    );
+  }
+
   @override
   Future<SearchPage> search(String query, {int page = 1}) async => SearchPage(
     page: 1,
@@ -168,6 +194,7 @@ class Rig {
   late final FakeAccount account;
   late final FakeWatchlist watchlist;
   final today = FakeToday();
+  final searchRepo = FakeSearch();
 
   Widget app() => ProviderScope(
     retry: noAutomaticRetry,
@@ -179,7 +206,7 @@ class Rig {
         AccountProfileRepository(account),
       ),
       watchlistRepositoryProvider.overrideWithValue(watchlist),
-      searchRepositoryProvider.overrideWithValue(FakeSearch()),
+      searchRepositoryProvider.overrideWithValue(searchRepo),
       todayRepositoryProvider.overrideWithValue(today),
     ],
     child: const CinemeApp(),
@@ -206,6 +233,16 @@ Finder addButton(int id) => find.descendant(
     matching: find.byType(MovieListTile),
   ),
   matching: find.text('Add'),
+);
+
+Finder trendingAdd(int id) => find.descendant(
+  of: find.byKey(ValueKey('trending-$id')),
+  matching: find.text('Add'),
+);
+
+Finder inCell(int id, String text) => find.descendant(
+  of: find.byKey(ValueKey('trending-$id')),
+  matching: find.text(text),
 );
 
 Future<void> openAddStep(WidgetTester tester) async {
@@ -399,8 +436,11 @@ void main() {
     // Films already saved (this or another device): the intro is skipped.
     expect(find.text('One movie. No scrolling.'), findsNothing);
     expect(find.text('1 film added. Five is a good start.'), findsOneWidget);
+    // Already on the list, so it reads Added and offers no second submit.
+    expect(inCell(1, 'Added'), findsOneWidget);
     await search(tester);
-    await add(tester, 1);
+    expect(addButton(1), findsNothing);
+    expect(rig.server.addCalls, 0);
     expect(find.text('1 film added. Five is a good start.'), findsOneWidget);
     expect(rig.server.lists['alice']!.length, 1);
   });
@@ -486,6 +526,184 @@ void main() {
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
     expect(rig.auth.signOuts, 1);
+  });
+
+  group('trending this week', () {
+    testWidgets('an empty query shows posters with titles and years', (
+      tester,
+    ) async {
+      final rig = await pendingRig(tester);
+      await openAddStep(tester);
+      expect(find.text('Trending this week'), findsOneWidget);
+      expect(
+        find.byType(TextField),
+        findsOneWidget,
+        reason: 'search stays on top',
+      );
+      for (var i = 1; i <= 4; i++) {
+        expect(inCell(i, 'Film $i'), findsOneWidget);
+        expect(inCell(i, '${2000 + i}'), findsOneWidget);
+        expect(trendingAdd(i), findsOneWidget);
+      }
+      expect(rig.searchRepo.trendingCalls, 1);
+      // Two columns on a narrow phone (400 px wide here).
+      Offset at(int i) =>
+          tester.getTopLeft(find.byKey(ValueKey('trending-$i')));
+      expect(at(2).dy, at(1).dy);
+      expect(at(2).dx, greaterThan(at(1).dx));
+      expect(at(3).dy, greaterThan(at(1).dy));
+      expect(at(3).dx, at(1).dx);
+    });
+
+    testWidgets('wider screens fit more columns', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1200, 3000)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final rig = Rig(signedIn: alice)..server.pending['alice'] = true;
+      await tester.pumpWidget(rig.app());
+      await tester.pumpAndSettle();
+      await openAddStep(tester);
+      final ys = {
+        for (var i = 1; i <= 4; i++)
+          tester.getTopLeft(find.byKey(ValueKey('trending-$i'))).dy,
+      };
+      expect(ys.length, 1, reason: 'four films share one row at 1200 px');
+    });
+
+    testWidgets('Add shows Added, counts, and cannot be submitted twice', (
+      tester,
+    ) async {
+      final rig = await pendingRig(tester);
+      await openAddStep(tester);
+      rig.server.gate = Completer<void>();
+      await tester.tap(trendingAdd(1));
+      await tester.tap(trendingAdd(1)); // same frame: ignored
+      rig.server.gate!.complete();
+      await tester.pumpAndSettle();
+
+      expect(rig.server.addCalls, 1);
+      expect(inCell(1, 'Added'), findsOneWidget);
+      expect(trendingAdd(1), findsNothing);
+      expect(find.text('1 film added. Five is a good start.'), findsOneWidget);
+      expect(find.textContaining("Couldn't reach"), findsNothing);
+      expect(rig.server.lists['alice']!.length, 1);
+    });
+
+    testWidgets('a failed trending add stays retryable', (tester) async {
+      final rig = await pendingRig(tester);
+      rig.server.failAdds = 1;
+      await openAddStep(tester);
+      await tester.tap(trendingAdd(2));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Couldn't reach Cinemé"), findsOneWidget);
+      expect(inCell(2, 'Added'), findsNothing);
+      await tester.tap(trendingAdd(2));
+      await tester.pumpAndSettle();
+      expect(inCell(2, 'Added'), findsOneWidget);
+      expect(rig.server.lists['alice']!.length, 1);
+    });
+
+    testWidgets('selection is shared between trending and search', (
+      tester,
+    ) async {
+      final rig = await pendingRig(tester);
+      await openAddStep(tester);
+      await tester.tap(trendingAdd(1));
+      await tester.pumpAndSettle();
+
+      await search(tester);
+      expect(find.text('Trending this week'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Film 1'),
+            matching: find.byType(MovieListTile),
+          ),
+          matching: find.text('Added'),
+        ),
+        findsOneWidget,
+        reason: 'search shows what trending added',
+      );
+      await add(tester, 5); // added from search
+
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.text('Trending this week'), findsOneWidget);
+      expect(inCell(1, 'Added'), findsOneWidget);
+      expect(trendingAdd(2), findsOneWidget);
+      expect(find.text('2 films added. Five is a good start.'), findsOneWidget);
+      expect(rig.server.lists['alice']!.length, 2);
+    });
+
+    testWidgets('films the server already lists read as Added', (tester) async {
+      tallView(tester);
+      final rig = Rig(signedIn: alice)..server.pending['alice'] = true;
+      rig.searchRepo.onWatchlist = {3};
+      await tester.pumpWidget(rig.app());
+      await tester.pumpAndSettle();
+      await openAddStep(tester);
+      expect(inCell(3, 'Added'), findsOneWidget);
+      expect(trendingAdd(3), findsNothing);
+    });
+
+    testWidgets('failure offers Retry; search and Continue still work', (
+      tester,
+    ) async {
+      final rig = await pendingRig(tester);
+      rig.searchRepo.trendingIds = null;
+      await openAddStep(tester);
+      expect(
+        find.textContaining("Couldn't load trending films"),
+        findsOneWidget,
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('Skip'), findsOneWidget);
+      expect(find.text('Continue'), findsOneWidget);
+
+      // Search is unaffected by the failure.
+      await search(tester);
+      await add(tester, 1);
+      expect(find.text('1 film added. Five is a good start.'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      rig.searchRepo.trendingIds = [1, 2];
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Couldn't load trending films"), findsNothing);
+      expect(inCell(1, 'Added'), findsOneWidget);
+      expect(trendingAdd(2), findsOneWidget);
+
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(rig.server.completeCalls['alice'], 1);
+    });
+
+    testWidgets('an empty trending list says so and Skip still works', (
+      tester,
+    ) async {
+      final rig = await pendingRig(tester);
+      rig.searchRepo.trendingIds = [];
+      await openAddStep(tester);
+      expect(
+        find.textContaining('Nothing is trending right now'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your watchlist is empty'), findsOneWidget);
+    });
+
+    testWidgets('trending does not appear on Tonight', (tester) async {
+      final rig = await pendingRig(tester);
+      await openAddStep(tester);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Trending this week'), findsNothing);
+      expect(find.text('Your watchlist is empty'), findsOneWidget);
+      expect(rig.server.lists['alice'], anyOf(isNull, isEmpty));
+    });
   });
 
   testWidgets('both steps hold at 200% text on a small phone', (tester) async {

@@ -6,8 +6,11 @@ import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/inventory.dart';
 import '../../history/data/history_repository.dart';
+import '../../watchlist/application/watchlist_controller.dart';
 import '../application/search_controller.dart';
 import '../data/search_repository.dart';
+import 'search_feedback.dart';
+import 'trending_grid.dart';
 
 /// What a result row offers.
 enum SearchMode {
@@ -66,6 +69,9 @@ class SearchPanel extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
 
     final Widget body = switch (state.results) {
+      // Onboarding with nothing typed: this week's trending films.
+      null when mode == SearchMode.onboarding && state.query.isEmpty =>
+        const TrendingGrid(),
       null => _Hint(
         state.query.isEmpty
             ? (logMode
@@ -174,31 +180,21 @@ class _ResultRow extends ConsumerWidget {
     final state = ref.watch(searchControllerProvider);
     final mark = state.marks[movie.tmdbId];
     final busy = state.busy.contains(movie.tmdbId);
+    // Onboarding keeps one selection across trending and search: a film
+    // already on the server-side watchlist reads as added here too.
+    final listed =
+        mode == SearchMode.onboarding &&
+        (ref
+                .watch(watchlistControllerProvider)
+                .value
+                ?.items
+                .any((e) => e.movie.tmdbId == movie.tmdbId) ??
+            false);
 
     Future<void> run(Future<SearchOutcome> Function() action) async {
       final messenger = ScaffoldMessenger.of(context);
       final outcome = await action();
-      final t = movie.title;
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(switch (outcome) {
-              SearchOutcome.added => 'Added “$t” to your watchlist.',
-              SearchOutcome.alreadySaved =>
-                '“$t” is already in your watchlist.',
-              SearchOutcome.alreadyWatched =>
-                "You've already watched “$t”, so it isn't added.",
-              SearchOutcome.ineligible => "“$t” can't be added.",
-              SearchOutcome.blocked =>
-                "You chose never to recommend “$t”. Unblock it in Profile first.",
-              SearchOutcome.recorded => 'Recorded “$t” as watched.',
-              SearchOutcome.alreadyRecorded =>
-                '“$t” was already in your history.',
-              SearchOutcome.failed => connectionErrorMessage,
-            }),
-          ),
-        );
+      showSearchOutcome(messenger, outcome, movie.title);
     }
 
     Future<void> confirmWatched() async {
@@ -252,8 +248,11 @@ class _ResultRow extends ConsumerWidget {
       action = const _Status(Icons.block, "Can't add");
     } else if (mark == ResultMark.watched) {
       action = const _Status(Icons.check, 'Watched');
-    } else if (mark == ResultMark.saved) {
-      action = const _Status(Icons.bookmark, 'In watchlist');
+    } else if (mark == ResultMark.saved || listed) {
+      action = _Status(
+        mode == SearchMode.onboarding ? Icons.check : Icons.bookmark,
+        mode == SearchMode.onboarding ? 'Added' : 'In watchlist',
+      );
     } else {
       // The screen is already "add to watchlist", so the row says Add;
       // screen readers still hear the full action.

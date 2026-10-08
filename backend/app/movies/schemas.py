@@ -56,6 +56,14 @@ class SearchResponse(BaseModel):
     results: list[MovieSummary]
 
 
+class TrendingResponse(BaseModel):
+    """At most TRENDING_LIMIT films; one page, no cursor. `in_watchlist` lists
+    the caller's active watchlist films among them."""
+
+    results: list[MovieSummary]
+    in_watchlist: list[int]
+
+
 class GenresResponse(BaseModel):
     items: list[GenreOut]
     version: str

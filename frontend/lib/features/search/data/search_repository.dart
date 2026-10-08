@@ -7,6 +7,9 @@ import '../../../shared/models/inventory.dart';
 abstract interface class MovieSearchRepository {
   /// GET /movies/search: query length 2..100; runtime may be null.
   Future<SearchPage> search(String query, {int page = 1});
+
+  /// GET /movies/trending: at most a dozen films, one page, for onboarding.
+  Future<TrendingPage> trending();
 }
 
 /// Null in builds without a backend; the preview overrides it with a fake.
@@ -40,6 +43,23 @@ class ApiSearchRepository implements MovieSearchRepository {
             return SearchResult(movie: movie, canAdd: canAdd);
           }(),
       ],
+    );
+  }
+
+  @override
+  Future<TrendingPage> trending() async {
+    final body = await _api.get('/api/v1/movies/trending');
+    final saved = asList(body['in_watchlist']);
+    if (saved.any((id) => id is! int)) throw malformedResponse;
+    return TrendingPage(
+      results: [
+        for (final r in asList(body['results']))
+          () {
+            final (movie, canAdd) = movieSummaryFromJson(asMap(r));
+            return SearchResult(movie: movie, canAdd: canAdd);
+          }(),
+      ],
+      inWatchlist: {for (final id in saved) id as int},
     );
   }
 }

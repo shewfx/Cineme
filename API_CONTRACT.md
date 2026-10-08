@@ -324,6 +324,10 @@ Versioned genre registry response200 `{items:[{id:35,name:"Comedy"},...],version
 
 Search title length2..100, page1..500. Response200 `{page:1,total_pages:...,results:[MovieSummary,...]}`. TMDB controls actual pages; expose at most500. No results is200 empty array.422 query/page,429 upstream throttle,503 unavailable. Search's runtime may be null.
 
+### GET `/movies/trending`
+
+Onboarding discovery (ADR 010 amendment). Auth and profile required; no parameters. Response200 `{results:[MovieSummary,...],in_watchlist:[tmdb_id,...]}`: at most 12 films from TMDB's weekly trending list, in TMDB's order, one page and no cursor. Trending means what is popular this week for everyone; it is **not** personalized and **not** a recommendation, never scores or ranks anything, and is not used by Tonight. The same TMDB list is served to every user (cached in the provider for one hour; a failed refresh serves the last good copy), then filtered for this caller using the search eligibility rules plus the add rules: adult films, films without a known release date on or before the caller's local date, and films without a poster are omitted; films this caller already watched or blocked are omitted (an Add would fail). `can_add` is true and `released` is true for every item; `runtime_minutes` is null (details are not fetched); `vote_average` is included. `in_watchlist` lists the returned films already on the caller's active watchlist. Read-only: it writes nothing for the caller (the shared metadata cache is not touched either). Errors: 401, 409 PROFILE_NOT_INITIALIZED, 502 on a malformed upstream list, 503 retryable when TMDB is unavailable and no cached list exists, 429 on upstream throttling. The route is registered before `/movies/{tmdb_id}`.
+
 ### GET `/movies/{tmdb_id}`
 
 Fetch/cache details on demand. Response200 MovieDetails with stale flag.404 upstream film not found;503 first fetch unavailable. This GET can refresh/populate shared metadata cache, but never private watchlist/history. Stale usable details return200 stale=true on refresh failure.
