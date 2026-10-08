@@ -4,7 +4,7 @@ Version 1.1. Normative V1 product behavior. See CRITICAL_REVIEW for corrections 
 
 ## Vision and success
 
-Cinemé removes movie-choice paralysis: the user supplies lightweight context and receives ONE movie from their watchlist. Hundreds of saved films are internal candidates, never a Tonight recommendation feed. Working tagline: “One movie. No scrolling.” The main task is choosing a movie to watch, not browsing recommendations.
+Cinemé removes movie-choice paralysis: the user supplies lightweight context and receives ONE movie from their watchlist. Hundreds of saved films are internal candidates, never a Tonight recommendation feed. Working tagline: “One pick. No scrolling.” The main task is choosing a movie to watch, not browsing recommendations.
 
 The portfolio demo must show an end-to-end authenticated flow, a score breakdown, scope-correct rejection, post-watch learning, no-match handling, and an optional natural-language context proposal. A beautiful card alone is not completion.
 

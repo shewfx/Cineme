@@ -154,7 +154,7 @@ class SignInPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => _AuthScaffold(
     title: 'Sign in',
-    note: 'One movie from your own watchlist, every night.',
+    note: 'One pick from your own watchlist, every night.',
     children: [
       _CredentialsForm(
         submitLabel: 'Sign in',

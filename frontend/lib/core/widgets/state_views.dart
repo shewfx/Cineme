@@ -198,7 +198,7 @@ class UnavailableView extends StatelessWidget {
       children: [
         Text('Cinemé', style: textTheme.displayMedium),
         const SizedBox(height: 12),
-        Text('One movie. No scrolling.', style: textTheme.titleMedium),
+        Text('One pick. No scrolling.', style: textTheme.titleMedium),
         const SizedBox(height: 32),
         Text(
           '$what is not available in this build yet.',

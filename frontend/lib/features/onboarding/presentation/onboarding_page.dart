@@ -131,7 +131,7 @@ class _Welcome extends StatelessWidget {
             Semantics(
               header: true,
               child: Text(
-                'One movie. No scrolling.',
+                'One pick. No scrolling.',
                 style: text.headlineMedium,
               ),
             ),

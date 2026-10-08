@@ -1,11 +1,15 @@
 <div align="center">
 
+<img src="frontend/assets/branding/cineme-icon.png" alt="Cinemé app icon" width="96">
+
 # Cinemé
 
-**One movie. No scrolling.**
+**One pick. No scrolling.**
 
 You keep a watchlist. You tell Cinemé what you want from tonight.<br>
-It chooses **one** film from your own list — not a feed, not a carousel, not twenty "you might also like" rows.
+It chooses **one** thing from your own list — a film, or the next episode of a show you're watching. Not a feed, not a carousel, not twenty "you might also like" rows.
+
+**[Open the web app →](https://cineme-theta.vercel.app)**
 
 [![CI](https://github.com/shewfx/Cineme/actions/workflows/ci.yml/badge.svg)](https://github.com/shewfx/Cineme/actions/workflows/ci.yml)
 &nbsp;Flutter · FastAPI · PostgreSQL · Supabase Auth · TMDB
@@ -14,101 +18,112 @@ It chooses **one** film from your own list — not a feed, not a carousel, not t
 
 ---
 
-> **Status:** P0–P5 are merged; History, integer star ratings, next-day follow-up and reversible Never recommend are backend-backed. Web/main is v1.0.3+4; the last distributed Android APK is v1.0.2 (code 3). The hosted database was verified at migration `0006` (head) on 2026-10-08. See [Roadmap](#roadmap) and [docs/ROADMAP.md](docs/ROADMAP.md).
-
 ## The problem
 
-Most movie apps are built to help you browse *more*: endless rows, autoplaying trailers, another page of suggestions. When you already have a list of films you meant to watch, more options make the decision harder, not easier.
+Most movie apps are built to help you browse *more*: endless rows, autoplaying trailers, another page of suggestions. When you already have a list of things you meant to watch, more options make the decision harder, not easier.
 
-Cinemé is built to help you **decide**. The watchlist is the inventory you already trust; tonight's context narrows it; a deterministic ranking picks one film and tells you why.
+Cinemé is built to help you **decide**. The watchlist is the inventory you already trust; tonight's context narrows it; a deterministic ranking picks one title and tells you why.
 
 ## How it works
 
 ```
- Your watchlist  ──►  Tonight's context  ──►  Deterministic ranking  ──►  One movie
- (films you chose)    (mood, time, genres)    (explainable scoring)       (with reasons)
-     available              available               available (P4)           available (P4)
+ Your watchlist  ──►  Tonight's context  ──►  Deterministic ranking  ──►  One pick
+ (films and shows     (what you want, mood,   (explainable scoring)       (a film or the next
+  you chose)           time limit)                                          episode, with reasons)
 ```
 
-- **Watchlist** — search TMDB and save films you might watch. Implemented.
-- **Tonight's context** — what you want from the evening (e.g. *exciting*, *comforting*), an optional mood that never decides the pick, and an optional time limit.
-- **Ranking** — a pure, deterministic scoring engine specified in [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md): hard filters first (released, within your time limit, not already offered tonight), then six weighted components and a fixed tie-break.
-- **One movie** — Tonight always exposes exactly one actionable film, even when it ranked hundreds internally.
+- **Watchlist** — films and shows you saved from TMDB search or discovery.
+- **Tonight's context** — what you want from the evening (e.g. *exciting*, *comforting*), an optional mood that never decides the pick, and an optional time limit. Or skip the questions and let it pick.
+- **Ranking** — a pure, deterministic scoring engine specified in [RECOMMENDATION_ENGINE.md](RECOMMENDATION_ENGINE.md): hard filters first (released, within your time limit, not blocked, not already offered tonight), then weighted components and a fixed tie-break.
+- **One pick** — Tonight always exposes exactly one actionable title, even when it ranked hundreds internally.
 
-## What works today
+## Features
 
-| Area | Capability |
-|---|---|
-| Accounts | Supabase email/password sign-up and sign-in, sessions in Android secure storage (browser storage on web), explicit profile bootstrap |
-| Backend | FastAPI verifies Supabase JWTs and scopes every private read and write to the caller |
-| Search | TMDB movie search through the backend, with years, genres and real poster artwork |
-| Watchlist | Persistent per-user inventory with pagination and sorting; tap a poster or row for on-demand movie details; remove with Undo |
-| Watchlist views | List or poster grid and a Sort control; layout and sort are remembered on the device; swipe a row to remove or long-press a poster for quick actions |
-| Movie details | Compact poster-led metadata and overview from the Cinemé API, shared regional provider display, Remove / Mark watched / Never recommend actions |
-| Upcoming films | Upcoming or undated films can be saved and are labelled "Not released yet"; they will not be eligible for Tonight until released |
-| Resilience | The saved watchlist keeps working while TMDB is down; failures are shown, never replaced with fake data |
-| Isolation | Users can never see or change each other's watchlists (covered by PostgreSQL integration tests) |
-| Tonight setup | A short branded opening, then three compact selectors (what you want, optional feeling, optional time) in bottom sheets, or **Skip, just pick something** for one pick with no questions (it uses the explicit Surprise me intent) |
-| Tonight | One pick from your watchlist with factual reasons and a “Why this film?” breakdown; reloading never picks again; “Not feeling it” gives one replacement (or records “Already watched”), and after three passes it pauses instead of re-rolling; an honest “nothing fits” with counts instead of relaxing your limits |
-| Where to watch | “Available on” for tonight's film in your streaming region (JustWatch data via TMDB), display-only |
-| Scroll hint | A subtle, input-safe scroll-depth glow on Movie Details and Tonight only; fades away as the content ends |
-| Web / PWA | The same Flutter app as an installable web app (Add to Home Screen on iPhone): https://cineme-theta.vercel.app, hosted on Vercel with Neon PostgreSQL; wide browsers get a centred phone-width canvas. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| Preview mode | An opt-in build with scripted, in-memory data that shows the full designed flow — including Tonight, feedback and history — without contacting any service |
+**Tonight**
+- Exactly one recommendation: a movie, or the next unwatched regular episode of a show or anime on your watchlist.
+- A saved *What to watch* preference: **Movies only**, **Movies & shows** or **Shows only**. New and existing accounts start on Movies only.
+- Factual reasons and a "Why this film?" / "Why this episode?" breakdown. Reloading never picks again.
+- **Watch Tonight** records that you intend to watch it; it does not mark anything watched. **Mark watched** is a separate, deliberate action — for an episode it also advances your progress.
+- **Not this one?** opens a sheet with a single **Reason** dropdown. Choosing a reason never submits; **Show another** gives one replacement, and **Stop for tonight** needs no reason. Asking for another is temporary, never a dislike, and after three passes Tonight pauses for a context review instead of re-rolling.
+- Continuity: a show you have been actively watching gets a bounded priority bonus that fades once it has been idle for 21 days.
+- An honest "nothing fits" (with counts) instead of silently relaxing your time limit or recommending something outside your watchlist.
 
-P5 adds backend-backed History, ratings, explicit Mark watched actions, manual logging and reversible Never recommend blocks. Natural-language context is planned for P6. The P5 migration remains unapplied to the hosted database.
+**Watchlist and discovery**
+- Movie search, plus **Trending this week**, **Popular releases this month** and **Popular releases this year**.
+- Show search (anime included) and **Trending shows this week**.
+- Filter the watchlist by **All**, **Movies only** or **Shows only**; list or poster grid with sorting, remembered on the device.
+- Remove with **Undo** (swipe a row or long-press a poster).
+- Films that aren't released yet can be saved and are labelled; they become eligible for Tonight once released.
+
+**Details**
+- Movie and show details over a blurred backdrop of the title's own poster.
+- **Where to watch** for your streaming region (JustWatch data via TMDB), on details pages and on Tonight's card. Providers use one shared priority order; the first few are shown and the rest expand on demand. For shows this describes the show as a whole, never a promise about a particular episode.
+- Show progress ("Last watched: Season 1, Episode 4") with **Set my progress** to correct it.
+
+**History and account**
+- Star ratings (1–5) for watched movies, editable later; an edit replaces the earlier rating rather than adding to it.
+- History of watched films and a separate **Episodes** history.
+- **Never recommend** blocks for films and shows, reversible from Profile.
+- New-account onboarding: a short welcome and an optional step to add a few films (with weekly trending). Skip and Continue are always available.
+- Swipe between the main tabs (Tonight → Watchlist → History → Profile).
+
+### Anime
+
+Anime is supported through TMDB's TV catalogue, like any other show. Cinemé follows TMDB's standard season and episode order for regular seasons. There is no anime-specific episode ordering, and specials (season 0) are not included, so some anime may be numbered differently from where you watch them.
+
+## Releases
+
+Merged code, the hosted web app and the Android APK are versioned independently and are not always at the same version.
+
+| Channel | Version | Notes |
+|---|---|---|
+| Web / PWA — [cineme-theta.vercel.app](https://cineme-theta.vercel.app) | 1.2.0+5 | Onboarding, discovery, and shows/anime |
+| Android APK | 1.2.1+6 | Replacement build; sign-in confirmed on a device by the maintainer. Distributed directly — there is no public download link yet |
+| `main` | 1.2.1+6 | Adds the Android release-target guard (PR #17); no web-facing changes over 1.2.0+5 |
+
+1.2.1 is an Android release fix. The release script ([scripts/build_release_apk.ps1](scripts/build_release_apk.ps1)) forces the production API URL into Android release builds, then inspects every packaged Flutter library. The release fails, and no APK is copied out for distribution, unless each library contains the production API target and none contains a loopback (`localhost`, `127.x`, `10.0.2.2`, …) or `same-origin` target.
+
+There are no GitHub releases or tags for 1.2.x yet. See [CHANGELOG.md](CHANGELOG.md) for user-facing changes and [docs/RELEASING.md](docs/RELEASING.md) for the versioning policy.
 
 ## Product principles
 
-These rules come from [PROJECT_SPEC.md](PROJECT_SPEC.md) and constrain every phase:
+These rules come from [PROJECT_SPEC.md](PROJECT_SPEC.md) and constrain every change:
 
-- **Exactly one actionable movie for Tonight.** No grid, no adjacent alternatives, no swipe-to-reroll.
-- **The watchlist is inventory, not taste.** Adding a film is not a signal that you like it.
+- **Exactly one actionable pick for Tonight.** No grid, no adjacent alternatives, no swipe-to-reroll.
+- **The watchlist is inventory, not taste.** Adding a title is not a signal that you like it.
 - **"Not tonight" is temporary.** Rejecting tonight's pick is not a permanent dislike; *never recommend* is a separate, reversible block.
-- **Hard constraints are never silently relaxed.** If nothing fits your time limit, you get an honest "no match", not a film from outside your rules or your watchlist.
-- **Accepting is not watching.** Marking a film watched is deliberate; a rating is long-term evidence.
+- **Hard constraints are never silently relaxed.** If nothing fits your time limit, you get an honest "no match", not something from outside your rules or your watchlist.
+- **Accepting is not watching.** Marking something watched is deliberate; a rating is long-term evidence.
 - **Deterministic and explainable.** The same inputs give the same pick, with reasons you can read.
-- **AI does not choose the movie** and never invents movie facts. Unknown metadata stays unknown.
+- **AI does not choose what you watch** and never invents facts. Unknown metadata stays unknown.
 
 ## Recommendation philosophy
 
-Cinemé is intentionally not a thin LLM wrapper. The planned engine ranks only films already in your watchlist, using structured inputs: your stated intent for tonight, runtime and genre metadata, your preferences, your viewing history and earlier offers. Every component and weight is specified up front, and the scorer has no network, database, clock or model access — inputs are passed in explicitly, so a pick can be reproduced and tested.
+Cinemé is intentionally not a thin LLM wrapper. The engine ranks only titles already in your watchlist, using structured inputs: your stated intent for tonight, runtime and genre metadata, your preferences, your viewing history and earlier offers. Every component and weight is specified up front, and the scorer has no network, database, clock or model access — inputs are passed in explicitly, so a pick can be reproduced and tested. Shows enter the same ranking as next-episode candidates ([ADR 011](docs/adr/011-shows-and-anime-next-episode.md)).
 
-If a language model is added (an optional local adapter is planned for P7), its only job is to turn a sentence like *"something light, I'm tired, under two hours"* into a typed proposal that you review. It cannot select a film, change your preferences or apply anything on its own, and the app works fully with it switched off.
-
-## Screenshots
-
-<!--
-  No screenshots are committed yet. Add real captures from a device or emulator:
-    docs/screenshots/search.png      Search with TMDB results
-    docs/screenshots/watchlist.png   Watchlist, list view
-    docs/screenshots/posters.png     Watchlist, poster view
-    docs/screenshots/tonight.png     Tonight pick (after P4; until then, preview build only)
-  Do not commit TMDB poster files on their own; app screenshots showing posters are fine.
--->
-
-_Screenshots will be added here (`docs/screenshots/`)._
+If a language model is added (an optional local adapter is planned), its only job is to turn a sentence like *"something light, I'm tired, under two hours"* into a typed proposal that you review. It cannot select a title, change your preferences or apply anything on its own, and the app works fully with it switched off.
 
 ## Architecture
 
 ```
-            ┌────────────────────────┐
-            │  Flutter (Android app) │
-            └─────┬────────────┬─────┘
-     sign-in,     │            │  REST + JWT
-     session      │            │
-                  ▼            ▼
-      ┌────────────────┐   ┌──────────────────────────┐        ┌──────────────┐
-      │ Supabase Auth  │   │   FastAPI (modular        │ ─────► │   TMDB API   │
-      │  (identity)    │◄──│   monolith)               │ token  │  (metadata)  │
-      └────────────────┘   │  verifies JWTs, owns      │ stays  └──────────────┘
-         JWKS public keys  │  authorization + logic    │ here
-                           └────────────┬─────────────┘
-                                        ▼
-                              ┌──────────────────┐
-                              │   PostgreSQL     │
-                              │ (SQLAlchemy +    │
-                              │  Alembic)        │
-                              └──────────────────┘
+       ┌──────────────────────────────────┐
+       │ Flutter app (Android + Web/PWA)  │
+       └─────┬───────────────────┬────────┘
+   sign-in,  │                   │  REST + JWT
+   session   │                   │
+             ▼                   ▼
+ ┌────────────────┐   ┌──────────────────────────┐        ┌──────────────┐
+ │ Supabase Auth  │   │   FastAPI (modular        │ ─────► │   TMDB API   │
+ │  (identity)    │◄──│   monolith)               │ token  │  (metadata)  │
+ └────────────────┘   │  verifies JWTs, owns      │ stays  └──────────────┘
+    JWKS public keys  │  authorization + logic    │ here
+                      └────────────┬─────────────┘
+                                   ▼
+                         ┌──────────────────┐
+                         │   PostgreSQL     │
+                         │ (SQLAlchemy +    │
+                         │  Alembic)        │
+                         └──────────────────┘
 
    Poster images load directly from TMDB's image CDN (the one documented exception).
 ```
@@ -116,8 +131,9 @@ _Screenshots will be added here (`docs/screenshots/`)._
 - **Flutter never talks to the application database.** All private data goes through the FastAPI API.
 - **Supabase provides identity only.** The app signs in with Supabase; FastAPI verifies the access token against Supabase's public signing keys and takes the user's identity from it — never from a client-supplied user id.
 - **FastAPI owns authorization and product logic.** Every private operation is scoped to the caller; another user's resource is a plain 404.
-- **The TMDB credential is backend-only.** It never ships in the Android build. Movie metadata is cached in PostgreSQL so a saved watchlist keeps working during a TMDB outage.
+- **The TMDB credential is backend-only.** It never ships in the app. Metadata is cached in PostgreSQL so a saved watchlist keeps working during a TMDB outage.
 - Mutations use idempotency keys so a retried request never applies twice.
+- **Hosting:** the web build and the API are served from one Vercel project, backed by Neon PostgreSQL. The web build uses `API_BASE_URL=same-origin`, so it calls the API on whatever origin served it. Android builds use the absolute production API URL instead.
 
 Details: [ARCHITECTURE.md](ARCHITECTURE.md), [DATA_MODEL.md](DATA_MODEL.md), [API_CONTRACT.md](API_CONTRACT.md).
 
@@ -127,26 +143,11 @@ Details: [ARCHITECTURE.md](ARCHITECTURE.md), [DATA_MODEL.md](DATA_MODEL.md), [AP
 |---|---|
 | App | Flutter / Dart, Riverpod, go_router, Dio, supabase_flutter, flutter_secure_storage |
 | API | Python 3.12, FastAPI, Pydantic, HTTPX, PyJWT |
-| Data | PostgreSQL 16, SQLAlchemy 2, psycopg 3, Alembic |
+| Data | PostgreSQL 16 locally (Neon in production), SQLAlchemy 2, psycopg 3, Alembic |
 | Identity | Supabase Auth (ES256 JWTs) |
-| Metadata | TMDB API |
+| Metadata | TMDB API; streaming availability from JustWatch via TMDB |
+| Hosting | Vercel (web + API), Neon (PostgreSQL) |
 | Tooling | uv, Ruff, mypy, pytest, Docker Compose (local PostgreSQL), GitHub Actions |
-
-## Roadmap
-
-Phases and their gates are defined in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md); verified results are recorded in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
-
-| Phase | Scope | Status |
-|---|---|---|
-| P0 | Bootable repository, toolchain, CI | Complete |
-| P1 | Full UX prototype on fake data (Tonight, feedback, inventory, history) | Complete |
-| P2 | Supabase auth, profile bootstrap, PostgreSQL foundation | Complete |
-| P3 | TMDB search and persistent per-user watchlist | Complete |
-| P4 | Deterministic daily selection: the real Tonight pick, with evidence, passes/pause, Already watched and where-to-watch (ADR 006, 007) | Complete |
-| P5 | Mark watched, ratings, blocks, History and conservative learning | Complete |
-| P6 | Structured tonight context and time interpretation | Planned |
-| P7 | Optional local LLM context adapter | Planned |
-| P8 | Release hardening, deployment and portfolio evidence | Planned |
 
 ## Running locally
 
@@ -154,8 +155,8 @@ Commands are PowerShell on Windows; full details and troubleshooting are in [doc
 
 ### Prerequisites
 
-- Python 3.12 via [uv](https://docs.astral.sh/uv/) 0.12
-- Flutter 3.47 (stable) with the Android SDK and an emulator or device
+- Python 3.12 via [uv](https://docs.astral.sh/uv/)
+- Flutter (stable; see [docs/TOOLING.md](docs/TOOLING.md) for the recorded version) with the Android SDK and an emulator or device, or Chrome for web
 - Docker Desktop (local PostgreSQL)
 - Your own **Supabase** project (email auth, ES256 signing keys) and a **TMDB** API Read Access Token
 
@@ -166,17 +167,30 @@ Copy-Item infra/.env.example infra/.env        # set a local-only password
 docker compose --env-file infra/.env -f infra/compose.yaml up -d
 ```
 
+The database binds to `127.0.0.1` only.
+
 ### 2. Backend
 
 ```powershell
 Copy-Item backend/.env.example backend/.env    # fill in locally; git-ignored
 cd backend
 uv sync
-uv run --env-file .env alembic upgrade head
+uv run --env-file .env alembic upgrade head    # local database only
 uv run --env-file .env uvicorn app.main:build_app --factory --host 0.0.0.0 --port 8000
 ```
 
-`backend/.env` needs `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_ISSUER`, `TMDB_READ_ACCESS_TOKEN` and, for tests, `TEST_DATABASE_URL`. The example file contains placeholders only. Never use a Supabase secret/service-role key. Startup fails with a clear message if a setting is missing.
+`backend/.env` holds placeholders until you fill it in, for example:
+
+```dotenv
+DATABASE_URL=postgresql+psycopg://cineme:<local-password>@127.0.0.1:5432/cineme
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_<placeholder>
+SUPABASE_JWT_ISSUER=https://<project-ref>.supabase.co/auth/v1
+TMDB_READ_ACCESS_TOKEN=<tmdb-read-access-token>
+TEST_DATABASE_URL=postgresql+psycopg://cineme:<local-password>@127.0.0.1:5432/postgres
+```
+
+Never use a Supabase secret/service-role key. Startup fails with a clear message if a setting is missing, and the app never migrates on startup — run `alembic upgrade head` again after pulling new migrations.
 
 Check it: `Invoke-RestMethod http://127.0.0.1:8000/readyz`
 
@@ -186,10 +200,11 @@ Check it: `Invoke-RestMethod http://127.0.0.1:8000/readyz`
 cd frontend
 Copy-Item dart_defines.example.env dart_defines.env   # API_BASE_URL, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
 flutter pub get
-flutter run --dart-define-from-file=dart_defines.env
+flutter run --dart-define-from-file=dart_defines.env              # Android emulator or device
+flutter run -d chrome --dart-define-from-file=dart_defines.env    # web
 ```
 
-`API_BASE_URL=http://10.0.2.2:8000` reaches the local API from the Android emulator. Only the public Supabase publishable key goes into the app. Without configuration the app says it is not configured — it never falls back to fake data.
+`API_BASE_URL=http://10.0.2.2:8000` (the example value) reaches the local API from the Android emulator; use `http://127.0.0.1:8000` for local web. Only the public Supabase publishable key goes into the app. Without configuration the app says it is not configured — it never falls back to fake data.
 
 ### Preview build (no services needed)
 
@@ -198,7 +213,12 @@ cd frontend
 flutter run --dart-define=CINEME_PREVIEW=true
 ```
 
-Scripted in-memory data that shows the whole designed experience. It never contacts Supabase, the API, PostgreSQL or TMDB.
+Scripted in-memory data that shows the designed flow. It never contacts Supabase, the API, PostgreSQL or TMDB.
+
+### Production builds
+
+- **Web:** built with `API_BASE_URL=same-origin`, scanned with `infra/check_web_bundle.py` and deployed with the Vercel CLI. Hosted migrations are a separate, explicit step. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- **Android:** release builds use the absolute production API URL and need a local `frontend/android/key.properties` with its keystore for signing (never committed). [scripts/build_release_apk.ps1](scripts/build_release_apk.ps1) is the maintainer's release script. It assumes the maintainer's local Flutter and cache paths, so adapt it before using it elsewhere. Versioning: [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Testing
 
@@ -219,16 +239,40 @@ flutter analyze
 flutter test
 ```
 
-- **Backend:** unit tests (TMDB adapter normalization, timeouts, retries, error mapping) and PostgreSQL integration tests for ownership and isolation, idempotent retries, concurrent adds, database constraints and migrations. SQLite is deliberately not used as a stand-in. TMDB is mocked; tests never call the network.
-- **App:** widget and repository tests over a fake API and the preview store — loading, empty and error states, account switching without data leaks, swipe removal and Undo, small screens at 200% text.
+- **Backend:** pure engine tests with a fixed clock, TMDB adapter tests, and PostgreSQL integration tests for ownership and isolation, idempotent retries, concurrency, constraints and migrations. SQLite is deliberately not used as a stand-in. TMDB is mocked; tests never call the network.
+- **App:** widget and repository tests over a fake API and the preview store — loading, empty and error states, account switching without data leaks, Undo, and small screens at 200% text.
+
+## Current limitations
+
+- **Shows:** regular seasons only, in TMDB's standard order; no specials and no alternate (e.g. anime-specific) episode orders. There is no whole-series rating control. Marking an episode watched accepts an optional rating, which is stored but can't be edited afterwards in the app and doesn't affect recommendations; only movie ratings feed the ranking.
+- **Where to watch** is display-only regional data from JustWatch via TMDB. For shows it covers the show as a whole, not individual episodes.
+- **No natural-language context yet.** Tonight's context is chosen from structured options; the optional local LLM adapter is planned, not built.
+- **Online only.** The web app has no offline mode, and API responses are not cached.
+- **Android distribution is manual.** There is no Play Store listing and no public APK download yet; iPhone users can add the web app to the Home Screen.
+- **Hosting runs on free tiers.** The first request after an idle period can be slow.
+
+## Roadmap
+
+Phases and their gates are defined in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md); verified results are recorded in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), and planned work in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+| Phase | Scope | Status |
+|---|---|---|
+| P0–P3 | Repository and CI, UX prototype, Supabase auth, TMDB search and persistent watchlist | Complete |
+| P4 | Deterministic daily selection with evidence, passes/pause and where-to-watch | Complete |
+| P5 | Mark watched, ratings, blocks, History and conservative learning | Complete |
+| — | Web/PWA hosting, onboarding and discovery, shows and anime (ADRs 009–011) | Shipped |
+| P6 | Structured tonight context and time interpretation | Planned |
+| P7 | Optional local LLM context adapter | Planned |
+| P8 | Release hardening and portfolio evidence | Planned |
 
 ## Repository structure
 
 ```
-backend/         FastAPI app (app/core, app/users, app/movies, app/watchlist), Alembic migrations, tests
+backend/         FastAPI app (app/core, users, movies, series, watchlist, recommendations, viewings), Alembic migrations, tests
 frontend/        Flutter app (lib/features/*, lib/core, lib/preview), tests
-infra/           Docker Compose for local PostgreSQL
-docs/            Implementation status, tooling, architecture decision records (docs/adr)
+infra/           Docker Compose for local PostgreSQL, web bundle secret check
+scripts/         Android release build script
+docs/            Implementation status, tooling, deployment, releasing, series design, ADRs (docs/adr)
 *.md (root)      Product, architecture, data, API, frontend and engine specifications
 ```
 
@@ -246,8 +290,12 @@ The root specifications are the source of truth, each for its own subject:
 | [FRONTEND_SPEC.md](FRONTEND_SPEC.md) | Flutter structure and interaction details |
 | [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) | Phases and gates |
 | [CRITICAL_REVIEW.md](CRITICAL_REVIEW.md) | Concept risks and decisions taken before specification |
+| [docs/SERIES_DESIGN.md](docs/SERIES_DESIGN.md) | Shows and anime: progress, next episode, continuity |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Hosted web/PWA: Vercel, Neon, environment names, migrations, rollback, Add to Home Screen |
+| [docs/RELEASING.md](docs/RELEASING.md) | Version numbers and build metadata |
+| [docs/TOOLING.md](docs/TOOLING.md) | Toolchain, Windows commands, Android build troubleshooting |
 | [docs/adr/](docs/adr) | Approved deviations |
+| [CHANGELOG.md](CHANGELOG.md) | User-facing changes by version |
 
 If two documents disagree, the conflict is reported and resolved explicitly before the affected behavior is built. Agent instructions live in [CLAUDE.md](CLAUDE.md); the original planning-package notes (baseline decisions, external sources, completion definition) are in [docs/PLANNING_PACKAGE.md](docs/PLANNING_PACKAGE.md).
 
@@ -256,7 +304,7 @@ If two documents disagree, the conflict is reported and resolved explicitly befo
 - Work in a feature branch per phase or task; keep commits scoped.
 - Preserve the product invariants and architecture boundaries above; significant deviations need an ADR.
 - Formatter, static analysis and tests pass before merge.
-- No secrets in Git: `.env` files and `dart_defines.env` stay local; example files hold placeholders only.
+- No secrets in Git: `.env` files, `dart_defines.env` and Android signing files stay local; example files hold placeholders only.
 
 ## TMDB attribution
 
@@ -264,7 +312,7 @@ This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Where-to-watch information is provided by [JustWatch](https://www.justwatch.com/) through TMDB and is shown with that attribution.
 
-Movie metadata and images are provided by [The Movie Database (TMDB)](https://www.themoviedb.org/) and used under its developer terms for this noncommercial project.
+Movie and show metadata and images are provided by [The Movie Database (TMDB)](https://www.themoviedb.org/) and used under its developer terms for this noncommercial project.
 
 ## License
 
