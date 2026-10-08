@@ -128,9 +128,13 @@ class SeriesDetails {
     required this.stale,
     required this.limitations,
     required this.entry,
+    this.originalName,
+    this.firstAirDate,
   });
 
   final Series series;
+  final String? originalName;
+  final DateTime? firstAirDate;
   final String? overview;
   final int seasonCount;
   final bool stale;

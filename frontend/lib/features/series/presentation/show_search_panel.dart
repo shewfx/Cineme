@@ -7,6 +7,7 @@ import '../../../core/widgets/movie_list_tile.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/series.dart';
 import '../application/series_controllers.dart';
+import 'show_discovery_grid.dart';
 
 /// Search for shows and anime series to add. Same shape as the film search:
 /// the field on top, results below, an explicit Add per row. Results are
@@ -26,12 +27,12 @@ class ShowSearchPanel extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
 
     final Widget body = switch (state.results) {
+      // Nothing typed: this week's trending shows, with search still on top.
+      null when state.query.isEmpty => const ShowDiscoveryGrid(),
       null => Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          state.query.isEmpty
-              ? 'Search by title for a show or anime series.'
-              : 'Type at least $showMinQueryLength letters to search.',
+          'Type at least $showMinQueryLength letters to search.',
           style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
         ),
       ),
@@ -115,30 +116,6 @@ class _ShowRow extends ConsumerWidget {
     final busy = state.busy.contains(series.tmdbId);
     final added = state.added.contains(series.tmdbId);
 
-    Future<void> add() async {
-      final messenger = ScaffoldMessenger.of(context);
-      final outcome = await ref
-          .read(showSearchControllerProvider.notifier)
-          .add(series);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(switch (outcome) {
-              ShowAddOutcome.added =>
-                'Added “${series.name}” to your watchlist.',
-              ShowAddOutcome.alreadySaved =>
-                '“${series.name}” is already in your watchlist.',
-              ShowAddOutcome.blocked =>
-                'You chose never to recommend “${series.name}”. Unblock it first.',
-              ShowAddOutcome.ineligible => "“${series.name}” can't be added.",
-              ShowAddOutcome.full => 'Your watchlist is full.',
-              ShowAddOutcome.failed => connectionErrorMessage,
-            }),
-          ),
-        );
-    }
-
     final Widget action;
     if (busy) {
       action = const SizedBox.square(
@@ -151,7 +128,7 @@ class _ShowRow extends ConsumerWidget {
       action = const _Status(Icons.block, "Can't add");
     } else {
       action = OutlinedButton(
-        onPressed: add,
+        onPressed: () => addShowWithFeedback(context, ref, series),
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.accent,
           side: const BorderSide(color: AppColors.accent),
@@ -200,4 +177,36 @@ class _Status extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Adds a show and reports the outcome in one snack bar. A second tap while
+/// the first is in flight does nothing (and says nothing).
+Future<void> addShowWithFeedback(
+  BuildContext context,
+  WidgetRef ref,
+  Series series,
+) async {
+  if (ref.read(showSearchControllerProvider).busy.contains(series.tmdbId)) {
+    return;
+  }
+  final messenger = ScaffoldMessenger.of(context);
+  final outcome = await ref
+      .read(showSearchControllerProvider.notifier)
+      .add(series);
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(switch (outcome) {
+          ShowAddOutcome.added => 'Added “${series.name}” to your watchlist.',
+          ShowAddOutcome.alreadySaved =>
+            '“${series.name}” is already in your watchlist.',
+          ShowAddOutcome.blocked =>
+            'You chose never to recommend “${series.name}”. Unblock it first.',
+          ShowAddOutcome.ineligible => "“${series.name}” can't be added.",
+          ShowAddOutcome.full => 'Your watchlist is full.',
+          ShowAddOutcome.failed => connectionErrorMessage,
+        }),
+      ),
+    );
 }

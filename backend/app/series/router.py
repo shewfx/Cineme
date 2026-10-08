@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.core import idempotency
 from app.core.auth import Identity, current_identity
 from app.core.db import get_session
+from app.movies import availability
 from app.movies.router import Provider
+from app.movies.schemas import AvailabilityResponse
 
 from . import service
 from .schemas import (
@@ -17,6 +19,7 @@ from .schemas import (
     SeasonsResponse,
     SeriesDetails,
     SeriesRatingRequest,
+    TrendingShowsResponse,
     TvSearchResponse,
     WatchedEpisodeRequest,
 )
@@ -39,6 +42,24 @@ def search_tv(
 ) -> TvSearchResponse:
     """TMDB TV search through the backend; the TMDB token never reaches Flutter."""
     return service.search(session, provider, identity.user_id, q.strip(), page)
+
+
+@router.get("/tv/trending", response_model=TrendingShowsResponse)
+def trending_shows(
+    identity: CallerIdentity, session: DbSession, provider: Provider
+) -> TrendingShowsResponse:
+    """This week's trending shows for discovery. Not personalized and not a
+    recommendation; at most 12. Registered before `/tv/{tmdb_id}`."""
+    return service.trending(session, provider, identity.user_id)
+
+
+@router.get("/tv/{tmdb_id}/availability", response_model=AvailabilityResponse)
+def tv_availability(
+    identity: CallerIdentity, session: DbSession, provider: Provider, tmdb_id: TvId
+) -> dict[str, Any]:
+    """Where the show streams in the caller's region (JustWatch via TMDB), for
+    the show as a whole. Display-only; never ranking."""
+    return availability.series_availability(session, provider, identity.user_id, tmdb_id)
 
 
 @router.get("/tv/{tmdb_id}", response_model=SeriesDetails)

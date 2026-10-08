@@ -65,8 +65,16 @@ class TvSearchResponse(BaseModel):
     results: list[SeriesSummary]
 
 
+class TrendingShowsResponse(BaseModel):
+    """At most 12 shows from TMDB's weekly trending list; one page, no cursor."""
+
+    results: list[SeriesSummary]
+    in_watchlist: list[int]
+
+
 class SeriesDetails(BaseModel):
     series: SeriesSummary
+    original_name: str | None = None
     overview: str | None
     first_air_date: date | None
     last_air_date: date | None

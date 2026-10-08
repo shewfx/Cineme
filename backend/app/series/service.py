@@ -42,6 +42,7 @@ from .schemas import (
     SeriesDetails,
     SeriesEntryOut,
     SeriesSummary,
+    TrendingShowsResponse,
     TvSearchResponse,
 )
 
@@ -256,6 +257,48 @@ def refresh_stale(session: Session, provider: MovieMetadataProvider, user_id: uu
             ensure_series(session, provider, sid)
 
 
+TRENDING_LIMIT = 12
+
+
+def trending(
+    session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID
+) -> TrendingShowsResponse:
+    """This week's trending shows (anime included) for the add screen: the same
+    list for everyone, then filtered for this caller: no adult shows, nothing
+    without a poster, nothing the caller blocked, at most TRENDING_LIMIT. Shows
+    already on the watchlist stay (they read Added), and an ongoing show is
+    never dropped because some episodes were watched. Not a recommendation."""
+    movies.local_today(session, user_id)  # 409 without a profile
+    session.rollback()
+    shows = provider.trending_tv()
+    names = movies.genre_names(provider)
+    base = provider.image_base()
+    candidates = [s for s in shows if can_add(s.adult) and poster_url(base, s.poster_path)]
+    ids = [s.tmdb_id for s in candidates]
+    blocked = set(
+        session.scalars(
+            select(SeriesBlock.series_id).where(
+                SeriesBlock.user_id == user_id, SeriesBlock.series_id.in_(ids)
+            )
+        )
+    )
+    shown = [s for s in candidates if s.tmdb_id not in blocked][:TRENDING_LIMIT]
+    saved = set(
+        session.scalars(
+            select(SeriesEntry.series_id).where(
+                SeriesEntry.user_id == user_id,
+                SeriesEntry.status == "active",
+                SeriesEntry.series_id.in_([s.tmdb_id for s in shown]),
+            )
+        )
+    )
+    session.rollback()
+    return TrendingShowsResponse(
+        results=[provider_summary(s, names, base) for s in shown],
+        in_watchlist=[s.tmdb_id for s in shown if s.tmdb_id in saved],
+    )
+
+
 def search(
     session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID, query: str, page: int
 ) -> TvSearchResponse:
@@ -302,6 +345,7 @@ def details(
     )
     result = SeriesDetails(
         series=summary(series, names, base),
+        original_name=series.original_name,
         overview=series.overview,
         first_air_date=series.first_air_date,
         last_air_date=series.last_air_date,

@@ -245,6 +245,8 @@ All additive; film tables keep their meaning. TV ids live in their own tables be
 | `user_preferences.tonight_media` | `movies` (default) / `movies_and_shows` / `shows`; every existing row is `movies`. |
 | `recommendations` | adds `media_kind` (`movie`/`episode`), `series_id`, `season_number`, `episode_number`; exactly one identity (`movie_id` or the episode triple) unless `no_match`; `total_score` range raised to 0..120 (episode scores add a bounded continuity bonus). The one-unresolved-pick index is unchanged. |
 
+Migration 0009 (additive) adds `series.watch_providers jsonb` and `series.watch_providers_fetched_at`: the same 24 h shared regional availability cache the films have, owned by the show. No user data.
+
 Lock order is unchanged: `users` row, then the owned session, then the show entry. No network call inside a lock.
 
 ## Additive migration schedule

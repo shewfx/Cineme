@@ -4,7 +4,9 @@ import 'package:cineme/app.dart';
 import 'package:cineme/core/config/app_config.dart';
 import 'package:cineme/core/network/api_client.dart';
 import 'package:cineme/core/network/series_dto.dart';
+import 'package:cineme/core/widgets/details_scaffold.dart';
 import 'package:cineme/core/widgets/selector_field.dart';
+import 'package:cineme/features/availability/data/availability_repository.dart';
 import 'package:cineme/features/auth/data/account_repository.dart';
 import 'package:cineme/features/auth/data/auth_repository.dart';
 import 'package:cineme/features/preferences/data/profile_repository.dart';
@@ -64,6 +66,7 @@ class World {
   TodayEnvelope today = const TodayEnvelope.notStarted();
   ApiError? failSetProgress;
   final episodeViews = <EpisodeViewingRecord>[];
+  final trendingShowIds = <int>[1399, 1400];
   final records = <RecommendationRecord>[];
 
   World() {
@@ -199,6 +202,31 @@ class FakeSeries implements SeriesRepository {
   }
 
   final blockedIds = <int>{};
+  bool failTrending = false;
+  int trendingCalls = 0;
+
+  @override
+  Future<void> block(int tmdbId) async => blockedIds.add(tmdbId);
+
+  @override
+  Future<ShowTrendingPage> trending() async {
+    trendingCalls++;
+    if (failTrending) {
+      throw const ApiError(
+        status: 503,
+        code: 'DEPENDENCY_UNAVAILABLE',
+        message: 'Try again shortly.',
+        retryable: true,
+      );
+    }
+    return ShowTrendingPage(
+      results: [
+        for (final id in w.trendingShowIds)
+          if (!blockedIds.contains(id)) w.catalog[id]!,
+      ],
+      inWatchlist: {for (final s in w.shows) s.series.tmdbId},
+    );
+  }
 
   @override
   Future<List<Series>> blocked() async => [
@@ -423,6 +451,37 @@ class FakeToday implements TodayRepository {
   Future<WhyBreakdown?> why(String recommendationId) async => null;
 }
 
+class FakeAvailability implements AvailabilityRepository {
+  /// Offers per show; a show missing here has "no data".
+  final shows = <int, Availability>{};
+  final movies = <int, Availability>{};
+  final seriesCalls = <int>[];
+  bool failSeries = false;
+
+  @override
+  Future<Availability> forMovie(int tmdbId) async =>
+      movies[tmdbId] ?? const Availability(region: 'IN');
+
+  @override
+  Future<Availability> forSeries(int tmdbId) async {
+    seriesCalls.add(tmdbId);
+    if (failSeries) {
+      throw const ApiError(
+        status: 503,
+        code: 'DEPENDENCY_UNAVAILABLE',
+        message: 'Try again shortly.',
+        retryable: true,
+      );
+    }
+    return shows[tmdbId] ?? const Availability(region: 'IN');
+  }
+}
+
+Availability offers(List<String> names) => Availability(
+  region: 'IN',
+  streaming: [for (final n in names) ProviderOffer(name: n)],
+);
+
 class Rig {
   Rig({World? world, bool signedIn = true})
     : w = world ?? World(),
@@ -437,6 +496,7 @@ class Rig {
   late final FakeAccount account;
   late final FakeSeries series;
   late final FakeToday todayRepo;
+  final avail = FakeAvailability();
 
   Widget app() => ProviderScope(
     retry: noAutomaticRetry,
@@ -452,6 +512,7 @@ class Rig {
       historyRepositoryProvider.overrideWithValue(FakeHistory(w)),
       seriesRepositoryProvider.overrideWithValue(series),
       todayRepositoryProvider.overrideWithValue(todayRepo),
+      availabilityRepositoryProvider.overrideWithValue(avail),
     ],
     child: const CinemeApp(),
   );
@@ -573,10 +634,7 @@ void main() {
       expect(find.text('No shows in your watchlist yet'), findsOneWidget);
       await tester.tap(find.text('Add shows'));
       await tester.pumpAndSettle();
-      expect(
-        find.text('Search by title for a show or anime series.'),
-        findsOneWidget,
-      );
+      expect(find.text('Trending shows this week'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
 
@@ -657,6 +715,258 @@ void main() {
       await tester.tap(find.byTooltip('Add movies'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('media-toggle')), findsNothing);
+    });
+  });
+
+  group('Trending shows', () {
+    Future<void> openShows(WidgetTester tester, Rig rig) async {
+      await boot(tester, rig);
+      await openWatchlist(tester);
+      await tester.tap(find.byTooltip('Add movies or shows'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shows'));
+      await tester.pumpAndSettle();
+    }
+
+    Finder cell(int id) => find.byKey(ValueKey('discover-show-$id'));
+    Finder add(int id) => find.descendant(
+      of: cell(id),
+      matching: find.widgetWithText(OutlinedButton, 'Add'),
+    );
+
+    testWidgets('an empty query shows posters with titles and years', (
+      tester,
+    ) async {
+      final rig = Rig();
+      await openShows(tester, rig);
+      expect(find.text('Trending shows this week'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget, reason: 'search stays');
+      for (final (id, name) in [(1399, 'Alpha'), (1400, 'Beta')]) {
+        expect(
+          find.descendant(of: cell(id), matching: find.text(name)),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cell(id), matching: find.text('2015')),
+          findsOneWidget,
+        );
+        expect(add(id), findsOneWidget);
+      }
+      // Two columns on a 400 px phone.
+      expect(
+        tester.getTopLeft(cell(1400)).dy,
+        tester.getTopLeft(cell(1399)).dy,
+      );
+      expect(rig.series.trendingCalls, 1);
+      expect(find.text('Trending this week'), findsNothing, reason: 'films');
+    });
+
+    testWidgets('Add becomes Added once; a double tap adds once', (
+      tester,
+    ) async {
+      final rig = Rig();
+      await openShows(tester, rig);
+      await tester.tap(add(1399));
+      await tester.tap(add(1399), warnIfMissed: false); // same frame
+      await tester.pumpAndSettle();
+      expect(rig.w.addShowCalls, 1);
+      expect(rig.w.shows.single.series.tmdbId, 1399);
+      expect(
+        find.descendant(of: cell(1399), matching: find.text('Added')),
+        findsOneWidget,
+      );
+      expect(add(1400), findsOneWidget, reason: 'the other stays addable');
+    });
+
+    testWidgets('membership is shared with search, both ways', (tester) async {
+      final rig = Rig();
+      await openShows(tester, rig);
+      // Added from trending -> search shows it as in the watchlist.
+      await tester.tap(add(1399));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'alp');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(cell(1399), findsNothing, reason: 'results replace trending');
+      expect(find.text('In watchlist'), findsOneWidget);
+      // Added from search -> trending shows it as Added after clearing.
+      await tester.enterText(find.byType(TextField), 'bet');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Add'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('Trending shows this week'), findsOneWidget);
+      for (final id in [1399, 1400]) {
+        expect(
+          find.descendant(of: cell(id), matching: find.text('Added')),
+          findsOneWidget,
+        );
+      }
+      expect(rig.series.trendingCalls, 1, reason: 'clearing does not reload');
+    });
+
+    testWidgets('a show already on the watchlist is Added', (tester) async {
+      final rig = Rig();
+      rig.w.addShow(1400, progress: (1, 2));
+      await openShows(tester, rig);
+      expect(
+        find.descendant(of: cell(1400), matching: find.text('Added')),
+        findsOneWidget,
+        reason: 'ongoing and partly watched is still listed',
+      );
+      expect(add(1399), findsOneWidget);
+    });
+
+    testWidgets('a blocked show is not listed', (tester) async {
+      final rig = Rig();
+      rig.series.blockedIds.add(1399);
+      await openShows(tester, rig);
+      expect(cell(1399), findsNothing);
+      expect(cell(1400), findsOneWidget);
+    });
+
+    testWidgets('a failure keeps search usable and Retry reloads', (
+      tester,
+    ) async {
+      final rig = Rig();
+      rig.series.failTrending = true;
+      await openShows(tester, rig);
+      expect(
+        find.text("Couldn't load this list. You can still search above."),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextField), 'alp');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('Alpha'), findsOneWidget, reason: 'search still works');
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      rig.series.failTrending = false;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(cell(1399), findsOneWidget);
+    });
+
+    testWidgets('an empty list says so', (tester) async {
+      final rig = Rig();
+      rig.w.trendingShowIds.clear();
+      await openShows(tester, rig);
+      expect(
+        find.text('Nothing is trending right now. Search for a show above.'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('Where to watch', () {
+    Future<void> open(WidgetTester tester, Rig rig) async {
+      await boot(tester, rig);
+      await openWatchlist(tester);
+      await tester.tap(find.text('Alpha'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Show Details lists providers with a show-level note', (
+      tester,
+    ) async {
+      final rig = stocked();
+      rig.avail.shows[1399] = offers([
+        'Hulu',
+        'Netflix',
+        'Prime Video',
+        'Apple TV',
+        'Zee5',
+      ]);
+      await open(tester, rig);
+      expect(rig.avail.seriesCalls, [1399]);
+      expect(find.text('Where to watch'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('availability-more-providers')),
+        findsOneWidget,
+      );
+      expect(find.text('+2 more'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('availability-show-note')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('particular season or episode'), findsWidgets);
+      // Priority order: Netflix before Prime Video before Apple TV.
+      final names = ['Netflix', 'Prime Video', 'Apple TV'];
+      final ys = [
+        for (final n in names)
+          tester.getTopLeft(find.bySemanticsLabel('Available on $n')).dx,
+      ];
+      expect(ys, orderedEquals([...ys]..sort()));
+    });
+
+    testWidgets('no data says so honestly', (tester) async {
+      final rig = stocked();
+      await open(tester, rig);
+      expect(
+        find.byKey(const ValueKey('availability-unavailable')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failure offers Retry and the page stays usable', (
+      tester,
+    ) async {
+      final rig = stocked();
+      rig.avail.failSeries = true;
+      await open(tester, rig);
+      expect(find.text("Couldn't load where to watch."), findsOneWidget);
+      expect(find.text('Last watched: Season 1, Episode 4'), findsOneWidget);
+      rig.avail.failSeries = false;
+      rig.avail.shows[1399] = offers(['Netflix']);
+      await tester.tap(find.byKey(const ValueKey('availability-retry')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('availability-show-note')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Show Details uses the shared poster backdrop', (tester) async {
+      final rig = stocked();
+      await open(tester, rig);
+      expect(find.byType(DetailsBackdropScaffold), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('series-details-scroll')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the Tonight episode card shows the show-level availability', (
+      tester,
+    ) async {
+      final rig = Rig();
+      final card = EpisodeCard(
+        series: show(1399, 'Alpha'),
+        episode: ep(1, 5),
+        continuesSeries: true,
+      );
+      rig.w.today = TodayEnvelope(
+        state: TodayStatus.offered,
+        context: const SessionContext(
+          desiredExperience: DesiredExperience.keepMeHooked,
+        ),
+        recommendation: Recommendation(
+          id: 'r1',
+          movie: card.display,
+          episode: card,
+          status: RecommendationStatus.offered,
+          reasons: const [ServerReason('Continue the series.')],
+        ),
+        media: TonightMedia.shows,
+      );
+      rig.avail.shows[1399] = offers(['Netflix']);
+      await boot(tester, rig);
+      expect(rig.avail.seriesCalls, [1399]);
+      expect(find.text('Where to watch'), findsOneWidget);
     });
   });
 
@@ -812,6 +1122,19 @@ void main() {
       expect(find.text('Already seen'), findsNothing);
       expect(find.text('Set my progress'), findsOneWidget);
       expect(find.text('Where to watch'), findsNothing);
+    });
+
+    testWidgets('the Reason dropdown leaves out Already watched for episodes', (
+      tester,
+    ) async {
+      final rig = Rig()..w.today = offeredEpisode();
+      await boot(tester, rig);
+      await tester.tap(find.text('Not feeling it'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select a reason'));
+      await tester.pumpAndSettle();
+      expect(find.text('Too long'), findsOneWidget);
+      expect(find.text('Already watched'), findsNothing);
     });
 
     testWidgets('Watch Tonight records intent only', (tester) async {

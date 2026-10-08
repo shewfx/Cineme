@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_canvas.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/scroll_depth_hint.dart';
+import '../../../shared/models/series.dart' show MediaType;
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../history/data/history_repository.dart';
@@ -350,9 +351,14 @@ class RecommendationView extends ConsumerWidget {
                                 key: const ValueKey('tonight-meta'),
                               ),
                               const SizedBox(height: 14),
-                              if (state != TodayStatus.completed && !isEpisode)
+                              if (state != TodayStatus.completed)
+                                // Where the show streams, as a whole: never a
+                                // claim about this particular episode.
                                 AvailabilitySection(
-                                  tmdbId: movie.tmdbId,
+                                  tmdbId: card?.series.tmdbId ?? movie.tmdbId,
+                                  mediaType: isEpisode
+                                      ? MediaType.series
+                                      : MediaType.movie,
                                   centered: true,
                                 ),
                               // The context line and the two secondary links.

@@ -170,6 +170,11 @@ class FakeMovieProvider:
         self.series: dict[int, ProviderSeries] = {}
         self.episodes: dict[int, tuple[ProviderEpisode, ...]] = {}
         self.tv_detail_calls: list[int] = []
+        self.trending_tv_ids: list[int] = []
+        self.trending_tv_calls = 0
+        # Raw TMDB /tv/{id}/watch/providers payloads by show.
+        self.tv_availability: dict[int, dict[str, Any]] = {}
+        self.tv_availability_calls: list[int] = []
         # Popular-release candidates in popularity order, filtered by window.
         self.popular_ids: list[int] = []
         self.popular_windows: list[tuple[date, date]] = []
@@ -214,6 +219,20 @@ class FakeMovieProvider:
             replace(s, seasons=()) for s in self.series.values() if query.lower() in s.name.lower()
         )
         return ProviderTvPage(page=page, total_pages=1 if hits else 0, results=hits)
+
+    def trending_tv(self) -> tuple[ProviderSeries, ...]:
+        self.trending_tv_calls += 1
+        self._check()
+        return tuple(
+            replace(self.series[i], seasons=()) for i in self.trending_tv_ids if i in self.series
+        )
+
+    def tv_watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        self.tv_availability_calls.append(tmdb_id)
+        self._check()
+        return normalize_watch_providers(
+            {"id": tmdb_id, "results": self.tv_availability.get(tmdb_id, {})}
+        )
 
     def tv_details(self, tmdb_id: int) -> ProviderSeries:
         self.tv_detail_calls.append(tmdb_id)

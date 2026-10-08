@@ -6,6 +6,7 @@ and TV ids overlap."""
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -24,7 +25,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -72,6 +73,9 @@ class Series(Base):
     metadata_status: Mapped[str] = mapped_column(Text, server_default=text("'ready'"))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     episodes_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Normalized watch providers for every region, cached like the film ones.
+    watch_providers: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    watch_providers_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

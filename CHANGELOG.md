@@ -7,6 +7,9 @@
 - A Watchlist filter (All, Movies only, Shows only), a Movies | Shows control on the add screen, show details with Mark watched and Set my progress, an Episodes tab in History, and Blocked shows in Profile.
 - Tonight favours continuing a show you are actively watching, with a bounded bonus that fades after three idle weeks.
 - Specials and alternate episode orders are not included yet.
+- Show details now share Movie Details' blurred poster background and show “Where to watch” (your region, the show as a whole, never a promise about a particular episode); Tonight's episode card shows it too.
+- Watchlist → + → Shows opens with “Trending shows this week” (12 posters, Add/Added, anime included) until you type; search results and trending share one Added state.
+- Tonight's “Not this one?” sheet uses a single “Reason” dropdown (choosing never submits; “Show another” does; “Stop for tonight” needs no reason).
 
 ## 1.1.0
 

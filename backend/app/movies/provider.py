@@ -116,6 +116,12 @@ class MovieMetadataProvider(Protocol):
 
     def search_tv(self, query: str, page: int) -> ProviderTvPage: ...
 
+    def trending_tv(self) -> tuple[ProviderSeries, ...]:
+        """This week's globally trending TV (anime included), not personalized."""
+
+    def tv_watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        """Same shape as `watch_providers`, for a series as a whole."""
+
     def tv_details(self, tmdb_id: int) -> ProviderSeries:
         """Raises AppError 404 NOT_FOUND for an unknown series."""
 
@@ -413,6 +419,7 @@ class TmdbProvider:
         # (start, end) -> (fetched at, films); a handful of keys, oldest dropped.
         self._popular: dict[tuple[date, date], tuple[float, tuple[ProviderMovie, ...]]] = {}
         self._tv_genres: tuple[float, tuple[GenreRef, ...]] | None = None
+        self._trending_tv: tuple[float, tuple[ProviderSeries, ...]] | None = None
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         deadline = self._clock() + BUDGET_SECONDS
@@ -523,6 +530,28 @@ class TmdbProvider:
         total_pages = min(total, MAX_PAGES) if isinstance(total, int) and total >= 0 else 0
         results = tuple(s for s in (normalize_series(r) for r in data["results"]) if s is not None)
         return ProviderTvPage(page=page, total_pages=total_pages, results=results)
+
+    def trending_tv(self) -> tuple[ProviderSeries, ...]:
+        """/trending/tv/week, one page, cached in process for an hour; a failed
+        refresh serves the last good copy while one exists."""
+        cached = self._trending_tv
+        if cached is not None and self._clock() - cached[0] < TRENDING_TTL_SECONDS:
+            return cached[1]
+        try:
+            data = self._get("/trending/tv/week", {"language": "en-US"})
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                raise _upstream_invalid()
+        except AppError:
+            if cached is not None:
+                return cached[1]
+            raise
+        shows = tuple(s for s in (normalize_series(r) for r in data["results"]) if s is not None)
+        self._trending_tv = (self._clock(), shows)
+        return shows
+
+    def tv_watch_providers(self, tmdb_id: int) -> dict[str, Any]:
+        """One call for every region; the service caches it per series."""
+        return normalize_watch_providers(self._get(f"/tv/{tmdb_id}/watch/providers", {}))
 
     def tv_details(self, tmdb_id: int) -> ProviderSeries:
         data = self._get(f"/tv/{tmdb_id}", {"language": "en-US"})

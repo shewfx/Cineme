@@ -218,3 +218,51 @@ def test_migration_0008_defaults_existing_users_to_movies_and_enforces_identity(
         command.upgrade(config, "head")
     finally:
         engine.dispose()
+
+
+def test_tmdb_trending_tv_is_cached_an_hour_and_survives_an_outage() -> None:
+    clock = [0.0]
+    state = {"fail": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/3/trending/tv/week"
+        if state["fail"]:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"results": [tv_raw(), {"junk": True}]})
+
+    p, seen = provider(handler, clock)
+    first = p.trending_tv()
+    assert [s.tmdb_id for s in first] == [1399], "malformed items are skipped"
+    clock[0] = 3599
+    p.trending_tv()
+    assert len(seen) == 1
+    clock[0] = 3601
+    state["fail"] = True
+    assert p.trending_tv() == first, "stale copy while TMDB is down"
+
+
+def test_tmdb_tv_watch_providers_use_the_tv_endpoint_and_the_shared_normalizer() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/3/tv/1399/watch/providers"
+        return httpx.Response(
+            200,
+            json={
+                "results": {
+                    "IN": {
+                        "link": "https://www.themoviedb.org/tv/1399/watch?locale=IN",
+                        "flatrate": [
+                            {
+                                "provider_id": 8,
+                                "provider_name": "Netflix",
+                                "display_priority": 1,
+                                "logo_path": "/n.png",
+                            }
+                        ],
+                    }
+                }
+            },
+        )
+
+    p, _ = provider(handler)
+    regions = p.tv_watch_providers(1399)
+    assert regions["IN"]["streaming"][0]["name"] == "Netflix"

@@ -61,6 +61,13 @@ Future<void> tapText(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens the Reason dropdown in the "Not this one?" sheet and picks [label].
+/// Choosing never submits; the caller taps Show another.
+Future<void> chooseReason(WidgetTester tester, String label) async {
+  await tapText(tester, 'Select a reason');
+  await tapText(tester, label);
+}
+
 String shownTitle(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const ValueKey('tonight-title'))).data!;
 
@@ -444,7 +451,7 @@ void main() {
       final first = shownTitle(tester);
 
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Just give me another');
+      await chooseReason(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
       expect(shownTitle(tester), isNot(first));
@@ -460,7 +467,7 @@ void main() {
       await pickHooked(tester);
       for (var i = 0; i < 3; i++) {
         await tapText(tester, 'Not feeling it');
-        await tapText(tester, 'Not feeling this one');
+        await chooseReason(tester, 'Not feeling this one');
         if (i == 2) expect(find.textContaining('third pass'), findsOneWidget);
         await tapText(tester, 'Show another');
       }
@@ -505,7 +512,7 @@ void main() {
       await tester.pumpAndSettle();
       await pickHooked(tester);
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Just give me another');
+      await chooseReason(tester, 'Just give me another');
       await tapText(tester, 'Show another');
 
       expect(
@@ -689,7 +696,7 @@ void main() {
       await pickHooked(tester);
       expect(tester.takeException(), isNull, reason: 'offered');
       await tapText(tester, 'Not feeling it');
-      await tapText(tester, 'Different genre');
+      await chooseReason(tester, 'Different genre');
       expect(tester.takeException(), isNull, reason: 'reject sheet');
       await tapText(tester, 'Comedy');
       await tapText(tester, 'Show another');

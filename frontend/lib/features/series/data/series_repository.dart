@@ -29,6 +29,14 @@ class EpisodeWatchedResult {
   final bool alreadyRecorded;
 }
 
+/// GET /tv/trending: one bounded page, not personalized.
+class ShowTrendingPage {
+  const ShowTrendingPage({required this.results, required this.inWatchlist});
+
+  final List<Series> results;
+  final Set<int> inWatchlist;
+}
+
 /// Shows and anime through the Cinemé API (ADR 011). Flutter never calls
 /// TMDB; media identity is explicit in every call.
 abstract interface class SeriesRepository {
@@ -51,6 +59,14 @@ abstract interface class SeriesRepository {
     required int expectedVersion,
     required (int, int)? last,
   });
+
+  /// POST /me/blocks/series/{id}: Never recommend this show (reversible; the
+  /// watchlist entry and progress are untouched).
+  Future<void> block(int tmdbId);
+
+  /// GET /tv/trending: this week's trending shows (at most 12, anime
+  /// included) and which are already on the caller's watchlist.
+  Future<ShowTrendingPage> trending();
 
   /// GET /me/blocks/series: shows set to Never recommend.
   Future<List<Series>> blocked();
@@ -151,6 +167,28 @@ class ApiSeriesRepository implements SeriesRepository {
       (key) => _api.put(path, body: request, idempotencyKey: key),
     );
     return showEntryFromJson(asMap(body['entry']));
+  }
+
+  @override
+  Future<void> block(int tmdbId) async {
+    final path = '/api/v1/me/blocks/series/$tmdbId';
+    await _keys.send(
+      commandFingerprint('POST', path, null),
+      (key) => _api.post(path, idempotencyKey: key),
+    );
+  }
+
+  @override
+  Future<ShowTrendingPage> trending() async {
+    final body = await _api.get('/api/v1/tv/trending');
+    final saved = asList(body['in_watchlist']);
+    if (saved.any((id) => id is! int)) throw malformedResponse;
+    return ShowTrendingPage(
+      results: [
+        for (final r in asList(body['results'])) seriesFromJson(asMap(r)),
+      ],
+      inWatchlist: {for (final id in saved) id as int},
+    );
   }
 
   @override

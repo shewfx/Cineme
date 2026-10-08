@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/rating_stars.dart';
+import '../../../core/widgets/selector_field.dart';
 import '../../../shared/models/series.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
@@ -88,6 +89,16 @@ class _RejectSheetState extends State<_RejectSheet> {
       _reason != null &&
       (_reason != RejectReason.wrongGenre || _avoid.isNotEmpty);
 
+  void _stop() => _reason == null
+      ? Navigator.pop(
+          context,
+          const RejectRequest(
+            reason: RejectReason.notTonight,
+            chooseAnother: false,
+          ),
+        )
+      : _submit(false);
+
   void _submit(bool chooseAnother) => Navigator.pop(
     context,
     RejectRequest(
@@ -134,18 +145,38 @@ class _RejectSheetState extends State<_RejectSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Pick a reason. Nothing here changes your long-term taste.',
+              'Pick a reason, or just stop for tonight. Nothing here changes your long-term taste.',
               style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),
-            pills([
-              for (var i = 0; i < widget.reasons.length; i++)
-                ChoicePill(
-                  label: widget.reasons[i].$1,
-                  selected: _choice == i,
-                  onTap: () => setState(() => _choice = i),
-                ),
-            ]),
+            // One dropdown in the app's option-sheet style. Choosing a reason
+            // never submits: Show another does.
+            SelectorField(
+              label: 'Reason',
+              value: _choice == null
+                  ? 'Select a reason'
+                  : widget.reasons[_choice!].$1,
+              onTap: () async {
+                final picked = await showOptionSheet<int>(
+                  context,
+                  title: 'Reason',
+                  options: [
+                    for (var i = 0; i < widget.reasons.length; i++)
+                      (i, widget.reasons[i].$1),
+                  ],
+                  selected: _choice,
+                );
+                final index = picked?.$1;
+                if (index != null && index != _choice) {
+                  setState(() {
+                    _choice = index;
+                    // Details belong to one reason; start clean for the next.
+                    _shorterCap = null;
+                    _avoid.clear();
+                  });
+                }
+              },
+            ),
             if (_reason == RejectReason.tooLong) ...[
               const SizedBox(height: 20),
               const SectionLabel(
@@ -208,9 +239,12 @@ class _RejectSheetState extends State<_RejectSheet> {
               onPressed: _valid ? () => _submit(true) : null,
             ),
             const SizedBox(height: 4),
+            // Separate from the reason: stopping needs none. With a reason
+            // chosen it is recorded as before; without one it is a plain
+            // "not tonight" (temporary, never a dislike).
             Center(
               child: TextButton(
-                onPressed: _valid ? () => _submit(false) : null,
+                onPressed: _reason == null || _valid ? () => _stop() : null,
                 child: const Text('Stop for tonight'),
               ),
             ),

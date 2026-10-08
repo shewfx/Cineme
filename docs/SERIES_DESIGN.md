@@ -219,6 +219,13 @@ Differences and additions relative to the plan above:
 - **The union watchlist** is one SQL `UNION ALL` ordered by the same eight sorts and keyset cursors as films; a show has no single runtime, so it sorts with the unknown runtimes in both directions.
 - **TV genre ids** differ from film ids, so two intent maps in `weights_v2` also list 10759 (exciting) and 10765 (deep), and display names merge the TV registry (film names win). This is the same genre heuristic as for films, not a new signal.
 - **Not built:** a series rating control (the endpoint exists and stores a separate 1 to 5 value), editing an episode rating after Mark watched (the endpoint exists), anime-specific badges, discovery lists for shows, and any use of episode or series ratings in scoring.
-- **Frontend identity.** `Movie` and `Series` share a small `TitleInfo` interface so posters and rows draw both, while navigation, requests and storage always carry the `MediaType`. An episode recommendation draws the show through a display-only `Movie` whose id is never used for a film lookup (the availability section is not shown for episodes).
+- **Frontend identity.** `Movie` and `Series` share a small `TitleInfo` interface so posters and rows draw both, while navigation, requests and storage always carry the `MediaType`. An episode recommendation draws the show through a display-only `Movie` whose id is never used for a film lookup (availability for an episode is the show's, fetched by the TV id).
+
+### Follow-up in PR #16: shared details frame, trending shows, show availability, Reason dropdown
+
+- **Movie vs Show Details audit.** Shared (one component each): blurred poster backdrop and gradients (`DetailsBackdropScaffold`), header with poster, title and facts, overview, Where to watch (`AvailabilitySection`, detailed states, provider priority Netflix, Prime Video, JioHotstar, Apple TV, at most 3 chips plus "+N more", streaming/rent/buy, JustWatch attribution), stale note, scroll hint, pinned Remove and Never recommend. Intentional differences: a show has progress with Mark episode watched and Set my progress instead of a film Mark watched / rating / history; its facts have no runtime; Never recommend blocks the series (undo in Profile); removing keeps progress; the availability note says it is for the show as a whole.
+- **Trending shows**: `GET /tv/trending`, 12 items, hourly provider cache, shared grid widgets with the film grid; the film dropdown and onboarding are unchanged.
+- **Show availability**: `GET /tv/{id}/availability`, migration 0009 adds the show's own provider cache; movie and TV ids never share a cache or a client provider key (`AvailabilityKey` carries the media type).
+- **Reason dropdown** replaces the six reason chips in the "Not this one?" sheet; the options, the Already watched handling (not offered for episodes) and the request shapes are unchanged.
 
 Validation: see `docs/IMPLEMENTATION_STATUS.md`.

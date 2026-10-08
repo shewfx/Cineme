@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/format.dart';
+import '../../../core/widgets/details_scaffold.dart';
 import '../../../core/widgets/movie_poster.dart';
+import '../../../core/widgets/scroll_depth_hint.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/selector_field.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/inventory.dart';
 import '../../../shared/models/series.dart';
+import '../../today/presentation/availability_section.dart';
 import '../../today/presentation/feedback_sheets.dart';
 import '../../watchlist/presentation/watchlist_page.dart' show showStateLine;
 import '../application/series_controllers.dart';
@@ -63,117 +67,235 @@ class _SeriesDetailsPageState extends ConsumerState<SeriesDetailsPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  bool _blocked = false;
+  bool _removed = false;
+
   @override
   Widget build(BuildContext context) {
     final details = ref.watch(seriesDetailsProvider(widget.tmdbId));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Show details')),
-      body: SafeArea(
-        child: details.when(
-          skipLoadingOnReload: true,
-          loading: () =>
-              const Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
-          error: (error, _) => error is ApiError && error.status == 404
-              ? const EmptyState(
-                  title: 'Show not found',
-                  message: 'This show is no longer available from TMDB.',
-                )
-              : ErrorPanel(
-                  onRetry: () =>
-                      ref.invalidate(seriesDetailsProvider(widget.tmdbId)),
+    final data = details.value;
+    // The same frame as Movie Details: enlarged, blurred poster behind a dark
+    // overlay that fades into the background; no poster keeps the plain one.
+    return DetailsBackdropScaffold(
+      title: 'Show details',
+      posterUrl: data?.series.posterUrl,
+      body: details.when(
+        skipLoadingOnReload: true,
+        loading: () => const DetailsLoadingSkeleton(),
+        error: (error, _) => error is ApiError && error.status == 404
+            ? const EmptyState(
+                title: 'Show not found',
+                message: 'This show is no longer available from TMDB.',
+              )
+            : ErrorPanel(
+                onRetry: () =>
+                    ref.invalidate(seriesDetailsProvider(widget.tmdbId)),
+              ),
+        data: _content,
+      ),
+      actions: data == null ? null : _actions(data.entry),
+    );
+  }
+
+  Widget _content(SeriesDetails d) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodyMedium?.copyWith(
+      color: AppColors.textMuted,
+    );
+    final entry = d.entry;
+    final series = d.series;
+    final facts = <String>[
+      'Show',
+      if (d.firstAirDate != null)
+        shortDate(d.firstAirDate!)
+      else if (series.year != null)
+        '${series.year}',
+      ?series.status,
+      if (series.voteAverage case final rating?
+          when rating.isFinite && rating > 0)
+        'TMDB ${rating.toStringAsFixed(1)}',
+      if (series.genres.isNotEmpty) series.genres.map((g) => g.name).join(', '),
+    ];
+    return ScrollDepthHint(
+      child: SingleChildScrollView(
+        key: const ValueKey('series-details-scroll'),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x99000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 108,
+                      height: 162,
+                      child: MoviePoster(movie: series),
+                    ),
+                  ),
                 ),
-          data: _content,
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Semantics(
+                          header: true,
+                          child: Text(
+                            series.name,
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontSize: 27,
+                            ),
+                          ),
+                        ),
+                        if (d.originalName != null &&
+                            d.originalName != series.name) ...[
+                          const SizedBox(height: 6),
+                          Text(d.originalName!, style: muted),
+                        ],
+                        const SizedBox(height: 14),
+                        Text(facts.join('  ·  '), style: muted),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (d.stale) ...[
+              const SizedBox(height: 14),
+              Text(
+                'Showing saved details. Fresh information is temporarily unavailable.',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            if (entry == null || _removed) _notOnList(d) else _progress(entry),
+            if (d.overview != null) ...[
+              const SizedBox(height: 28),
+              Semantics(
+                header: true,
+                child: Text('Overview', style: theme.textTheme.titleLarge),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                d.overview!,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: AppColors.textSoft,
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            AvailabilitySection(
+              tmdbId: series.tmdbId,
+              mediaType: MediaType.series,
+              detailed: true,
+            ),
+            if (entry != null && !_removed) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Added ${shortDate(entry.addedAt)}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              d.limitations,
+              key: const ValueKey('series-limitations'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.textMuted,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _content(SeriesDetails d) {
-    final text = Theme.of(context).textTheme;
-    final entry = d.entry;
-    final series = d.series;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 108,
-                height: 162,
-                child: MoviePoster(movie: series),
-              ),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(
-                    header: true,
-                    child: Text(series.name, style: text.headlineSmall),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    [
-                      'Show',
-                      if (series.year != null) '${series.year}',
-                      ?series.status,
-                    ].join('  ·  '),
-                    style: text.bodyMedium?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  if (series.genres.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      series.genres.map((g) => g.name).join(', '),
-                      style: text.bodyMedium?.copyWith(
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
+  /// The pinned bar, like Movie Details: remove and never recommend. Show
+  /// specific actions (Mark watched, Set my progress) live with the progress.
+  Widget _actions(ShowEntry? entry) {
+    final children = <Widget>[];
+    if (_removed) {
+      children.add(const DetailStatusLine('Removed from watchlist'));
+    } else if (entry != null) {
+      children.add(
+        DetailActionButton(
+          label: 'Remove from watchlist',
+          icon: Icons.bookmark_remove_outlined,
+          onPressed: _busy == null ? () => _remove(entry) : null,
         ),
-        const SizedBox(height: 24),
-        if (entry == null) _notOnList(d) else _progress(entry),
-        if (d.overview != null) ...[
-          const SizedBox(height: 24),
-          Text('Overview', style: text.titleMedium),
-          const SizedBox(height: 6),
-          Text(d.overview!, style: text.bodyMedium),
-        ],
-        const SizedBox(height: 24),
-        Text(
-          d.limitations,
-          key: const ValueKey('series-limitations'),
-          style: text.bodySmall?.copyWith(color: AppColors.textMuted),
+      );
+    }
+    if (_blocked) {
+      children.add(const DetailStatusLine('Never recommend · undo in Profile'));
+    } else {
+      children.add(
+        DetailActionButton(
+          label: 'Never recommend',
+          icon: Icons.block_outlined,
+          onPressed: _busy == null ? _block : null,
         ),
-        if (d.stale)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Showing saved details; TMDB could not be reached.',
-              style: text.bodySmall?.copyWith(color: AppColors.textMuted),
-            ),
+      );
+    }
+    if (_busy != null) {
+      children.add(
+        const Padding(
+          padding: EdgeInsets.all(10),
+          child: SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        if (entry != null) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: TextButton.icon(
-              onPressed: _busy != null ? null : () => _remove(entry),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Remove from watchlist'),
-            ),
+        ),
+      );
+    }
+    return DetailActionsBar(children: children);
+  }
+
+  Future<void> _block() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Never recommend this show?'),
+        content: const Text(
+          'Cinemé will skip it in future picks. You can undo this in Profile. '
+          'The show and your progress stay in your watchlist.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Never recommend'),
           ),
         ],
-      ],
+      ),
     );
+    if (accepted != true || !mounted) return;
+    await _run('block', () async {
+      await ref.read(seriesActionsProvider).block(widget.tmdbId);
+      if (mounted) setState(() => _blocked = true);
+      _say('This show won’t be recommended.');
+    });
   }
 
   Widget _notOnList(SeriesDetails d) => Column(
@@ -188,10 +310,10 @@ class _SeriesDetailsPageState extends ConsumerState<SeriesDetailsPage> {
         label: 'Add to watchlist',
         loading: _busy == 'add',
         onPressed: d.series.canAdd
-            ? () => _run(
-                'add',
-                () => ref.read(seriesActionsProvider).add(widget.tmdbId),
-              )
+            ? () => _run('add', () async {
+                await ref.read(seriesActionsProvider).add(widget.tmdbId);
+                if (mounted) setState(() => _removed = false);
+              })
             : null,
       ),
     ],
@@ -204,7 +326,7 @@ class _SeriesDetailsPageState extends ConsumerState<SeriesDetailsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Your progress', style: text.titleMedium),
+        Text('Your progress', style: text.titleLarge),
         const SizedBox(height: 6),
         Text(
           progress == null
@@ -291,6 +413,7 @@ class _SeriesDetailsPageState extends ConsumerState<SeriesDetailsPage> {
   Future<void> _remove(ShowEntry entry) async {
     await _run('remove', () async {
       await ref.read(seriesActionsProvider).remove(entry.id);
+      if (mounted) setState(() => _removed = true);
       _say('Removed “${entry.series.name}”. Your progress is kept.');
     });
   }

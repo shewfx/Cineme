@@ -940,3 +940,173 @@ def test_movie_only_clients_never_trigger_show_refreshes(
     )
     assert r.status_code == 201
     assert len(shows.tv_detail_calls) == calls
+
+
+# --- trending shows (add screen) ----------
+
+
+@pytest.fixture
+def trending_shows(shows: FakeMovieProvider) -> FakeMovieProvider:
+    for i in range(1, 16):
+        shows.series[9000 + i] = tv(9000 + i, f"Trend Show {i}")
+    shows.series[9100] = tv(9100, "Adult Show", adult=True)
+    shows.series[9101] = tv(9101, "No Poster Show", poster_path=None)
+    shows.series[9102] = tv(9102, "Blocked Show")
+    shows.series[9103] = tv(9103, "Ongoing Show")  # the user is mid-way through it
+    shows.series[9104] = tv(9104, "Anime Show", genre_ids=(16, 10759), origin_countries=("JP",))
+    shows.episodes[9103] = episodes_for(((1, 3),))
+    shows.series[9103] = tv(9103, "Ongoing Show", seasons=((1, 3),))
+    return shows
+
+
+def trending_list(user: Shows) -> Any:
+    return user.client.get("/api/v1/tv/trending", headers=user.headers)
+
+
+def test_trending_shows_are_bounded_ordered_and_not_personalized(
+    a: Shows, b: Shows, trending_shows: FakeMovieProvider
+) -> None:
+    trending_shows.trending_tv_ids = [9100, 9101, *range(9001, 9016)]
+    first = trending_list(a)
+    assert first.status_code == 200
+    body = first.json()
+    assert [s["name"] for s in body["results"]] == [f"Trend Show {i}" for i in range(1, 13)]
+    assert set(body) == {"results", "in_watchlist"} and len(body["results"]) == 12
+    assert trending_list(b).json()["results"] == body["results"]
+    assert a.client.get("/api/v1/tv/trending").status_code == 401
+
+
+def test_trending_shows_follow_the_add_rules_and_keep_ongoing_shows(
+    a: Shows, b: Shows, trending_shows: FakeMovieProvider
+) -> None:
+    trending_shows.trending_tv_ids = [9100, 9101, 9102, 9103, 9104, 9001]
+    # Mid-way through 9103: some episodes watched, still airing.
+    assert a.add_series(9103).status_code == 201
+    assert a.mark(9103, 1, 1).status_code == 200
+    blocked = a.client.post("/api/v1/me/blocks/series/9102", headers=a.headers | a.key())
+    assert blocked.status_code == 200
+    body = trending_list(a).json()
+    ids = [s["tmdb_id"] for s in body["results"]]
+    assert ids == [9103, 9104, 9001], "adult, poster-less and blocked shows are left out"
+    assert body["in_watchlist"] == [9103], "already added reads Added; ongoing is not dropped"
+    anime = next(s for s in body["results"] if s["tmdb_id"] == 9104)
+    assert anime["can_add"] is True and anime["genre_ids"] == [16, 10759]
+    other = trending_list(b).json()
+    assert [s["tmdb_id"] for s in other["results"]] == [9102, 9103, 9104, 9001]
+    assert other["in_watchlist"] == [], "another user's list and blocks do not leak"
+
+
+def test_show_ids_stay_distinct_from_film_ids_in_trending(
+    a: Shows, trending_shows: FakeMovieProvider
+) -> None:
+    trending_shows.films[9001] = film(9001, "A Film With The Same Id")
+    trending_shows.trending_tv_ids = [9001]
+    assert a.add(9001).status_code == 201  # the film
+    body = trending_list(a).json()
+    assert body["in_watchlist"] == [], "a film with the same number is not the show"
+    assert a.add_series(9001).status_code == 201
+    assert trending_list(a).json()["in_watchlist"] == [9001]
+
+
+def test_trending_shows_failure_is_visible_and_search_still_works(
+    a: Shows, trending_shows: FakeMovieProvider
+) -> None:
+    trending_shows.down = True
+    failed = trending_list(a)
+    assert failed.status_code == 503 and failed.json()["error"]["retryable"] is True
+    trending_shows.down = False
+    assert (
+        a.client.get("/api/v1/tv/search", params={"q": "Trend"}, headers=a.headers).status_code
+        == 200
+    )
+    trending_shows.trending_tv_ids = [9001]
+    assert trending_list(a).status_code == 200
+    assert a.listing(media="shows")["items"] == [], "browsing adds nothing"
+
+
+# --- where to watch (shows) ----------
+
+
+def _offer(pid: int, name: str) -> dict[str, Any]:
+    return {"provider_id": pid, "provider_name": name, "display_priority": 1, "logo_path": "/l.png"}
+
+
+def _availability(user: Shows, tmdb_id: int) -> Any:
+    return user.client.get(f"/api/v1/tv/{tmdb_id}/availability", headers=user.headers)
+
+
+def _region(user: Shows, code: str | None) -> None:
+    r = user.client.patch(
+        "/api/v1/me",
+        json={"country_code": code},
+        headers=user.headers | user.key(),
+    )
+    assert r.status_code == 200
+
+
+def test_show_availability_uses_the_users_region_and_the_shows_own_cache(
+    a: Shows, shows: FakeMovieProvider, engine: Engine
+) -> None:
+    shows.tv_availability[ALPHA] = {
+        "IN": {
+            "link": "https://www.themoviedb.org/tv/1399/watch?locale=IN",
+            "flatrate": [_offer(8, "Netflix"), _offer(122, "JioHotstar")],
+            "rent": [_offer(2, "Apple TV")],
+        },
+        "US": {"flatrate": [_offer(9, "Amazon Prime Video")]},
+    }
+    a.add_series(ALPHA)
+    unknown = _availability(a, ALPHA).json()
+    assert unknown["region"] is None and unknown["streaming"] == []
+    assert shows.tv_availability_calls == [], "no region: no TMDB call"
+
+    _region(a, "IN")
+    body = _availability(a, ALPHA).json()
+    assert body["region"] == "IN"
+    assert {o["name"] for o in body["streaming"]} == {"Netflix", "JioHotstar"}
+    assert [o["name"] for o in body["rent"]] == ["Apple TV"]
+    assert body["link"].startswith("https://www.themoviedb.org/")
+    _availability(a, ALPHA)
+    assert shows.tv_availability_calls == [ALPHA], "cached for the day on the show row"
+    _region(a, "US")
+    assert [o["name"] for o in _availability(a, ALPHA).json()["streaming"]] == [
+        "Amazon Prime Video"
+    ]
+    assert shows.tv_availability_calls == [ALPHA], "all regions come from one fetch"
+    assert scalar(engine, "SELECT watch_providers IS NOT NULL FROM cineme.series") is True
+
+
+def test_show_and_film_availability_do_not_share_a_cache(
+    a: Shows, shows: FakeMovieProvider
+) -> None:
+    shows.films[ALPHA] = film(ALPHA, "Same Number")
+    shows.availability[ALPHA] = {"IN": {"flatrate": [_offer(8, "Netflix")]}}
+    shows.tv_availability[ALPHA] = {"IN": {"flatrate": [_offer(9, "Amazon Prime Video")]}}
+    _region(a, "IN")
+    a.add(ALPHA)
+    a.add_series(ALPHA)
+    movie = a.client.get(f"/api/v1/movies/{ALPHA}/availability", headers=a.headers).json()
+    show = _availability(a, ALPHA).json()
+    assert [o["name"] for o in movie["streaming"]] == ["Netflix"]
+    assert [o["name"] for o in show["streaming"]] == ["Amazon Prime Video"]
+
+
+def test_show_availability_serves_stale_during_an_outage_and_fails_visibly_without_cache(
+    a: Shows, shows: FakeMovieProvider, engine: Engine
+) -> None:
+    shows.tv_availability[ALPHA] = {"IN": {"flatrate": [_offer(8, "Netflix")]}}
+    _region(a, "IN")
+    a.add_series(ALPHA)
+    a.add_series(BETA)
+    assert _availability(a, ALPHA).status_code == 200
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE cineme.series SET watch_providers_fetched_at = now() - interval '3 days'")
+        )
+    shows.down = True
+    stale = _availability(a, ALPHA).json()
+    assert stale["stale"] is True and [o["name"] for o in stale["streaming"]] == ["Netflix"]
+    failed = _availability(a, BETA)
+    assert failed.status_code == 503, "never fetched: the failure is visible"
+    assert _availability(a, 123456).status_code == 404
+    assert a.client.get("/api/v1/tv/1399/availability").status_code == 401

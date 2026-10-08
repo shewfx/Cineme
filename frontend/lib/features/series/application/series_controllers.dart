@@ -33,6 +33,13 @@ final blockedShowsProvider = FutureProvider.autoDispose<List<Series>>((ref) {
   return ref.watch(seriesRepositoryProvider)!.blocked();
 });
 
+/// This week's trending shows for the add screen. Kept per user and not
+/// auto-disposed, so clearing the query shows it again without a reload.
+final trendingShowsProvider = FutureProvider<ShowTrendingPage>((ref) {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(seriesRepositoryProvider)!.trending();
+});
+
 /// Regular seasons and episodes for the progress picker.
 final seriesSeasonsProvider = FutureProvider.autoDispose
     .family<List<SeasonInfo>, int>(
@@ -234,6 +241,12 @@ class SeriesActions {
   Future<void> add(int tmdbId) async {
     await _repo.add(tmdbId);
     refreshAfterShowChange(_ref);
+  }
+
+  Future<void> block(int tmdbId) async {
+    await _repo.block(tmdbId);
+    refreshAfterShowChange(_ref);
+    _ref.invalidate(blockedShowsProvider);
   }
 
   /// Archives the entry; its progress and history are kept.

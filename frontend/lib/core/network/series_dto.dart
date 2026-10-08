@@ -112,6 +112,8 @@ SeriesDetails seriesDetailsFromJson(Map<String, dynamic> json) {
   final entry = json['entry'];
   return SeriesDetails(
     series: seriesFromJson(asMap(json['series'])),
+    originalName: _opt<String>(json, 'original_name'),
+    firstAirDate: _date(json, 'first_air_date'),
     overview: _opt<String>(json, 'overview'),
     seasonCount: _req<int>(json, 'season_count'),
     stale: _req<bool>(json, 'stale'),

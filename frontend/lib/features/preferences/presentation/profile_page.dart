@@ -398,7 +398,7 @@ class _RegionRow extends ConsumerWidget {
           if (picked == null) return;
           await account.setRegion(picked.$1);
           ref.invalidate(profileProvider);
-          ref.invalidate(movieAvailabilityProvider);
+          ref.invalidate(availabilityProvider);
         } catch (_) {
           messenger.showSnackBar(
             const SnackBar(
