@@ -442,6 +442,20 @@ def component_r(last_offered_at: datetime | None, now: datetime, cfg: EngineConf
     return min(Decimal(_whole_days(now, last_offered_at)) / cfg.recency_saturation_days, ONE)
 
 
+def in_continuity_window(c: Candidate, local_date: date, cfg: EngineConfig) -> bool:
+    """True while the show still earns a continuity bonus: a confirmed watch
+    fewer than window_days ago. D's own-series exemption applies only then."""
+    cont = cfg.continuity
+    if (
+        cont is None
+        or c.kind != "series"
+        or c.confirmed_watch_count <= 0
+        or c.last_confirmed_watch is None
+    ):
+        return False
+    return max(0, (local_date - c.last_confirmed_watch).days) < cont.window_days
+
+
 def continuity_fraction(
     c: Candidate, local_date: date, cfg: EngineConfig, recency: Decimal
 ) -> Decimal:
@@ -589,7 +603,7 @@ def score(
     genres = set(c.genre_ids)
     dims = context_dimensions(c, inp.context, cfg)
     recent = inp.recent_genre_sets
-    if c.kind == "series" and len(inp.recent_series_ids) == len(recent):
+    if in_continuity_window(c, inp.local_date, cfg) and len(inp.recent_series_ids) == len(recent):
         recent = tuple(
             g for g, sid in zip(recent, inp.recent_series_ids, strict=True) if sid != c.tmdb_id
         )

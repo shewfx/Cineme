@@ -306,12 +306,36 @@ def test_primary_counts_sum_to_the_candidates() -> None:
 
 def test_diversity_ignores_recent_viewings_of_the_candidates_own_series() -> None:
     recent = ((18, 35),)  # last night's episode of show 1: Drama + Comedy
-    same = show(1, genre_ids=(18, 35))
+    same = show(1, genre_ids=(18, 35), **watched(1, 1))
     other = show(2, genre_ids=(18, 35))
     result = run([same, other], recent_genre_sets=recent, recent_series_ids=(1,))
     by_id = {r.candidate.tmdb_id: r for r in result.ranked}
     assert by_id[1].components["D"] == D("0.5"), "own series ignored: neutral, not zero"
     assert by_id[2].components["D"] == 0, "another show with identical genres is not varied"
+
+
+@pytest.mark.parametrize(
+    ("days_ago", "exempt"),
+    [(0, True), (20, True), (21, False), (60, False)],
+)
+def test_the_own_series_exemption_ends_with_the_continuity_window(
+    days_ago: int, exempt: bool
+) -> None:
+    """D ignores the show's own recent viewing only while the show still earns
+    a continuity bonus (window_days = 21); afterwards the normal rule applies."""
+    recent = ((18, 35),)
+    c = show(1, genre_ids=(18, 35), **watched(days_ago, 1))
+    result = run([c], recent_genre_sets=recent, recent_series_ids=(1,))
+    r = result.ranked[0]
+    assert r.components["D"] == (D("0.5") if exempt else 0)
+    assert (r.contributions["S"] > 0) is exempt, "same boundary as the bonus"
+
+
+def test_a_show_with_no_confirmed_watch_gets_the_normal_diversity_rule() -> None:
+    result = run(
+        [show(1, genre_ids=(18, 35))], recent_genre_sets=((18, 35),), recent_series_ids=(1,)
+    )
+    assert result.ranked[0].components["D"] == 0
 
 
 def test_movie_scores_are_identical_under_v1_and_v2() -> None:
