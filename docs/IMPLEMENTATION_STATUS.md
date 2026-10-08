@@ -2,13 +2,29 @@
 
 Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md). Future work: [ROADMAP.md](ROADMAP.md).
 
+## Current release state (2026-10-09)
+
+| Artifact | Version | Evidence |
+|---|---|---|
+| `main` source | 1.2.1+6 | `frontend/pubspec.yaml` after PR #17 (squash commit `03b5abb`) |
+| Hosted web/PWA (deployed build) | 1.2.0+5 | project owner; onboarding, discovery and shows/anime |
+| Distributed Android APK | **1.2.1+6** | project owner; replacement APK, sign-in confirmed on a device |
+| Git tags on GitHub | `v1.0.3` only | `git ls-remote --tags origin`; `v1.2.0+5` exists only as a local tag, nothing is tagged for 1.2.1 |
+| GitHub releases | Cinemé v1.0.3 only | `gh release list`; no GitHub release carries a 1.2.x build or an APK |
+
+Deployed and distributed builds are not GitHub releases: the web deploy and the APK above were published outside GitHub Releases, and there is no public APK download.
+
+**PR #17 (1.2.1+6), merged 2026-10-08:** Android release builds are forced to the absolute production API URL (`scripts/build_release_apk.ps1`). After building, the script inspects every packaged Flutter library (`lib/*/libapp.so`) and refuses to copy the APK out for distribution unless each one contains the production API target and none contains a loopback (`localhost`, `127.x`, `0.0.0.0`, `10.0.2.2`, `10.0.3.2`, `[::1]`) or `same-origin` target. The API client also logs credential-safe diagnostics for network failures (method, scheme/host/port/path, error type; no query string, headers or bodies). PR validation: the guard accepted the corrected APK and rejected a loopback fixture; no deployment or migration. The web app was not redeployed for 1.2.1 and stays at 1.2.0+5.
+
+Not re-verified for this record: the hosted database migration level and the live `/version.json`.
+
 ## Release decision (2026-10-08)
 
 The owner approved releasing onboarding, discovery and shows/anime together as **v1.2.0+5** (1.1.0 is not released separately). Build 5 was never shipped on any channel (web build 4, last APK code 3). Migrations pending on the hosted database: `0007`, `0008`, `0009`, subject to the dry run.
 
 ## Shows and anime — branch `feat/series-next-episode` (2026-10-08)
 
-Implemented, not merged, **not applied to any hosted database, not deployed, no version assigned**. Decision: [ADR 011](adr/011-shows-and-anime-next-episode.md); design and notes: [SERIES_DESIGN.md](SERIES_DESIGN.md).
+Status at the time of this record: implemented, not merged, **not applied to any hosted database, not deployed, no version assigned**. Since then merged in PR #16 and shipped in 1.2.0+5 (see [Current release state](#current-release-state-2026-10-09)). Decision: [ADR 011](adr/011-shows-and-anime-next-episode.md); design and notes: [SERIES_DESIGN.md](SERIES_DESIGN.md).
 
 - **Backend:** migration `0008`; TMDB TV provider methods (search, details, regular episodes in chunks of 20 seasons, TV genres); series API (search, details, seasons, progress, mark next watched, ratings, blocks, episode history); union watchlist with a media filter and the `X-Cineme-Features: series-v1` capability header; `tonight_media` preference; `weighted_v2` with next-episode candidates and the bounded continuity bonus (movie scores identical to `weighted_v1`); refresh of stale shows before a pick; episode accept / reject / watched / follow-up.
 - **PR #16 follow-up:** migration `0009` (show provider cache), `GET /tv/trending`, `GET /tv/{id}/availability`; shared details backdrop on Show Details, Where to watch on Show Details and the Tonight episode card, Trending shows grid on the add screen, Reason dropdown in the Not this one sheet.
@@ -24,6 +40,8 @@ Implemented, not merged, **not applied to any hosted database, not deployed, no 
 Not performed: a hosted migration dry run for `0008`, manual browser or device walkthrough, any deployment.
 
 ## Release and hosted state (verified 2026-10-08)
+
+Historical snapshot from before the 1.2 releases; superseded by [Current release state](#current-release-state-2026-10-09).
 
 | Artifact | Version | Evidence |
 |---|---|---|

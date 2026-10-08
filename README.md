@@ -79,7 +79,7 @@ Merged code, the hosted web app and the Android APK are versioned independently 
 |---|---|---|
 | Web / PWA — [cineme-theta.vercel.app](https://cineme-theta.vercel.app) | 1.2.0+5 | Onboarding, discovery, and shows/anime |
 | Android APK | 1.2.1+6 | Replacement build; sign-in confirmed on a device by the maintainer. Distributed directly — there is no public download link yet |
-| `main` | 1.2.1+6 | Adds the Android release-target guard (PR #17); no web-facing changes over 1.2.0+5 |
+| `main` | 1.2.1+6 | Adds the Android release-target guard (PR #17); web not redeployed for 1.2.1 |
 
 1.2.1 is an Android release fix. The release script ([scripts/build_release_apk.ps1](scripts/build_release_apk.ps1)) forces the production API URL into Android release builds, then inspects every packaged Flutter library. The release fails, and no APK is copied out for distribution, unless each library contains the production API target and none contains a loopback (`localhost`, `127.x`, `10.0.2.2`, …) or `same-origin` target.
 
