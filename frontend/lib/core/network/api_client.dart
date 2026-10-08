@@ -65,6 +65,18 @@ class ApiClient {
     required String idempotencyKey,
   }) => _send('DELETE', path, headers: {'Idempotency-Key': idempotencyKey});
 
+  /// Idempotent replacement (series progress); same key rules as [patch].
+  Future<Map<String, dynamic>> put(
+    String path, {
+    required Object body,
+    required String idempotencyKey,
+  }) => _send(
+    'PUT',
+    path,
+    body: body,
+    headers: {'Idempotency-Key': idempotencyKey},
+  );
+
   /// Private mutations carry the caller's UUID [idempotencyKey]; a retry of
   /// the same command must reuse it.
   Future<Map<String, dynamic>> patch(
@@ -95,6 +107,9 @@ class ApiClient {
           method: method,
           headers: {
             ...headers,
+            // This client renders shows and episodes (ADR 011); without the
+            // header the server keeps the movie-only contract.
+            'X-Cineme-Features': 'series-v1',
             if (token != null) 'Authorization': 'Bearer $token',
           },
         ),

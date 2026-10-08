@@ -227,6 +227,25 @@ Start with this hand-chosen baseline. Capture accept/reject/complete rates, scop
 
 Filters and primary exclusion counts; missing/null boundary cases; cap equality; desired-experience matrix and emotion-independence; pace targets; trait maximum at 0/1; rating shrinkage and edits; no learning from rejection; multigenre allocation; diversity Jaccard; floor-day/saturation boundaries; quality shrinkage; weight sum; shuffled candidate input; exact ties; complete test-fixture replay and bounded stored-comparison checks; worked-example totals; no network access. Include a metamorphic test that an unrelated added candidate never changes existing component scores.
 
+## `weighted_v2`: next-episode candidates and series continuity (ADR 011)
+
+`weights_v2` repeats every `weights_v1` weight and parameter unchanged (still summing to 100), adds TV genre ids to two intent maps (`exciting` also 10759 Action & Adventure, `deep` also 10765 Sci-Fi & Fantasy) and a `continuity` block `{max_bonus: 12, window_days: 21, ramp_watches: 3}`. For movie-only input `weighted_v2` returns exactly the components, totals, order and reasons of `weighted_v1` (tested); old recommendations keep their stored version.
+
+**Candidates.** Active movie entries and, per active show, **one** candidate standing for its single next regular episode, or the reason it has none. The Tonight media preference removes the other kind first; their number is reported as `hidden_by_preference`. Primary exclusion precedence for shows: `series_unavailable`, `series_completed`, `series_caught_up`, `next_episode_not_aired`, `series_blocked`, `offered_this_session`, `genre_blocked`, `runtime_unknown`, `runtime_exceeded`; counts remain exclusive and sum to the candidate count. Eligibility (aired, runtime, media preference, blocks, skips) is therefore always applied before ranking. Runtime is the episode's own; unknown stays unknown (excluded under a cap, eligible without one).
+
+**Episode base score** uses the six components with these inputs: G, C and Q from the show's genres and votes (G still learns only from film ratings; episode and series ratings feed nothing); A from the show's watchlist age; R from the **episode's** own last offer (a never-offered next episode is 1); D from the last three known viewings (films and episodes) **ignoring those of the candidate's own series** (they are dropped, not replaced, so a freshly watched show reads neutral rather than zero).
+
+**Continuity bonus** `S`, in points, for episode candidates only (films: 0):
+
+```
+n    = confirmed episode watches of the show with local date in [L - 21 days, L]
+last = local date of the newest one;   days = L - last
+S    = 12 * max(0, 1 - days/21) * (0.5 + 0.5 * min(1, (n-1)/2)) * R_episode        (0 when n = 0)
+episode score = 35G + 30C + 10D + 10A + 10R + 5Q + S
+```
+
+Only Mark watched, a follow-up "yes" and "Mark next episode watched" create confirmed watches; showing or accepting a pick and progress corrections never do. `S <= 12` however many episodes were watched, falls linearly to 0 after 21 idle days, and is scaled by the episode's own recency `R` (a "Not tonight" yesterday leaves 1/14 of it, through the existing skip semantics, with no new penalty state). A rival with a base score more than `S` points higher (for example a confirmed intent match, worth 18 points through C) wins. Tie-break: unrounded total descending, `added_at` ascending, film before show, TMDB id ascending. The reason `continues_series` ("Continue the series you're watching — S1 E5.") is emitted when `S` is the strongest positive contribution; the Why drawer lists `S` beside the six components. Evidence stores `S` in components, contributions and the config snapshot (`continuity`). The sum is a deterministic point total, not a probability.
+
 ## Inputs added at P4 close-out
 
 From the already_watched rejection (ADR 006 amendment) viewings exist before P5: they feed the `already_watched` filter and the D component's recent genre snapshots exactly as specified above. No ratings exist yet, so G is unchanged. Streaming availability (ADR 007) is display-only and never an input.

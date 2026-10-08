@@ -9,8 +9,10 @@ from app.core import idempotency
 from app.core.auth import Identity, current_identity
 from app.core.db import get_session
 from app.core.errors import AppError
+from app.core.features import series_enabled
 from app.movies import service as movies
 from app.movies.router import Provider
+from app.series import service as series_service
 from app.users.models import User
 
 from . import service
@@ -78,6 +80,8 @@ def choose(
 ) -> JSONResponse:
     key = idempotency.parse_key(idempotency_key)
     names, base = _display(provider)
+    if series_enabled():  # may end "caught up"; outside any lock, bounded
+        series_service.refresh_stale(session, provider, identity.user_id)
     status, payload = service.choose(session, identity.user_id, body, key, names, base)
     return JSONResponse(payload, status_code=status)
 
@@ -145,6 +149,8 @@ def reject(
 ) -> JSONResponse:
     key = idempotency.parse_key(idempotency_key)
     names, base = _display(provider)
+    if series_enabled() and body.choose_another:
+        series_service.refresh_stale(session, provider, identity.user_id)
     status, payload = service.reject(session, identity.user_id, rec_id, body, key, names, base)
     return JSONResponse(payload, status_code=status)
 

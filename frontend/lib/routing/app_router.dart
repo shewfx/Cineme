@@ -12,6 +12,7 @@ import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/movies/presentation/movie_details_page.dart';
 import '../features/preferences/presentation/profile_page.dart';
 import '../features/search/presentation/search_page.dart';
+import '../features/series/presentation/series_details_page.dart';
 import '../features/today/presentation/context_view.dart';
 import '../features/today/presentation/today_page.dart';
 import '../features/watchlist/presentation/watchlist_page.dart';
@@ -68,6 +69,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 builder: (_, _) => const WatchlistPage(),
               ),
               GoRoute(
+                path: '/series/:tmdbId',
+                builder: (context, state) {
+                  final tmdbId = int.tryParse(
+                    state.pathParameters['tmdbId'] ?? '',
+                  );
+                  if (tmdbId == null || tmdbId <= 0 || tmdbId > 2147483647) {
+                    return const InvalidMovieDetailsPage();
+                  }
+                  return SeriesDetailsPage(tmdbId: tmdbId);
+                },
+              ),
+              GoRoute(
                 path: '/movies/:tmdbId',
                 builder: (context, state) {
                   final tmdbId = int.tryParse(
@@ -99,8 +112,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/search',
-        builder: (context, state) =>
-            SearchPage(logMode: state.uri.queryParameters['mode'] == 'log'),
+        builder: (context, state) => SearchPage(
+          logMode: state.uri.queryParameters['mode'] == 'log',
+          initialShows: state.uri.queryParameters['media'] == 'shows',
+        ),
       ),
       GoRoute(
         path: '/today/context',

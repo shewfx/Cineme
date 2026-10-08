@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/idempotency.dart';
 import '../../../core/network/movie_dto.dart';
+import '../../../core/network/series_dto.dart';
 import '../../../shared/models/inventory.dart';
+import '../../../shared/models/series.dart';
 
 abstract interface class WatchlistRepository {
   /// GET /watchlist: active entries in [sort] order (default newest first),
@@ -11,6 +13,14 @@ abstract interface class WatchlistRepository {
   Future<Paged<WatchlistEntry>> list({
     String? cursor,
     WatchlistSort sort = WatchlistSort.addedDesc,
+  });
+
+  /// GET /watchlist across films and shows, filtered server-side by [media]
+  /// (display only: it never changes data). Each item names its media type.
+  Future<Paged<WatchlistItem>> items({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+    WatchlistMedia media = WatchlistMedia.all,
   });
 
   /// POST /watchlist. A duplicate succeeds with `alreadyPresent`; conflicts
@@ -45,10 +55,36 @@ class ApiWatchlistRepository implements WatchlistRepository {
   }) async {
     final body = await _api.get(
       '/api/v1/watchlist',
-      query: {'limit': pageSize, 'sort': sort.apiValue, 'cursor': ?cursor},
+      // Films only: shows have their own item type (see [items]).
+      query: {
+        'limit': pageSize,
+        'sort': sort.apiValue,
+        'media': 'movies',
+        'cursor': ?cursor,
+      },
     );
     return Paged([
       for (final e in asList(body['items'])) watchlistEntryFromJson(asMap(e)),
+    ], body['next_cursor'] as String?);
+  }
+
+  @override
+  Future<Paged<WatchlistItem>> items({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+    WatchlistMedia media = WatchlistMedia.all,
+  }) async {
+    final body = await _api.get(
+      '/api/v1/watchlist',
+      query: {
+        'limit': pageSize,
+        'sort': sort.apiValue,
+        'media': media.wireName,
+        'cursor': ?cursor,
+      },
+    );
+    return Paged([
+      for (final e in asList(body['items'])) watchlistItemFromJson(asMap(e)),
     ], body['next_cursor'] as String?);
   }
 

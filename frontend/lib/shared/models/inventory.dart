@@ -1,4 +1,5 @@
 import 'movie.dart';
+import 'series.dart';
 
 /// One page of a cursor-paginated list (API_CONTRACT `{items,next_cursor}`).
 class Paged<T> {
@@ -38,6 +39,47 @@ class WatchlistEntry {
   final String id;
   final Movie movie;
   final DateTime addedAt;
+}
+
+/// One row of the Watchlist tab: a film or a show. The media type is part of
+/// the identity, never inferred from an id (TMDB movie and TV ids overlap).
+sealed class WatchlistItem {
+  const WatchlistItem();
+
+  String get id;
+  MediaType get mediaType;
+  TitleInfo get info;
+  DateTime get addedAt;
+}
+
+class MovieItem extends WatchlistItem {
+  const MovieItem(this.entry);
+
+  final WatchlistEntry entry;
+
+  @override
+  String get id => entry.id;
+  @override
+  MediaType get mediaType => MediaType.movie;
+  @override
+  TitleInfo get info => entry.movie;
+  @override
+  DateTime get addedAt => entry.addedAt;
+}
+
+class ShowItem extends WatchlistItem {
+  const ShowItem(this.show);
+
+  final ShowEntry show;
+
+  @override
+  String get id => show.id;
+  @override
+  MediaType get mediaType => MediaType.series;
+  @override
+  TitleInfo get info => show.series;
+  @override
+  DateTime get addedAt => show.addedAt;
 }
 
 /// Search result: MovieSummary plus whether it may be added (`can_add`).

@@ -1,6 +1,6 @@
 # Shows and anime: design and implementation plan
 
-Status: **proposal for review** (2026-10-08, branch `feat/series-next-episode`, based on `main` at the merge of PR #15). No application code, migration, deployment or release exists for it. Decision record: [ADR 011](adr/011-shows-and-anime-next-episode.md). This document replaces the sketch in `ROADMAP.md` §6. The series release version is assigned when implementation scope is approved; no version is bumped for planning.
+Status: **implemented on branch `feat/series-next-episode`** (2026-10-08, based on `main` at the merge of PR #15); see "Implementation notes" at the end for what shipped and how it differs from this plan. Not merged, no hosted migration, no deployment or release yet. Decision record: [ADR 011](adr/011-shows-and-anime-next-episode.md). This document replaces the sketch in `ROADMAP.md` §6. The series release version is assigned when implementation scope is approved; no version is bumped for planning.
 
 ## 1. What exists today (inspected)
 
@@ -205,3 +205,20 @@ Out of scope throughout: specials, alternate or absolute orders and external ani
 | D13 | Episode history | separate segment in History, not mixed into movie history |
 | D14 | Mixed pool balance | none; one score decides |
 | D15 | A series entry added while Tonight already has an accepted pick | preserved, like adding a movie |
+
+## 12. Implementation notes (stages S1 to S6, one branch)
+
+All six stages were built together on `feat/series-next-episode`, with the documented defaults for D1 to D15 unless noted. Migration `0008` (after head `0007`) adds the tables of section 3. Contracts: `API_CONTRACT.md` "Shows and anime", `DATA_MODEL.md`, `RECOMMENDATION_ENGINE.md` "`weighted_v2`", `FRONTEND_SPEC.md`.
+
+Differences and additions relative to the plan above:
+
+- **Diversity (D) rule made precise.** Among the last three known viewings (films and episodes), those of the candidate's own series are dropped, not replaced by an older one. A freshly watched show therefore reads D = 0.5 instead of 0. The 5-point gap this leaves between a just-watched show and an identically-genred rival comes from the existing variety signal and fades only as newer viewings displace it; it is separate from the continuity bonus, which does fade after 21 idle days.
+- **D12 (refresh at pick time) is implemented** as `refresh_stale`: before `POST /today/choose` and a replacement pick, at most three stale shows (never-loaded first, then oldest) are refreshed outside any lock within a 12 second budget; failures fall back to the cache. This is how a returning show stops being "caught up". Adding, opening a show, loading seasons and setting progress also refresh through the same freshness rule (a day for returning shows, a week for ended ones).
+- **Blocks list** is a separate `GET /me/blocks/series` (no cursor), and Profile gets a "Blocked shows" list with Unblock.
+- **History** gets the Episodes segment backed by `GET /episode-viewings`; `GET /recommendations` hides episode picks from clients without the capability header.
+- **The union watchlist** is one SQL `UNION ALL` ordered by the same eight sorts and keyset cursors as films; a show has no single runtime, so it sorts with the unknown runtimes in both directions.
+- **TV genre ids** differ from film ids, so two intent maps in `weights_v2` also list 10759 (exciting) and 10765 (deep), and display names merge the TV registry (film names win). This is the same genre heuristic as for films, not a new signal.
+- **Not built:** a series rating control (the endpoint exists and stores a separate 1 to 5 value), editing an episode rating after Mark watched (the endpoint exists), anime-specific badges, discovery lists for shows, and any use of episode or series ratings in scoring.
+- **Frontend identity.** `Movie` and `Series` share a small `TitleInfo` interface so posters and rows draw both, while navigation, requests and storage always carry the `MediaType`. An episode recommendation draws the show through a display-only `Movie` whose id is never used for a film lookup (the availability section is not shown for episodes).
+
+Validation: see `docs/IMPLEMENTATION_STATUS.md`.

@@ -1499,6 +1499,8 @@ def history(
     )
     if status:
         stmt = stmt.where(Recommendation.status == status)
+    if not series_enabled():  # older clients cannot draw an episode pick
+        stmt = stmt.where(Recommendation.media_kind == "movie")
     if cursor:
         created, rec_id = _decode_cursor(cursor)
         stmt = stmt.where(

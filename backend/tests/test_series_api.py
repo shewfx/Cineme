@@ -835,3 +835,108 @@ def test_eligibility_comes_before_continuity(
     a.details(ALPHA)  # refresh the cache with the 90-minute episodes
     env = a.choose(ctx(desired_experience="surprise", max_runtime_minutes=60)).json()
     assert env["recommendation"]["episode"]["series"]["tmdb_id"] == BETA
+
+
+# --- episode history ------------------------------------------------------------------------------
+
+
+def test_episode_history_is_separate_paged_and_private(
+    a: Shows, b: Shows, shows: FakeMovieProvider
+) -> None:
+    a.add_series(ALPHA)
+    for episode in (1, 2, 3):
+        assert a.mark(ALPHA, 1, episode, rating=episode).status_code == 200
+    full = a.client.get("/api/v1/episode-viewings", headers=a.headers).json()
+    assert [i["episode_number"] for i in full["items"]] == [3, 2, 1], "newest first"
+    assert full["items"][0]["series"]["name"] == "Alpha" and full["items"][0]["rating"] == 3
+    seen: list[int] = []
+    cursor = None
+    for _ in range(5):
+        params: dict[str, Any] = {"limit": 2} | ({"cursor": cursor} if cursor else {})
+        page = a.client.get("/api/v1/episode-viewings", params=params, headers=a.headers).json()
+        seen += [i["episode_number"] for i in page["items"]]
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert seen == [3, 2, 1]
+    assert b.client.get("/api/v1/episode-viewings", headers=b.headers).json()["items"] == []
+    assert a.client.get("/api/v1/viewings", headers=a.headers).json()["items"] == [], (
+        "film history is untouched"
+    )
+    bad = a.client.get("/api/v1/episode-viewings?cursor=nope", headers=a.headers)
+    assert bad.status_code == 422
+
+
+def test_recommendation_history_hides_episode_picks_from_older_clients(
+    a: Shows, shows: FakeMovieProvider
+) -> None:
+    a.add_series(ALPHA)
+    a.set_media("shows")
+    a.choose(ctx())
+    capable = a.client.get("/api/v1/recommendations", headers=a.headers).json()["items"]
+    assert capable[0]["media_kind"] == "episode" and capable[0]["episode"]["episode_number"] == 1
+    legacy = a.client.get("/api/v1/recommendations", headers=a.legacy()).json()["items"]
+    assert legacy == []
+
+
+# --- a returning show can stop being "caught up" ---
+
+
+def test_choosing_refreshes_a_stale_caught_up_show_and_finds_the_new_episode(
+    a: Shows, shows: FakeMovieProvider, engine: Engine
+) -> None:
+    a.add_series(BETA)
+    v = a.entry(BETA)["progress_version"]
+    assert a.set_progress(BETA, v, (1, 3)).status_code == 200
+    assert state(a.entry(BETA)) == "caught_up"
+    a.set_media("shows")
+    # TMDB gains an episode; the cache is a few days old (no background jobs).
+    shows.series[BETA] = tv(BETA, "Beta", genre_ids=(18,), seasons=((1, 4),))
+    shows.episodes[BETA] = episodes_for(((1, 4),))
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE cineme.series SET fetched_at = fetched_at - interval '3 days', "
+                "episodes_fetched_at = episodes_fetched_at - interval '3 days'"
+            )
+        )
+    calls_before = len(shows.tv_detail_calls)
+    env = a.choose(ctx()).json()
+    assert env["state"] == "offered"
+    ep = env["recommendation"]["episode"]
+    assert (ep["series"]["tmdb_id"], ep["season_number"], ep["episode_number"]) == (BETA, 1, 4)
+    assert len(shows.tv_detail_calls) == calls_before + 1, "refreshed once, before the pick"
+
+
+def test_a_failed_refresh_uses_the_stale_cache_instead_of_failing_the_pick(
+    a: Shows, shows: FakeMovieProvider, engine: Engine
+) -> None:
+    a.add_series(ALPHA)
+    a.set_media("shows")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE cineme.series SET fetched_at = fetched_at - interval '3 days', "
+                "episodes_fetched_at = episodes_fetched_at - interval '3 days'"
+            )
+        )
+    shows.down = True
+    env = a.choose(ctx()).json()
+    assert env["state"] == "offered" and env["recommendation"]["media_kind"] == "episode"
+
+
+def test_movie_only_clients_never_trigger_show_refreshes(
+    a: Shows, shows: FakeMovieProvider, engine: Engine
+) -> None:
+    a.add_series(ALPHA)
+    a.add(104)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE cineme.series SET episodes_fetched_at = NULL"))
+    calls = len(shows.tv_detail_calls)
+    r = a.client.post(
+        "/api/v1/today/choose",
+        json={"expected_session_version": 0, "context": ctx()},
+        headers=a.legacy() | a.key(),
+    )
+    assert r.status_code == 201
+    assert len(shows.tv_detail_calls) == calls

@@ -9,6 +9,7 @@ import '../features/watchlist/data/watchlist_repository.dart';
 import '../shared/models/inventory.dart';
 import '../shared/models/movie.dart';
 import '../shared/models/profile.dart';
+import '../shared/models/series.dart';
 import '../shared/models/session_context.dart';
 import '../shared/models/today_state.dart';
 import '../shared/models/viewing.dart';
@@ -558,6 +559,17 @@ class FakeWatchlistRepository implements WatchlistRepository {
   }) async {
     await _s._io();
     return _s._page(sortWatchlist(_s._active, sort), cursor, pageSize);
+  }
+
+  @override
+  Future<Paged<WatchlistItem>> items({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+    WatchlistMedia media = WatchlistMedia.all,
+  }) async {
+    if (media == WatchlistMedia.shows) return const Paged([], null);
+    final page = await list(cursor: cursor, sort: sort);
+    return Paged([for (final e in page.items) MovieItem(e)], page.nextCursor);
   }
 
   @override

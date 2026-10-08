@@ -45,7 +45,10 @@ class _FollowUpBannerState extends ConsumerState<FollowUpBanner> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Did you watch ${widget.prompt.movie.title}?',
+            widget.prompt.episode == null
+                ? 'Did you watch ${widget.prompt.movie.title}?'
+                : 'Did you watch ${widget.prompt.episode!.episode.code} of '
+                      '${widget.prompt.movie.title}?',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           Wrap(

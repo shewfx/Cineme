@@ -14,6 +14,7 @@ const _components = [
   ('A', 'Time in your watchlist'),
   ('R', 'Not suggested recently'),
   ('Q', 'TMDB rating'),
+  ('S', 'Continuing a series you are watching'),
 ];
 
 /// "Why this film?": the winner's stored reasons and, where the server has

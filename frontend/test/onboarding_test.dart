@@ -16,6 +16,7 @@ import 'package:cineme/features/watchlist/data/watchlist_repository.dart';
 import 'package:cineme/shared/models/inventory.dart';
 import 'package:cineme/shared/models/movie.dart';
 import 'package:cineme/shared/models/profile.dart';
+import 'package:cineme/shared/models/series.dart';
 import 'package:cineme/shared/models/today_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,6 +77,8 @@ class FakeAccount implements AccountRepository {
   }
 
   @override
+  Future<void> setTonightMedia(TonightMedia media) async {}
+  @override
   Future<void> setRegion(String? countryCode) async {}
   @override
   Future<List<(String, String)>> regions() async => const [];
@@ -109,6 +112,17 @@ class FakeWatchlist implements WatchlistRepository {
     String? cursor,
     WatchlistSort sort = WatchlistSort.addedDesc,
   }) async => Paged(List.of(_list), null);
+
+  @override
+  Future<Paged<WatchlistItem>> items({
+    String? cursor,
+    WatchlistSort sort = WatchlistSort.addedDesc,
+    WatchlistMedia media = WatchlistMedia.all,
+  }) async {
+    if (media == WatchlistMedia.shows) return const Paged([], null);
+    final page = await list(cursor: cursor, sort: sort);
+    return Paged([for (final e in page.items) MovieItem(e)], page.nextCursor);
+  }
 
   @override
   Future<WatchlistAddResult> add(int tmdbId) async {

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/widgets/state_views.dart';
 import '../../../shared/models/today_state.dart';
@@ -8,6 +7,7 @@ import '../application/today_controller.dart';
 import '../data/today_repository.dart';
 import 'context_view.dart';
 import 'recommendation_view.dart';
+import 'empty_tonight_view.dart';
 import 'follow_up_banner.dart';
 import 'today_intro.dart';
 import 'today_states.dart';
@@ -95,16 +95,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
           ),
           TodayStatus.paused => PausedView(envelope: envelope),
           TodayStatus.noMatch => NoMatchView(envelope: envelope),
-          TodayStatus.emptyWatchlist => Scaffold(
-            body: SafeArea(
-              child: EmptyState(
-                title: 'Your watchlist is empty',
-                message: 'Tonight picks one film from your watchlist. Add a few to start.',
-                actionLabel: 'Add movies',
-                onAction: () => context.push('/search'),
-              ),
-            ),
-          ),
+          TodayStatus.emptyWatchlist => EmptyTonightView(envelope: envelope),
         }),
       ),
     );

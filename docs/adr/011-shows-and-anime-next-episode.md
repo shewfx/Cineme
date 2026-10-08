@@ -1,6 +1,6 @@
 # ADR 011 — Shows and anime: Tonight recommends one movie or one next episode
 
-Status: **proposed** for review, 2026-10-08. Nothing in this ADR is implemented. Design, contracts and plan: [SERIES_DESIGN.md](../SERIES_DESIGN.md). It becomes accepted when the project owner approves the implementation scope; the series release version is assigned then.
+Status: **accepted for implementation** by the project owner, 2026-10-08 (series branch `feat/series-next-episode`; takes effect on merge). Design, contracts and plan: [SERIES_DESIGN.md](../SERIES_DESIGN.md), with the implementation notes at its end. The release version is assigned when the branch is approved for release.
 
 ## Decision
 

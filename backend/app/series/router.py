@@ -123,6 +123,18 @@ def patch_episode_rating(
     return JSONResponse(payload, status_code=status)
 
 
+@router.get("/episode-viewings")
+def get_episode_viewings(
+    identity: CallerIdentity,
+    session: DbSession,
+    provider: Provider,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    cursor: Annotated[str | None, Query(max_length=200)] = None,
+) -> dict[str, Any]:
+    """The caller's watched episodes, newest first."""
+    return service.list_viewings(session, provider, identity.user_id, limit, cursor)
+
+
 @router.get("/me/blocks/series")
 def get_series_blocks(
     identity: CallerIdentity, session: DbSession, provider: Provider

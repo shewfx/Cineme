@@ -24,7 +24,7 @@ The portfolio demo must show an end-to-end authenticated flow, a score breakdown
 
 ## Non-goals
 
-No TV *(revision proposed in [ADR 011](docs/adr/011-shows-and-anime-next-episode.md): shows and anime as a second media type; this line stays in force until that ADR is accepted)*, social features, collaborative filtering, neural recommendation training, embeddings, chat assistant, autonomous agent, streaming playback, guaranteed availability, platform pricing, provider subscription management, push notification, nightly job, scraped watchlist, import UI, offline mutation sync, public review platform or analytics dashboard. No actor/director affinity in V1. No inferred permanent dislike from a temporary refusal.
+No TV *(revised by [ADR 011](docs/adr/011-shows-and-anime-next-episode.md): shows and anime series are a second media type, still one recommendation per night, standard order, regular seasons only, no specials, no playback or episode feeds)*, social features, collaborative filtering, neural recommendation training, embeddings, chat assistant, autonomous agent, streaming playback, guaranteed availability, platform pricing, provider subscription management, push notification, nightly job, scraped watchlist, import UI, offline mutation sync, public review platform or analytics dashboard. No actor/director affinity in V1. No inferred permanent dislike from a temporary refusal.
 
 ## Product invariants
 

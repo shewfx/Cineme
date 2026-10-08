@@ -1,4 +1,5 @@
 import 'movie.dart';
+import 'series.dart';
 import 'session_context.dart';
 import 'viewing.dart';
 
@@ -52,24 +53,47 @@ class Recommendation {
     required this.movie,
     required this.reasons,
     this.status = RecommendationStatus.offered,
+    this.episode,
   });
 
   final String id;
+
+  /// What to draw. For an episode pick this is the show (see [episode]).
   final Movie movie;
   final List<Reason> reasons;
+
+  /// Set when Tonight's pick is an episode rather than a film.
+  final EpisodeCard? episode;
+  bool get isEpisode => episode != null;
 
   /// offered, accepted (Watch Tonight) or watched (Mark watched).
   final RecommendationStatus status;
 
-  Recommendation withStatus(RecommendationStatus s) =>
-      Recommendation(id: id, movie: movie, reasons: reasons, status: s);
+  Recommendation withStatus(RecommendationStatus s) => Recommendation(
+    id: id,
+    movie: movie,
+    reasons: reasons,
+    status: s,
+    episode: episode,
+  );
 }
 
 /// Primary exclusion codes, in the engine's precedence order.
 enum ExclusionCode {
   movieUnavailable('movie_unavailable', 'not released yet'),
+  seriesUnavailable(
+    'series_unavailable',
+    'shows whose episodes could not load',
+  ),
+  seriesCompleted('series_completed', 'shows you have finished'),
+  seriesCaughtUp('series_caught_up', 'shows you are caught up on'),
+  nextEpisodeNotAired(
+    'next_episode_not_aired',
+    'shows whose next episode has not aired',
+  ),
   alreadyWatched('already_watched', 'already watched'),
   movieBlocked('movie_blocked', 'never recommend'),
+  seriesBlocked('series_blocked', 'shows set to never recommend'),
   offeredThisSession('offered_this_session', 'already offered tonight'),
   genreBlocked('genre_blocked', 'in a genre you avoided tonight'),
   runtimeUnknown('runtime_unknown', 'runtime unknown under your time limit'),
@@ -83,10 +107,18 @@ enum ExclusionCode {
 
 /// Aggregate no-match explanation; counts sum to [candidateCount].
 class NoMatchSummary {
-  const NoMatchSummary({required this.candidateCount, required this.counts});
+  const NoMatchSummary({
+    required this.candidateCount,
+    required this.counts,
+    this.hiddenByPreference = 0,
+  });
 
   final int candidateCount;
   final Map<ExclusionCode, int> counts;
+
+  /// Titles of the other media, hidden by the Tonight preference (not part of
+  /// [counts]); shown so nobody wonders where their films went.
+  final int hiddenByPreference;
 }
 
 /// Today states (API_CONTRACT precedence).
@@ -111,6 +143,8 @@ class TodayEnvelope {
     this.viewing,
     this.followUp,
     this.rejectionCount = 0,
+    this.media,
+    this.emptyReason,
   });
 
   const TodayEnvelope.notStarted() : this(state: TodayStatus.notStarted);
@@ -129,6 +163,12 @@ class TodayEnvelope {
   final Viewing? viewing;
   final FollowUpPrompt? followUp;
   final int rejectionCount;
+
+  /// What Tonight considers (null from a backend without shows).
+  final TonightMedia? media;
+
+  /// For [TodayStatus.emptyWatchlist]: `none`, `no_movies` or `no_shows`.
+  final String? emptyReason;
 }
 
 /// Rejection reason codes (PROJECT_SPEC feedback semantics).

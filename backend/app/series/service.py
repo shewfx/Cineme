@@ -3,12 +3,16 @@
 mutation locks the users row first, replays an identical idempotent retry and
 only then changes anything."""
 
+import base64
+import binascii
+import contextlib
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -218,6 +222,38 @@ def ensure_series(session: Session, provider: MovieMetadataProvider, tmdb_id: in
     with session.begin():
         upsert_series(session, fetched, eps, now)
     return False
+
+
+REFRESH_LIMIT = 3
+REFRESH_BUDGET_SECONDS = 12.0
+
+
+def refresh_stale(session: Session, provider: MovieMetadataProvider, user_id: uuid.UUID) -> None:
+    """Before Tonight picks: refresh at most REFRESH_LIMIT of the caller's
+    stale shows (never-loaded first, then the oldest) within a small time
+    budget, outside any lock. A returning show whose cache is a day old may
+    have aired a new episode; there are no background jobs, so this is where
+    "caught up" can end. Failures are ignored: the stale cache is used."""
+    now = today.utc_now()
+    rows = session.execute(
+        select(Series.tmdb_id, Series.status, Series.fetched_at, Series.episodes_fetched_at)
+        .join(SeriesEntry, SeriesEntry.series_id == Series.tmdb_id)
+        .where(SeriesEntry.user_id == user_id, SeriesEntry.status == "active")
+    ).all()
+    session.rollback()
+    stale = sorted(
+        (
+            (eps is not None, min(fetched, eps) if eps is not None else fetched, sid)
+            for sid, status, fetched, eps in rows
+            if eps is None or now - min(fetched, eps) >= _ttl(status)
+        ),
+    )
+    started = time.monotonic()
+    for _, _, sid in stale[:REFRESH_LIMIT]:
+        if time.monotonic() - started > REFRESH_BUDGET_SECONDS:
+            break
+        with contextlib.suppress(AppError):
+            ensure_series(session, provider, sid)
 
 
 def search(
@@ -681,6 +717,50 @@ def rate_series(
 
 
 # --- blocks ----------------------------------------------------------------------------------
+
+
+def list_viewings(
+    session: Session,
+    provider: MovieMetadataProvider,
+    user_id: uuid.UUID,
+    limit: int,
+    cursor: str | None,
+) -> dict[str, Any]:
+    """Episode history, newest first (watched time, else recorded time).
+    Separate from film history: the movie viewings API is unchanged."""
+    names, base = _display(provider)
+    when = func.coalesce(EpisodeViewing.watched_at, EpisodeViewing.recorded_at)
+    stmt = (
+        select(EpisodeViewing, Series, when.label("at"))
+        .join(Series, Series.tmdb_id == EpisodeViewing.series_id)
+        .where(EpisodeViewing.user_id == user_id)
+        .order_by(when.desc(), EpisodeViewing.id.desc())
+        .limit(limit + 1)
+    )
+    if cursor:
+        try:
+            raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode()
+            stamp, vid = raw.split("|", 1)
+            at, viewing_id = datetime.fromisoformat(stamp), uuid.UUID(vid)
+        except (ValueError, binascii.Error, UnicodeDecodeError) as e:
+            raise AppError(
+                422, "VALIDATION_ERROR", "Invalid cursor.", details={"fields": ["cursor"]}
+            ) from e
+        stmt = stmt.where(tuple_(when, EpisodeViewing.id) < tuple_(at, viewing_id))
+    rows = session.execute(stmt).all()
+    page = rows[:limit]
+    result = {
+        "items": [viewing_out(v, s, names, base).model_dump(mode="json") for v, s, _ in page],
+        "next_cursor": (
+            base64.urlsafe_b64encode(f"{page[-1][2].isoformat()}|{page[-1][0].id}".encode())
+            .decode()
+            .rstrip("=")
+            if len(rows) > limit
+            else None
+        ),
+    }
+    session.rollback()
+    return result
 
 
 def block(

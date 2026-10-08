@@ -10,7 +10,10 @@ import '../../../core/widgets/paged_list_view.dart';
 import '../../../core/widgets/rating_stars.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../core/widgets/tab_page.dart';
+import '../../../shared/models/series.dart';
 import '../../../shared/models/viewing.dart';
+import '../../series/application/series_controllers.dart';
+import '../../series/application/series_support.dart';
 import '../application/history_controllers.dart';
 import '../data/history_repository.dart';
 import '../../today/presentation/feedback_sheets.dart';
@@ -75,6 +78,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   for (final (i, label) in [
                     (0, 'Watched'),
                     (1, 'Recommendations'),
+                    if (ref.watch(seriesEnabledProvider)) (2, 'Episodes'),
                   ])
                     ChoicePill(
                       label: label,
@@ -86,7 +90,34 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             ),
           ),
           Expanded(
-            child: _segment == 0
+            child: _segment == 2
+                ? PagedListView<EpisodeViewingRecord>(
+                    value: ref.watch(episodeHistoryProvider),
+                    empty: const EmptyState(
+                      title: 'No episodes watched yet',
+                      message: 'Episodes you mark watched appear here, separate from films.',
+                    ),
+                    itemBuilder: (context, v) => MovieListTile(
+                      key: ValueKey(v.id),
+                      movie: v.series,
+                      lines: [
+                        [v.code, ?v.episodeName].join('  ·  '),
+                        v.watchedAt != null
+                            ? 'Watched ${shortDate(v.watchedAt!)}'
+                            : 'Date unknown  ·  recorded ${shortDate(v.recordedAt)}',
+                      ],
+                      footer: RatingStars(
+                        rating: Rating.fromValue(v.rating),
+                        size: 18,
+                      ),
+                    ),
+                    onRetry: () => ref.invalidate(episodeHistoryProvider),
+                    onRefresh: () => ref.refresh(episodeHistoryProvider.future),
+                    onLoadMore: ref
+                        .read(episodeHistoryProvider.notifier)
+                        .loadMore,
+                  )
+                : _segment == 0
                 ? PagedListView<Viewing>(
                     value: ref.watch(viewingHistoryProvider),
                     empty: const EmptyState(
@@ -121,6 +152,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     ),
                     itemBuilder: (context, r) {
                       final lines = [
+                        ?r.episodeLabel,
                         [
                           r.status.label,
                           ?r.reasonLabel,

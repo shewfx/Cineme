@@ -4,7 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/choice_pill.dart';
 import '../../../core/widgets/primary_action.dart';
 import '../../../core/widgets/rating_stars.dart';
-import '../../../shared/models/movie.dart';
+import '../../../shared/models/series.dart';
 import '../../../shared/models/session_context.dart';
 import '../../../shared/models/today_state.dart';
 import '../../../shared/models/viewing.dart';
@@ -36,9 +36,10 @@ class RejectRequest {
 
 Future<RejectRequest?> showRejectSheet(
   BuildContext context, {
-  required Movie movie,
+  required TitleInfo movie,
   required SessionContext tonight,
   required int rejectionCount,
+  bool episode = false,
 }) => showModalBottomSheet<RejectRequest>(
   context: context,
   useRootNavigator: true,
@@ -49,7 +50,12 @@ Future<RejectRequest?> showRejectSheet(
     movie: movie,
     tonight: tonight,
     rejectionCount: rejectionCount,
-    reasons: sheetReasons,
+    // An episode can't be "already watched" here: that would move progress
+    // silently. Set my progress is the honest way to say it.
+    reasons: [
+      for (final r in sheetReasons)
+        if (!(episode && r.$2 == RejectReason.alreadyWatched)) r,
+    ],
   ),
 );
 
@@ -61,7 +67,7 @@ class _RejectSheet extends StatefulWidget {
     required this.reasons,
   });
 
-  final Movie movie;
+  final TitleInfo movie;
   final SessionContext tonight;
   final int rejectionCount;
   final List<(String, RejectReason)> reasons;
@@ -235,7 +241,7 @@ class RatingSelector extends StatelessWidget {
 
 Future<(bool, Rating?)?> showRatingSheet(
   BuildContext context, {
-  required Movie movie,
+  required TitleInfo movie,
   required Rating? current,
 }) => showModalBottomSheet<(bool, Rating?)>(
   context: context,
@@ -248,7 +254,7 @@ Future<(bool, Rating?)?> showRatingSheet(
 
 class _EditRatingSheet extends StatefulWidget {
   const _EditRatingSheet({required this.movie, required this.current});
-  final Movie movie;
+  final TitleInfo movie;
   final Rating? current;
 
   @override
@@ -299,20 +305,29 @@ class _EditRatingSheetState extends State<_EditRatingSheet> {
 /// Confirms tonight's completion. Rating is optional and separate.
 Future<(bool, Rating?)?> showMarkWatchedSheet(
   BuildContext context,
-  Movie movie,
-) => showModalBottomSheet<(bool, Rating?)>(
+  TitleInfo movie, {
+  String? subject,
+  bool completesTonight = true,
+}) => showModalBottomSheet<(bool, Rating?)>(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: AppColors.surface,
   showDragHandle: true,
-  builder: (_) => _MarkWatchedSheet(movie: movie),
+  builder: (_) => _MarkWatchedSheet(
+    subject: subject ?? '“${movie.title}”',
+    completesTonight: completesTonight,
+  ),
 );
 
 class _MarkWatchedSheet extends StatefulWidget {
-  const _MarkWatchedSheet({required this.movie});
+  const _MarkWatchedSheet({
+    required this.subject,
+    required this.completesTonight,
+  });
 
-  final Movie movie;
+  final String subject;
+  final bool completesTonight;
 
   @override
   State<_MarkWatchedSheet> createState() => _MarkWatchedSheetState();
@@ -334,13 +349,15 @@ class _MarkWatchedSheetState extends State<_MarkWatchedSheet> {
             Semantics(
               header: true,
               child: Text(
-                'Mark “${widget.movie.title}” as watched?',
+                'Mark ${widget.subject} as watched?',
                 style: text.titleLarge,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'This completes tonight. Rating is optional and you can change it later.',
+              widget.completesTonight
+                  ? 'This completes tonight. Rating is optional and you can change it later.'
+                  : 'Rating is optional and you can change it later.',
               style: text.bodyMedium?.copyWith(color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),

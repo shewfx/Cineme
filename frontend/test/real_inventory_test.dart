@@ -20,6 +20,7 @@ import 'package:cineme/preview/preview_store.dart';
 import 'package:cineme/shared/models/inventory.dart';
 import 'package:cineme/shared/models/movie.dart';
 import 'package:cineme/shared/models/profile.dart';
+import 'package:cineme/shared/models/series.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -341,6 +342,9 @@ class FakeAccount implements AccountRepository {
 
   @override
   Future<void> completeOnboarding() async {}
+
+  @override
+  Future<void> setTonightMedia(TonightMedia media) async {}
 
   @override
   Future<List<(String, String)>> regions() async => const [('IN', 'India')];

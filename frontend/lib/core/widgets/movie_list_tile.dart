@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/models/movie.dart';
+import '../../shared/models/series.dart';
 import '../theme/app_theme.dart';
 import 'movie_poster.dart';
 
@@ -21,7 +22,7 @@ class MovieListTile extends StatelessWidget {
     this.large = false,
   });
 
-  final Movie movie;
+  final TitleInfo movie;
   final List<String> lines;
   final Widget? trailing;
   final Widget? footer;

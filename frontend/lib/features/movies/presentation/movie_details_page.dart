@@ -386,7 +386,9 @@ class _MovieDetailsPageState extends ConsumerState<MovieDetailsPage> {
       if (mounted) {
         setState(() => _busy = null);
         if (error is ApiError && error.status == 404) {
-          ref.invalidate(watchlistControllerProvider);
+          ref
+            ..invalidate(watchlistControllerProvider)
+            ..invalidate(watchlistItemsProvider);
           setState(() => _removed = true);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('This film was already removed.')),

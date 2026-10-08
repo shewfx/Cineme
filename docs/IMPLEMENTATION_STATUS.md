@@ -2,6 +2,22 @@
 
 Records only verified work. Phases follow [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md). Future work: [ROADMAP.md](ROADMAP.md).
 
+## Shows and anime — branch `feat/series-next-episode` (2026-10-08)
+
+Implemented, not merged, **not applied to any hosted database, not deployed, no version assigned**. Decision: [ADR 011](adr/011-shows-and-anime-next-episode.md); design and notes: [SERIES_DESIGN.md](SERIES_DESIGN.md).
+
+- **Backend:** migration `0008`; TMDB TV provider methods (search, details, regular episodes in chunks of 20 seasons, TV genres); series API (search, details, seasons, progress, mark next watched, ratings, blocks, episode history); union watchlist with a media filter and the `X-Cineme-Features: series-v1` capability header; `tonight_media` preference; `weighted_v2` with next-episode candidates and the bounded continuity bonus (movie scores identical to `weighted_v1`); refresh of stale shows before a pick; episode accept / reject / watched / follow-up.
+- **Flutter:** Tonight media preference, episode card and empty / no-match states, Watchlist media dropdown, Movies | Shows add screen, show details with progress, History Episodes segment, Blocked shows in Profile. Hidden entirely on a backend without shows.
+
+| Check | Result |
+|---|---|
+| `uv run ruff check .` / `ruff format --check .` / `mypy app` | clean (74 files formatted; 44 source files) |
+| `uv run --env-file .env pytest` (local PostgreSQL 16) | 465 passed (new: 40 pure engine tests for `weighted_v2` and the continuity formula, 49 API tests across metadata, union watchlist, progress, concurrency, Tonight, continuity, history and refresh, 5 provider and migration tests) |
+| `dart format --output=none --set-exit-if-changed lib test` / `flutter analyze` | exit 0 / no issues |
+| `flutter test` | 325 passed (new: 28 in `series_test.dart`) |
+
+Not performed: a hosted migration dry run for `0008`, manual browser or device walkthrough, any deployment.
+
 ## Release and hosted state (verified 2026-10-08)
 
 | Artifact | Version | Evidence |
