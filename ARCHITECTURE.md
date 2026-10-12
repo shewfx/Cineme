@@ -37,7 +37,7 @@ The app talks directly to Auth for identity and to TMDB's image CDN for posters.
 
 ```text
 cineme/
-  CLAUDE.md and planning documents
+  product, architecture and implementation documents
   frontend/
     lib/ test/ integration_test/ pubspec.yaml pubspec.lock
   backend/

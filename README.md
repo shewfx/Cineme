@@ -297,7 +297,7 @@ The root specifications are the source of truth, each for its own subject:
 | [docs/adr/](docs/adr) | Approved deviations |
 | [CHANGELOG.md](CHANGELOG.md) | User-facing changes by version |
 
-If two documents disagree, the conflict is reported and resolved explicitly before the affected behavior is built. Agent instructions live in [CLAUDE.md](CLAUDE.md); the original planning-package notes (baseline decisions, external sources, completion definition) are in [docs/PLANNING_PACKAGE.md](docs/PLANNING_PACKAGE.md).
+If two documents disagree, the conflict is reported and resolved explicitly before the affected behavior is built. The original planning-package notes (baseline decisions, external sources, completion definition) are in [docs/PLANNING_PACKAGE.md](docs/PLANNING_PACKAGE.md). Local contributor or agent instructions can be kept outside version control.
 
 ## Contributing
 
